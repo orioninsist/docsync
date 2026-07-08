@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+COMMAND="${1:-}"
+
+if [[ "$COMMAND" == "docs" ]]; then
+  shift
+  python3 crawler_cli.py "$@"
+  exit $?
+fi
+
+if [[ "$COMMAND" == "release" ]]; then
+  python3 pipeline/release_validate.py
+  exit $?
+fi
+
+if [[ "$COMMAND" == "clean" ]]; then
+  find . -type d -name "__pycache__" -prune -exec rm -rf {} +
+  find . -type f -name "*.pyc" -delete
+  echo "Cleaned Python cache files."
+  exit 0
+fi
+
+echo "DOCSYNC"
+echo ""
+echo "Usage:"
+echo "  docsync docs <workspace> <site> [--yes]"
+echo "  docsync docs <url-or-txt-or-workspace>"
+echo "  docsync release"
+echo "  docsync clean"
+exit 1
