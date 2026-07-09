@@ -16,94 +16,10 @@ from crawler.config import CrawlerConfig
 from crawler.policy_engine import SmartScopePolicy
 from crawler.robots import RobotsManager
 from crawler.shared.url_normalizer import normalize_url as shared_normalize_url
-
-ENGLISH_PATH_HINTS = (
-    "/en/",
-    "/en-us/",
-    "/en-gb/",
-    "/english/",
+from crawler.sitemap_language import (
+    english_candidates_from_sitemap_url_node,
+    url_declares_non_english,
 )
-
-NON_ENGLISH_PATH_HINTS = (
-    "/tr/",
-    "/de/",
-    "/fr/",
-    "/es/",
-    "/it/",
-    "/pt/",
-    "/pt-br/",
-    "/ru/",
-    "/ja/",
-    "/ko/",
-    "/zh/",
-    "/zh-cn/",
-    "/zh-tw/",
-    "/ar/",
-    "/hi/",
-    "/id/",
-    "/nl/",
-    "/pl/",
-    "/uk/",
-    "/vi/",
-    "/th/",
-    "/cs/",
-    "/da/",
-    "/el/",
-    "/fi/",
-    "/he/",
-    "/hu/",
-    "/ms/",
-    "/no/",
-    "/ro/",
-    "/sk/",
-    "/sv/",
-    "/bg/",
-    "/hr/",
-    "/lt/",
-    "/lv/",
-    "/sl/",
-    "/sr/",
-)
-
-NON_ENGLISH_QUERY_KEYS = {
-    "hl",
-    "lang",
-    "language",
-    "locale",
-}
-
-ENGLISH_QUERY_VALUES = {
-    "en",
-    "en-us",
-    "en-gb",
-    "en-au",
-    "en-ca",
-    "en-ie",
-    "en-in",
-    "en-my",
-    "en-nz",
-    "en-ph",
-    "en-sg",
-    "en-uk",
-    "en-za",
-    "en_us",
-    "en_gb",
-    "en_au",
-    "en_ca",
-    "en_ie",
-    "en_in",
-    "en_my",
-    "en_nz",
-    "en_ph",
-    "en_sg",
-    "en_uk",
-    "en_za",
-    "english",
-}
-
-NORMALIZED_ENGLISH_QUERY_VALUES = {
-    value.replace("_", "-") for value in ENGLISH_QUERY_VALUES
-}
 
 BLOCKED_PATH_PARTS = (
     "/community",
@@ -210,11 +126,6 @@ DEFAULT_SITEMAP_PATHS = (
     "/sitemap/sitemap.xml",
     "/sitemaps/sitemap.xml",
     "/sitemap-index/sitemap.xml",
-)
-
-LANGUAGE_CODE_PATTERN = re.compile(
-    r"^[a-z]{2}(?:[-_][a-z]{2})?$",
-    re.IGNORECASE,
 )
 
 URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+")
@@ -487,9 +398,11 @@ class SitemapManager:
             return set()
 
         loc_url = self.normalize_url(unescape(loc_node.text.strip()))
-        candidates = self._english_candidates_from_sitemap_url_node(
+        candidates = english_candidates_from_sitemap_url_node(
             url_node=url_node,
             fallback_url=loc_url,
+            require_english=self.config.require_english,
+            strip_namespace=self._strip_namespace,
         )
 
         return {
@@ -564,62 +477,6 @@ class SitemapManager:
                 urls.add(normalized)
 
         return urls
-
-    def _english_candidates_from_sitemap_url_node(
-        self,
-        *,
-        url_node: Any,
-        fallback_url: str,
-    ) -> set[str]:
-        if not self.config.require_english:
-            return {fallback_url}
-
-        alternate_urls, has_language_alternates = self._english_alternates(url_node)
-
-        if alternate_urls:
-            return alternate_urls
-
-        if has_language_alternates or self._url_declares_non_english(fallback_url):
-            return set()
-
-        return {fallback_url}
-
-    def _english_alternates(self, url_node: Any) -> tuple[set[str], bool]:
-        alternate_urls: set[str] = set()
-        has_language_alternates = False
-
-        for child in url_node.iter():
-            if self._strip_namespace(child.tag).lower() != "link":
-                continue
-
-            href = self._english_alternate_href(child)
-
-            if href is None:
-                has_language_alternates = self._is_alternate_link(child)
-                continue
-
-            has_language_alternates = True
-            alternate_urls.add(href)
-
-        return alternate_urls, has_language_alternates
-
-    def _english_alternate_href(self, child: Any) -> str | None:
-        if not self._is_alternate_link(child):
-            return None
-
-        hreflang = str(child.attrib.get("hreflang", "")).strip().lower()
-        href = str(child.attrib.get("href", "")).strip()
-
-        if self._hreflang_is_english(hreflang) and href:
-            return unescape(href)
-
-        return None
-
-    def _is_alternate_link(self, child: Any) -> bool:
-        rel = str(child.attrib.get("rel", "")).strip().lower()
-        hreflang = str(child.attrib.get("hreflang", "")).strip().lower()
-
-        return rel == "alternate" and bool(hreflang)
 
     def _decode_sitemap_payload(
         self,
@@ -766,66 +623,7 @@ class SitemapManager:
         )
 
     def _language_is_blocked(self, url: str) -> bool:
-        return self.config.require_english and self._url_declares_non_english(url)
-
-    def _url_declares_non_english(
-        self,
-        url: str,
-    ) -> bool:
-        parsed = urlparse(url)
-
-        return self._path_contains_non_english_language_segment(
-            parsed.path.lower(),
-        ) or self._query_declares_non_english(parsed.query)
-
-    def _query_declares_non_english(
-        self,
-        query: str,
-    ) -> bool:
-        parsed_query = parse_qs(query)
-
-        for key, values in parsed_query.items():
-            if key.lower() not in NON_ENGLISH_QUERY_KEYS:
-                continue
-
-            if self._values_declare_non_english(values):
-                return True
-
-        return False
-
-    def _values_declare_non_english(self, values: list[str]) -> bool:
-        return any(
-            (value_lower := value.strip().lower().replace("_", "-"))
-            and value_lower not in NORMALIZED_ENGLISH_QUERY_VALUES
-            for value in values
-        )
-
-    def _path_contains_non_english_language_segment(
-        self,
-        path_lower: str,
-    ) -> bool:
-        normalized_path = f"/{path_lower.strip('/')}/"
-
-        if any(hint in normalized_path for hint in ENGLISH_PATH_HINTS):
-            return False
-
-        if any(hint in normalized_path for hint in NON_ENGLISH_PATH_HINTS):
-            return True
-
-        first_part = self._first_path_part(normalized_path)
-
-        if first_part is None or not LANGUAGE_CODE_PATTERN.match(first_part):
-            return False
-
-        return not first_part.startswith("en")
-
-    def _first_path_part(self, normalized_path: str) -> str | None:
-        path_parts = [part for part in normalized_path.strip("/").split("/") if part]
-
-        if not path_parts:
-            return None
-
-        return path_parts[0].replace("_", "-")
+        return self.config.require_english and url_declares_non_english(url)
 
     def _has_blocked_extension(
         self,
@@ -840,11 +638,3 @@ class SitemapManager:
         query_lower = query.lower()
 
         return any(fragment in query_lower for fragment in BLOCKED_QUERY_FRAGMENTS)
-
-    def _hreflang_is_english(
-        self,
-        hreflang: str,
-    ) -> bool:
-        normalized = hreflang.strip().lower().replace("_", "-")
-
-        return normalized == "en" or normalized.startswith("en-")

@@ -1,18 +1,10 @@
 # docsync TODO
 
-## Dynamic Checklist
-- [x] Steps 1-38 completed and verified
-- [/] Step 39: final import graph audit return type repair
-- [ ] Step 40: release verification
+## Checklist
+- [/] Step 50: Final validation re-export lint onarımı sürüyor
 
 ## Quality / Completion Score
-Current Score: 98/100
-- SRP / modularity: 25/25
-- Decoupling: 24/25
-- Testability: 25/25
-- CLI/Fedora verification: 24/25
+Current Score: 99/100
 
 ## Change Log
-- Import graph audit passes.
-- Ruff and formatting pass.
-- Repair target: align score_discovered_url wrapper return type with DiscoveryResult.
+- `fetcher.py` legacy re-export constantları `__all__` ile açık public API yapılacak.

@@ -1,466 +1,30 @@
-"""URL normalization, filtering, and scoring rules for discovery crawling."""
+"""Pure URL, content-type, and language rules for discovery fetching."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from html import escape
+from urllib.parse import parse_qs, urlparse
 
-from crawler.discovery_result import DiscoveryResult
+from bs4 import BeautifulSoup, Tag
 
-
-TRACKING_QUERY_KEYS = {
-    "fbclid",
-    "gclid",
-    "mc_cid",
-    "mc_eid",
-    "ref",
-    "source",
-    "spm",
-    "igshid",
-    "yclid",
-    "msclkid",
-    "utm_id",
-    "utm_term",
-    "utm_campaign",
-    "utm_medium",
-    "utm_content",
-    "utm_source",
-}
-
-IMPORTANT_QUERY_KEYS = {"topic", "category", "section", "segment"}
-
-ENGLISH_QUERY_KEYS = {"hl", "lang", "locale", "language"}
-ENGLISH_QUERY_VALUES = {
-    "en",
-    "en-us",
-    "en-gb",
-    "en-au",
-    "en-ca",
-    "en-ie",
-    "en-in",
-    "en-my",
-    "en-nz",
-    "en-ph",
-    "en-sg",
-    "en-uk",
-    "en-za",
-    "en_us",
-    "en_gb",
-    "en_au",
-    "en_ca",
-    "english",
-}
-
-ISO_3166_REGION_CODES = {
-    "ad",
-    "ae",
-    "af",
-    "ag",
-    "ai",
-    "al",
-    "am",
-    "ao",
-    "aq",
-    "ar",
-    "as",
-    "at",
-    "au",
-    "aw",
-    "ax",
-    "az",
-    "ba",
-    "bb",
-    "bd",
-    "be",
-    "bf",
-    "bg",
-    "bh",
-    "bi",
-    "bj",
-    "bl",
-    "bm",
-    "bn",
-    "bo",
-    "bq",
-    "br",
-    "bs",
-    "bt",
-    "bv",
-    "bw",
-    "by",
-    "bz",
-    "ca",
-    "cc",
-    "cd",
-    "cf",
-    "cg",
-    "ch",
-    "ci",
-    "ck",
-    "cl",
-    "cm",
-    "cn",
-    "co",
-    "cr",
-    "cu",
-    "cv",
-    "cw",
-    "cx",
-    "cy",
-    "cz",
-    "de",
-    "dj",
-    "dk",
-    "dm",
-    "do",
-    "dz",
-    "ec",
-    "ee",
-    "eg",
-    "eh",
-    "er",
-    "es",
-    "et",
-    "fi",
-    "fj",
-    "fk",
-    "fm",
-    "fo",
-    "fr",
-    "ga",
-    "gb",
-    "gd",
-    "ge",
-    "gf",
-    "gg",
-    "gh",
-    "gi",
-    "gl",
-    "gm",
-    "gn",
-    "gp",
-    "gq",
-    "gr",
-    "gt",
-    "gu",
-    "gw",
-    "gy",
-    "hk",
-    "hn",
-    "hr",
-    "ht",
-    "hu",
-    "id",
-    "ie",
-    "il",
-    "in",
-    "is",
-    "it",
-    "jm",
-    "jo",
-    "jp",
-    "ke",
-    "kh",
-    "kr",
-    "kw",
-    "kz",
-    "la",
-    "lb",
-    "li",
-    "lk",
-    "lt",
-    "lu",
-    "lv",
-    "ma",
-    "md",
-    "me",
-    "mk",
-    "mx",
-    "my",
-    "ng",
-    "nl",
-    "no",
-    "nz",
-    "pa",
-    "pe",
-    "ph",
-    "pk",
-    "pl",
-    "pt",
-    "qa",
-    "ro",
-    "rs",
-    "ru",
-    "sa",
-    "se",
-    "sg",
-    "si",
-    "sk",
-    "th",
-    "tr",
-    "tw",
-    "ua",
-    "uk",
-    "us",
-    "uy",
-    "vn",
-    "za",
-}
-
-EXTRA_REGION_ALIASES = {
-    "usa",
-    "u-s",
-    "u-s-a",
-    "america",
-    "united-states",
-    "united-kingdom",
-}
-
-SAFE_REGION_HOST_PREFIXES = {
-    "www",
-    "docs",
-    "doc",
-    "developer",
-    "developers",
-    "help",
-    "support",
-    "learn",
-    "blog",
-    "api",
-}
-
-HIGH_VALUE_PATH_HINTS = {
-    "docs",
-    "documentation",
-    "doc",
-    "developer",
-    "developers",
-    "api",
-    "reference",
-    "guide",
-    "guides",
-    "manual",
-    "help",
-    "support",
-    "learn",
-    "academy",
-    "tutorial",
-    "tutorials",
-    "blog",
-    "news",
-    "resources",
-    "resource",
-    "products",
-    "product",
-    "platform",
-    "business",
-    "creator",
-    "creators",
-    "policy",
-    "policies",
-    "rules",
-    "requirements",
-    "eligibility",
-    "guidelines",
-    "standards",
-    "solutions",
-    "solution",
-    "overview",
-    "getting-started",
-    "start",
-    "cloud",
-    "ai",
-    "models",
-    "search-console",
-    "analytics",
-    "ads",
-    "advertising",
-    "workspace",
-    "maps",
-    "android",
-    "chrome",
-    "enterprise",
-    "firebase",
-    "flutter",
-    "tensorflow",
-    "web",
-}
-
-ROOT_SEED_HINTS = HIGH_VALUE_PATH_HINTS | {
-    "about",
-    "company",
-    "customers",
-    "pricing",
-}
-
-LOW_VALUE_HOST_HINTS = {
-    "accounts.google.com",
-    "admin.google.com",
-    "calendar.google.com",
-    "console.cloud.google.com",
-    "drive.google.com",
-    "forms.google.com",
-    "keep.google.com",
-    "payments.google.com",
-    "photos.google.com",
-    "play.google.com",
-    "shopping.google.com",
-    "sites.google.com",
-    "goo.gle",
-    "g.co",
-    "docs.google.com",
-}
-
-LOW_VALUE_PATH_HINTS = {
-    "login",
-    "signin",
-    "sign-in",
-    "logout",
-    "auth",
-    "oauth",
-    "account",
-    "accounts",
-    "profile",
-    "profiles",
-    "user",
-    "users",
-    "community",
-    "forum",
-    "forums",
-    "thread",
-    "threads",
-    "discussion",
-    "discussions",
-    "question",
-    "questions",
-    "answer",
-    "answers",
-    "qna",
-    "qa",
-    "comments",
-    "comment",
-    "careers",
-    "jobs",
-    "cart",
-    "checkout",
-    "billing",
-    "pricing",
-    "plans",
-    "contact",
-    "sales",
-    "demo",
-    "search",
-    "tag",
-    "tags",
-    "author",
-    "category",
-    "categories",
-    "request",
-    "requests",
-    "signup",
-    "subscribe",
-    "subscription",
-    "partner",
-    "partners",
-    "admin",
-    "calendar",
-    "drive",
-    "forms",
-    "photos",
-    "shopping",
-    "payments",
-    "settings",
-    "store",
-    "console",
-    "video",
-    "videos",
-    "reel",
-    "reels",
-    "shorts",
-}
-
-BAD_PATH_PREFIXES = (
-    "/finance/quote/",
-    "/quote/",
-    "/search/",
-    "/search",
-    "/advanced_search",
-    "/sorry/",
-    "/preferences",
-    "/setprefs",
-    "/travel/flights/",
+ALLOWED_CONTENT_TYPES = ("text/html", "application/xhtml+xml", "text/plain")
+BLOCKED_CONTENT_TYPE_MARKERS = (
+    "application/pdf",
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-rar",
+    "application/x-7z-compressed",
+    "application/x-tar",
+    "application/gzip",
+    "application/octet-stream",
+    "image/",
+    "video/",
+    "audio/",
+    "font/",
 )
-
-BAD_PATH_CONTAINS = (
-    "/servicelogin",
-    "/accounts/",
-    "/login/",
-    "/signin/",
-    "/sign-in/",
-    "/oauth/",
-    "/auth/",
-    "/community/",
-    "/forum/",
-    "/forums/",
-    "/questions/",
-    "/answers/",
-    "/search/",
-    "/calendar/",
-    "/drive/",
-    "/forms/",
-    "/photos/",
-    "/shopping/",
-    "/payments/",
-    "/account/",
-    "/reel/",
-    "/reels/",
-    "/video/",
-    "/videos/",
-    "/shorts/",
-)
-
-OFFICIAL_HOST_PREFIXES = {
-    "about",
-    "docs",
-    "doc",
-    "developers",
-    "developer",
-    "help",
-    "support",
-    "learn",
-    "business",
-    "creators",
-    "creator",
-    "blog",
-    "news",
-    "resources",
-    "api",
-    "cloud",
-    "ai",
-    "research",
-    "labs",
-    "firebase",
-    "workspace",
-    "marketingplatform",
-    "ads",
-    "admob",
-    "analytics",
-    "mapsplatform",
-    "chrome",
-    "android",
-}
-
-DISCOVERY_BLOCKED_SCHEMES = (
-    "mailto:",
-    "tel:",
-    "javascript:",
-    "data:",
-    "blob:",
-    "file:",
-    "ftp:",
-)
-
-DISCOVERY_BLOCKED_FILE_EXTENSIONS = (
+BLOCKED_FILE_EXTENSIONS = (
     ".png",
     ".jpg",
     ".jpeg",
@@ -490,6 +54,7 @@ DISCOVERY_BLOCKED_FILE_EXTENSIONS = (
     ".js",
     ".mjs",
     ".json",
+    ".xml",
     ".rss",
     ".atom",
     ".woff",
@@ -497,424 +62,550 @@ DISCOVERY_BLOCKED_FILE_EXTENSIONS = (
     ".ttf",
     ".eot",
 )
-
-DISCOVERY_UTILITY_PATH_PARTS = {
-    "_",
-    "url",
-    "setprefdomain",
-    "preferences",
-    "setprefs",
-    "sorry",
-    "search",
-    "advanced_search",
-    "imghp",
-    "maps",
-    "mail",
-    "calendar",
-    "drive",
-    "forms",
-    "photos",
-    "shopping",
-    "finance",
-    "travel",
-    "flights",
-    "accounts",
-    "signin",
-    "login",
-    "servicelogin",
-    "oauth",
-    "auth",
-}
-
-DISCOVERY_UTILITY_HOSTS = {
-    "mail.google.com",
-    "accounts.google.com",
-    "calendar.google.com",
-    "drive.google.com",
-    "forms.google.com",
-    "photos.google.com",
-    "shopping.google.com",
-    "payments.google.com",
-    "myaccount.google.com",
-    "myactivity.google.com",
-}
-
-DISCOVERY_MAX_DEFAULT_PAGES = 900
-DISCOVERY_MAX_DEFAULT_DEPTH = 5
-DISCOVERY_MAX_LINKS_PER_PAGE = 2500
-DISCOVERY_MAX_ACCEPTED_MULTIPLIER = 30
-
-BAD_QUERY_KEYS = {
-    "q",
-    "query",
-    "search",
-    "search_id",
-    "results_count",
-    "rank",
-    "return_to",
-    "redirect",
-    "redirect_to",
-    "callback",
-    "data",
-    "url",
-    "continue",
-    "next",
-}
-
-SUPPRESSED_REVIEW_MARKERS = (
-    "machine_file",
-    "non_english",
-    "iso_block",
-    "search",
-    "login",
-    "auth",
-    "forum",
-    "community",
-    "account",
+MEDIA_SOCIAL_HOSTS = frozenset(
+    """
+    instagram.com tiktok.com facebook.com twitter.com x.com threads.net youtube.com
+    youtu.be vimeo.com dailymotion.com twitch.tv snapchat.com pinterest.com reddit.com
+    linkedin.com linktr.ee beacons.ai bio.site campsite.bio about.me
+    """.split()
+)
+SOCIAL_PROFILE_PATH_MARKERS = (
+    "/@",
+    "/user/",
+    "/users/",
+    "/profile/",
+    "/profiles/",
+    "/account/",
+    "/accounts/",
+    "/channel/",
+    "/channels/",
+    "/c/",
+    "/u/",
+    "/watch",
+    "/shorts/",
+    "/reel/",
+    "/reels/",
+    "/video/",
+    "/videos/",
+    "/pin/",
+    "/pins/",
+    "/board/",
+    "/boards/",
+    "/status/",
+    "/posts/",
+    "/post/",
+    "/photos/",
+    "/photo/",
+    "/stories/",
+    "/story/",
+)
+JS_REQUIRED_PATTERNS = (
+    "enable javascript",
+    "javascript is required",
+    "please enable js",
+    "requires javascript",
+    "you need to enable javascript",
+    "this app works best with javascript",
+)
+LANGUAGE_QUERY_KEYS = frozenset({"hl", "lang", "language", "locale"})
+ENGLISH_LANGUAGE_VALUES = frozenset(
+    """
+    en en-us en-gb en-au en-ca en-ie en-in en-my en-nz en-ph en-sg en-uk en-za
+    en_us en_gb en_au en_ca en_ie en_in en_my en_nz en_ph en_sg en_uk en_za english
+    """.split()
+)
+ISO_3166_REGION_CODES = frozenset(
+    """
+    ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bl
+    bm bn bo bq br bs bt bv bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv
+    cw cx cy cz de dj dk dm do dz ec ee eg eh er es et fi fj fk fm fo fr ga gb gd
+    ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il im
+    in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk
+    lr ls lt lu lv ly ma mc md me mf mg mh mk ml mm mn mo mp mq mr ms mt mu mv mw
+    mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl pm pn pr
+    ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss
+    st sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug um us uy
+    uz va vc ve vg vi vn vu wf ws ye yt za zm zw
+    """.split()
+)
+EXTRA_REGION_ALIASES = frozenset(
+    {"uk", "usa", "u-s", "u-s-a", "america", "united-states", "united-kingdom"}
+)
+REGION_GATEKEEPER_SAFE_HOST_PREFIXES = frozenset(
+    {
+        "www",
+        "docs",
+        "doc",
+        "developer",
+        "developers",
+        "help",
+        "support",
+        "learn",
+        "blog",
+        "api",
+    }
+)
+ENGLISH_STOPWORDS = frozenset(
+    """
+    the and you your for with from this that are can how what when where learn create
+    account help support settings manage use using page content policy privacy terms search
+    make get set new more about not all or if to in on of is it as be by a an at we
+    our they their will may should before after overview guide documentation reference
+    example examples install configure build run delete edit update
+    """.split()
+)
+NON_ENGLISH_STOPWORDS = frozenset(
+    """
+    ve veya bir bu şu için ile nasıl nedir olan olarak daha değil giriş hesap ayarlar
+    kullan kullanım hakkında yardım destek und oder der die das ein eine für mit nicht ist
+    sind wie was konto einstellungen hilfe unterstützung et ou le la les des un une pour
+    avec pas est sont comment quoi compte paramètres aide assistance y o el los las una
+    para con no es son cómo qué cuenta configuración ayuda soporte não como que conta
+    configurações ajuda suporte het een voor met niet zijn hoe wat instellingen hulp ondersteuning
+    """.split()
+)
+NON_ENGLISH_CHARACTER_MARKERS = frozenset(
+    {"ç", "ğ", "ı", "İ", "ö", "ş", "ü", "ß", "ñ", "¿", "¡", "ã", "õ"}
 )
 
-
-def log(message: str) -> None:
-    """Print a crawler log message immediately."""
-    print(message, flush=True)
-
-
-def canonical_input(value: str) -> str:
-    """Return a URL-like input with a scheme and default .com host suffix."""
-    value = value.strip()
-    if not value:
-        raise ValueError("URL value must not be empty.")
-    if not value.startswith(("http://", "https://")):
-        if "." not in value:
-            value = f"{value}.com"
-        value = "https://" + value
-    return value
+PREFLIGHT_SAMPLE_BYTES = 98_304
+PREFLIGHT_MIN_WORDS = 20
+PREFLIGHT_MIN_ENGLISH_RATIO = 0.035
+PREFLIGHT_MAX_NON_ENGLISH_RATIO = 0.035
+PREFLIGHT_MAX_NON_ENGLISH_MARKER_RATIO = 0.025
 
 
-def normalize_site(value: str) -> str:
-    """Normalize a site seed while preserving the seed path."""
-    parsed = urlparse(canonical_input(value))
-    scheme = parsed.scheme.lower() or "https"
-    netloc = parsed.netloc.lower().removeprefix("www.")
-    return urlunparse((scheme, netloc, parsed.path or "/", "", "", ""))
+def is_html(content_type: str) -> bool:
+    """Return True when a response content type can be converted to markdown."""
 
-
-def normalize_candidate_url(url: str) -> str:
-    """Normalize a candidate URL for stable deduplication and scoring."""
-    parsed = urlparse(canonical_input(url))
-    scheme = "https"
-    netloc = parsed.netloc.lower().removeprefix("www.")
-    path = parsed.path or "/"
-    english_intl_pattern = r"^/intl/en(?:[-_][a-z]{2})?/"
-
-    path = re.sub(
-        english_intl_pattern,
-        "/intl/en/",
-        path,
-        flags=re.IGNORECASE,
+    normalized = content_type.lower().strip()
+    return not normalized or any(
+        marker in normalized for marker in ALLOWED_CONTENT_TYPES
     )
 
-    if path != "/" and path.endswith("/"):
-        path = path.rstrip("/")
 
-    query_items: list[tuple[str, str]] = []
-    for key, value in parse_qsl(parsed.query, keep_blank_values=False):
-        key_lower = key.lower().strip()
-        value_clean = value.strip()
-        if key_lower.startswith("utm_") or key_lower in TRACKING_QUERY_KEYS:
-            continue
-        if key_lower in ENGLISH_QUERY_KEYS:
-            continue
-        if key_lower not in IMPORTANT_QUERY_KEYS:
-            continue
-        query_items.append((key_lower, value_clean))
+def is_blocked_content_type(content_type: str) -> bool:
+    """Return True when a response content type is binary/media/archive."""
 
-    query = urlencode(sorted(query_items))
-    return urlunparse((scheme, netloc, path, "", query, ""))
+    normalized = content_type.lower().strip()
+    return any(marker in normalized for marker in BLOCKED_CONTENT_TYPE_MARKERS)
 
 
-def host_of(url: str) -> str:
-    """Return the normalized host for a URL or host-like value."""
-    return urlparse(normalize_site(url)).netloc.lower().removeprefix("www.")
+def is_english(value: str) -> bool:
+    """Return True for English language tags."""
 
-
-def root_domain(url: str) -> str:
-    """Return the root domain while preserving common second-level TLDs."""
-    host = host_of(url)
-    parts = host.split(".")
-    second_level_tlds = {"co", "com", "org", "net", "ac", "gov"}
-    if len(parts) >= 3 and parts[-2] in second_level_tlds:
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:]) if len(parts) >= 2 else host
-
-
-def path_parts(url: str) -> list[str]:
-    """Return normalized path segments for a candidate URL."""
-    parsed = urlparse(normalize_candidate_url(url))
-    raw_parts = parsed.path.strip("/").split("/")
-    return [
-        part.strip().lower().replace("_", "-") for part in raw_parts if part.strip()
-    ]
-
-
-def path_part_set(url: str) -> set[str]:
-    """Return normalized path segments as a set."""
-    return set(path_parts(url))
-
-
-def path_depth(url: str) -> int:
-    """Return the number of normalized path segments."""
-    return len(path_parts(url))
-
-
-def _is_allowed_english_segment(value: str) -> bool:
-    """Return True when a locale segment is explicitly English."""
-    return value == "en" or value.startswith("en-")
-
-
-def _is_blocked_region_segment(value: str) -> bool:
-    """Return True when a segment is a regional or non-English marker."""
     normalized = value.strip().lower().replace("_", "-")
-    if not normalized or _is_allowed_english_segment(normalized):
+    allowed = {item.replace("_", "-") for item in ENGLISH_LANGUAGE_VALUES}
+    return normalized in allowed or normalized.startswith("en-")
+
+
+def segment_declares_region(value: str) -> bool:
+    """Return True when a segment is an ISO region or configured alias."""
+
+    normalized = value.strip().lower().replace("_", "-")
+    if not normalized:
         return False
 
     parts = [part for part in normalized.split("-") if part]
+    direct_match = (
+        normalized in EXTRA_REGION_ALIASES or normalized in ISO_3166_REGION_CODES
+    )
+    prefix_match = bool(parts) and parts[0] in EXTRA_REGION_ALIASES.union(
+        ISO_3166_REGION_CODES
+    )
+    suffix_match = 2 <= len(parts) and parts[-1] in ISO_3166_REGION_CODES
+    return direct_match or prefix_match or suffix_match
+
+
+def host_declares_non_english_region(host: str) -> bool:
+    """Return True when first host label is a regional language marker."""
+
+    labels = [label for label in host.split(".") if label]
+    if not labels:
+        return False
+
+    first_label = labels[0].lower().replace("_", "-")
+    safe_prefix = first_label in REGION_GATEKEEPER_SAFE_HOST_PREFIXES
     return (
-        normalized in ISO_3166_REGION_CODES
-        or normalized in EXTRA_REGION_ALIASES
-        or bool(parts and parts[0] in ISO_3166_REGION_CODES)
-        or bool(parts and parts[0] in EXTRA_REGION_ALIASES)
-        or bool(len(parts) >= 2 and parts[-1] in ISO_3166_REGION_CODES)
+        not safe_prefix
+        and not is_english(first_label)
+        and segment_declares_region(first_label)
     )
 
 
-def _host_region_block_reason(host: str) -> str | None:
-    """Return a region block reason from the first host label."""
-    labels = [label for label in host.split(".") if label]
-    first_label = labels[0].replace("_", "-") if labels else ""
-    is_safe_prefix = first_label in SAFE_REGION_HOST_PREFIXES
+def first_region_or_language_path_segment(path: str) -> str | None:
+    """Return first path segment that looks like a language or region marker."""
 
-    if first_label and not is_safe_prefix and _is_blocked_region_segment(first_label):
-        return f"iso_block_host_label:{first_label}"
+    for part in path.strip("/").split("/"):
+        normalized = part.strip().lower().replace("_", "-")
+        if not normalized:
+            continue
+
+        if is_english(normalized) or segment_declares_region(normalized):
+            return normalized
+
+        if re.fullmatch(r"[a-z]{2}(?:-[a-z]{2})?", normalized):
+            return normalized
+
     return None
 
 
-def _path_region_block_reason(path: str) -> str | None:
-    """Return a region block reason from URL path segments."""
-    reason: str | None = None
-    for part in path.strip("/").split("/"):
-        normalized = part.strip().lower().replace("_", "-")
-        if _is_blocked_region_segment(normalized):
-            reason = f"iso_block_path_segment:{normalized}"
-            break
-    return reason
+def query_declares_non_english_region(query_string: str) -> bool:
+    """Return True when language query params explicitly request non-English."""
+
+    query = parse_qs(query_string)
+    language_values = [
+        value
+        for key, values in query.items()
+        if key.lower().strip() in LANGUAGE_QUERY_KEYS
+        for value in values
+        if value.strip()
+    ]
+    return any(not is_english(value) for value in language_values)
 
 
-def _query_region_block_reason(query: str) -> str | None:
-    """Return a region block reason from language query parameters."""
-    reason: str | None = None
-    for key, value in parse_qsl(query, keep_blank_values=False):
-        key_lower = key.lower().strip()
-        normalized = value.strip().lower().replace("_", "-")
-        if key_lower not in ENGLISH_QUERY_KEYS:
-            continue
-        if normalized and not _is_allowed_english_segment(normalized):
-            reason = f"iso_block_query_language:{normalized}"
-            break
-    return reason
+def url_has_definite_non_english_region(url: str) -> bool:
+    """Return True when URL host/path/query explicitly points to a non-English region."""
 
-
-def regional_block_reason(url: str) -> str | None:
-    """Return the first regional or non-English block reason for a URL."""
-    source = url if url.startswith(("http://", "https://")) else canonical_input(url)
-    parsed = urlparse(source)
+    parsed = urlparse(url)
     host = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.lower()
+    normalized_path = f"/{path.strip('/')}/"
 
-    reason = _host_region_block_reason(host)
-    if reason is None:
-        reason = _path_region_block_reason(parsed.path)
-    if reason is None:
-        reason = _query_region_block_reason(parsed.query)
-    return reason
+    if host_declares_non_english_region(host):
+        return True
+
+    region_segment = first_region_or_language_path_segment(path)
+    if region_segment and not is_english(region_segment):
+        return True
+
+    intl_match = re.search(r"/intl/([^/]+)/", normalized_path)
+    if intl_match is not None:
+        return not is_english(intl_match.group(1))
+
+    return query_declares_non_english_region(parsed.query)
 
 
-def is_non_english_query(url: str) -> bool:
-    """Return True when URL query or locale markers are non-English."""
-    return regional_block_reason(url) is not None
+def is_blocked_url_before_network(url: str, *, require_english: bool) -> bool:
+    """Return True when URL can be rejected before any network request."""
+
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().removeprefix("www.")
+    path_lower = parsed.path.lower()
+
+    blocked_host = any(
+        host == item or host.endswith(f".{item}") for item in MEDIA_SOCIAL_HOSTS
+    )
+    blocked_social_path = any(
+        marker in path_lower for marker in SOCIAL_PROFILE_PATH_MARKERS
+    )
+    blocked_region = require_english and url_has_definite_non_english_region(url)
+    blocked_extension = path_lower.endswith(BLOCKED_FILE_EXTENSIONS)
+
+    return blocked_host or blocked_social_path or blocked_region or blocked_extension
 
 
-def is_english_url(url: str) -> bool:
-    """Return True when URL has no regional or non-English markers."""
-    return regional_block_reason(url) is None
+def should_download(
+    *,
+    url: str,
+    content_type: str = "",
+    require_english: bool = True,
+) -> tuple[bool, str | None]:
+    """Return a cheap URL/content-type download decision."""
+
+    if is_blocked_url_before_network(url, require_english=require_english):
+        return False, "blocked_url"
+
+    if is_blocked_content_type(content_type):
+        return False, "blocked_content_type"
+
+    if content_type and not is_html(content_type):
+        return False, "non_html_content_type"
+
+    return True, None
+
+
+def html_language_decision(soup: BeautifulSoup) -> bool | None:
+    """Return HTML language decision from lang/locale metadata."""
+
+    html_tag = soup.find("html")
+    if isinstance(html_tag, Tag):
+        lang = str(html_tag.get("lang", "")).strip().lower().replace("_", "-")
+        if lang:
+            return is_english(lang)
+
+    selectors = (
+        'meta[property="og:locale"]',
+        'meta[name="locale"]',
+        'meta[http-equiv="content-language"]',
+        'meta[name="language"]',
+    )
+    for selector in selectors:
+        tag = soup.select_one(selector)
+        if tag is None:
+            continue
+
+        content = str(tag.get("content", "")).strip().lower().replace("_", "-")
+        if content:
+            return is_english(content)
+
+    return None
+
+
+def sample_declares_non_english(
+    html_or_text: str, *, url: str, content_type: str
+) -> bool:
+    """Return True when metadata or sampled words confidently identify non-English."""
+
+    if url_has_definite_non_english_region(url):
+        return True
+
+    if "text/plain" in content_type:
+        return text_sample_is_confidently_non_english(html_or_text)
+
+    soup = BeautifulSoup(html_or_text, "html.parser")
+    decision = html_language_decision(soup)
+    if decision is not None:
+        return not decision
+
+    text = " ".join(soup.get_text(" ", strip=True).split())
+    return bool(text) and text_sample_is_confidently_non_english(text)
+
+
+def text_sample_is_confidently_non_english(text: str) -> bool:
+    """Return True only for confident non-English text samples."""
+
+    clean_text = " ".join(text.split())
+    if not clean_text:
+        return False
+
+    words = re.findall(r"[a-zA-ZÀ-ÿ]{2,}", clean_text.lower())
+    if len(words) < PREFLIGHT_MIN_WORDS:
+        return False
+
+    english_hits = sum(1 for word in words if word in ENGLISH_STOPWORDS)
+    non_english_hits = sum(1 for word in words if word in NON_ENGLISH_STOPWORDS)
+    if english_hits == 0 and non_english_hits >= 3:
+        return True
+
+    english_ratio = english_hits / len(words)
+    non_english_ratio = non_english_hits / len(words)
+    marker_ratio = non_english_marker_ratio(clean_text)
+    marker_blocked = marker_ratio > PREFLIGHT_MAX_NON_ENGLISH_MARKER_RATIO
+    stopword_blocked = non_english_ratio > PREFLIGHT_MAX_NON_ENGLISH_RATIO
+
+    if english_ratio >= PREFLIGHT_MIN_ENGLISH_RATIO:
+        return False
+
+    return (marker_blocked or stopword_blocked) and non_english_hits >= english_hits
+
+
+def non_english_marker_ratio(text: str) -> float:
+    """Return ratio of region-specific letters in alphabetic text."""
+
+    letters = [char for char in text if char.isalpha()]
+    if not letters:
+        return 0.0
+
+    marker_count = sum(1 for char in letters if char in NON_ENGLISH_CHARACTER_MARKERS)
+    return marker_count / len(letters)
+
+
+def plain_text_to_html(text: str, url: str) -> str:
+    """Wrap allowed plain text in minimal English HTML."""
+
+    return (
+        "<!doctype html>"
+        '<html lang="en">'
+        "<head>"
+        f"<title>{escape(url)}</title>"
+        "</head>"
+        "<body>"
+        f"<main><pre>{escape(text)}</pre></main>"
+        "</body>"
+        "</html>"
+    )
+
+
+def html_needs_playwright(html: str) -> bool:
+    """Return True when static HTML looks like a JavaScript shell."""
+
+    lowered = html.lower()
+    if any(pattern in lowered for pattern in JS_REQUIRED_PATTERNS):
+        return True
+
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text(" ", strip=True)
+    script_count = len(soup.find_all("script"))
+    link_count = len(soup.find_all("a"))
+
+    return len(text) < 160 and script_count >= 3 and not link_count > 3
+
+
+HIGH_VALUE_PATH_HINTS = (
+    "docs",
+    "doc",
+    "documentation",
+    "developers",
+    "developer",
+    "api",
+    "reference",
+    "guide",
+    "guides",
+    "learn",
+    "help",
+    "support",
+)
+
+
+def path_parts(url: str) -> list[str]:
+    """Return normalized non-empty URL path parts."""
+
+    return [part for part in urlparse(url).path.lower().strip("/").split("/") if part]
+
+
+def root_domain(host: str) -> str:
+    """Return a simple registrable-domain approximation."""
+
+    labels = [label for label in host.lower().strip(".").split(".") if label]
+    if len(labels) <= 2:
+        return ".".join(labels)
+
+    return ".".join(labels[-2:])
+
+
+def looks_like_official_host(host: str, expected_root_domain: str) -> bool:
+    """Return True when host belongs to the expected root domain."""
+
+    normalized_host = host.lower().removeprefix("www.")
+    normalized_root = expected_root_domain.lower().removeprefix("www.")
+
+    return normalized_host == normalized_root or normalized_host.endswith(
+        f".{normalized_root}",
+    )
+
+
+def same_scope(candidate_url: str, start_url: str) -> bool:
+    """Return True when candidate URL stays inside the start URL root domain."""
+
+    candidate = urlparse(candidate_url)
+    start = urlparse(start_url)
+
+    return looks_like_official_host(candidate.netloc, root_domain(start.netloc))
+
+
+def normalize_candidate_url(url: str) -> str:
+    """Normalize candidate URL for discovery ranking and deduplication."""
+
+    parsed = urlparse(url.strip())
+    scheme = parsed.scheme.lower() or "https"
+    netloc = parsed.netloc.lower()
+    path = parsed.path or "/"
+
+    normalized = parsed._replace(
+        scheme=scheme,
+        netloc=netloc,
+        path=path,
+        fragment="",
+    )
+    return normalized.geturl().rstrip("/")
+
+
+def is_non_english_query(query: str) -> bool:
+    """Return True when query explicitly asks for a non-English locale."""
+
+    return query_declares_non_english_region(query)
 
 
 def is_blocked_machine_file(url: str) -> bool:
-    """Return True when a URL points to a blocked machine or media file."""
+    """Return True for machine/media/archive URLs that should not be crawled."""
+
     parsed = urlparse(url)
-    return parsed.path.lower().endswith(DISCOVERY_BLOCKED_FILE_EXTENSIONS)
-
-
-def has_bad_query(url: str) -> bool:
-    """Return True when URL query keys indicate search, redirects, or junk."""
-    parsed = urlparse(url)
-    query_items = parse_qsl(parsed.query, keep_blank_values=False)
-    return any(key.lower().strip() in BAD_QUERY_KEYS for key, _ in query_items)
-
-
-def is_bad_url(url: str) -> str | None:
-    """Return a block reason when a candidate URL should be rejected."""
-    clean = normalize_candidate_url(url)
-    parsed = urlparse(clean)
-    host = parsed.netloc.lower().removeprefix("www.")
     path_lower = parsed.path.lower()
-    normalized_path = f"/{path_lower.strip('/')}/"
-    reason: str | None = None
 
-    if host in LOW_VALUE_HOST_HINTS:
-        reason = f"blocked:low_value_host:{host}"
-    elif is_blocked_machine_file(clean):
-        reason = "blocked:machine_file"
-    else:
-        reason = regional_block_reason(clean)
-
-    if reason is None and has_bad_query(clean):
-        reason = "blocked:bad_query"
-
-    if reason is None:
-        for prefix in BAD_PATH_PREFIXES:
-            if path_lower.startswith(prefix.lower()):
-                reason = f"blocked:path_prefix:{prefix}"
-                break
-
-    if reason is None:
-        for bad in BAD_PATH_CONTAINS:
-            if bad.lower() in normalized_path:
-                reason = f"blocked:path_contains:{bad}"
-                break
-
-    if reason is None:
-        low_value_parts = path_part_set(clean).intersection(LOW_VALUE_PATH_HINTS)
-        if low_value_parts:
-            reason = "blocked:" + ",".join(sorted(low_value_parts))
-
-    return reason
+    return path_lower.endswith(BLOCKED_FILE_EXTENSIONS)
 
 
-def same_scope(seed: str, candidate: str) -> bool:
-    """Return True when candidate is in the same crawl scope as seed."""
-    seed_host = host_of(seed)
-    candidate_host = host_of(candidate)
-    same_host = candidate_host == seed_host
-    subdomain_of_seed = candidate_host.endswith("." + seed_host)
-    same_root = root_domain(seed) == root_domain(candidate)
-    return same_host or subdomain_of_seed or same_root
+def is_bad_url(url: str, *, require_english: bool = True) -> bool:
+    """Return True when a candidate URL should be rejected before scoring."""
+
+    return is_blocked_url_before_network(url, require_english=require_english)
 
 
-def looks_like_official_host(seed: str, candidate: str) -> bool:
-    """Return True when candidate host appears official for the seed."""
-    clean = normalize_candidate_url(candidate)
-    if is_bad_url(clean):
-        return False
-    if same_scope(seed, clean):
-        return True
+def official_host_confidence(url: str, expected_root_domain: str) -> int:
+    """Return a small confidence score for official host matching."""
 
-    seed_root = root_domain(seed).split(".", 1)[0]
-    candidate_host = host_of(clean)
-    candidate_root = root_domain(clean).split(".", 1)[0]
-    host_prefix = candidate_host.split(".", 1)[0]
+    host = urlparse(url).netloc.lower().removeprefix("www.")
+    expected = expected_root_domain.lower().removeprefix("www.")
 
-    if seed_root and seed_root in candidate_host:
-        return True
-    if candidate_root and candidate_root in host_of(seed):
-        return True
-    if host_prefix in OFFICIAL_HOST_PREFIXES:
-        return bool(seed_root and seed_root in candidate_host)
-    return False
+    if host == expected:
+        return 3
+
+    if host.endswith(f".{expected}"):
+        return 2
+
+    if root_domain(host) == root_domain(expected):
+        return 1
+
+    return 0
 
 
-def official_host_confidence(seed: str, candidate: str) -> int:
-    """Score whether a candidate host and path appear official."""
-    clean = normalize_candidate_url(candidate)
-    if is_bad_url(clean):
-        return 0
+@dataclass(frozen=True, slots=True)
+class ScoredUrl:
+    """Legacy discovery URL score result."""
+
+    url: str
+    score: int
+    reason: str
+
+
+def _score_single_url(url: str, *, start_url: str = "", seed: str = "") -> ScoredUrl:
+    """Return deterministic discovery priority score for one URL."""
 
     score = 0
-    if same_scope(seed, clean):
-        score += 60
-    if looks_like_official_host(seed, clean):
-        score += 35
+    reasons: list[str] = []
+    parts = path_parts(url)
+    scope_seed = start_url or seed
 
-    host_prefix = host_of(clean).split(".", 1)[0]
-    if host_prefix in OFFICIAL_HOST_PREFIXES:
-        score += 25
+    if any(part in HIGH_VALUE_PATH_HINTS for part in parts):
+        score += 20
+        reasons.append("high_value_path")
 
-    parts = path_part_set(clean)
-    score += min(60, len(parts.intersection(HIGH_VALUE_PATH_HINTS)) * 12)
-    score += min(35, len(parts.intersection(ROOT_SEED_HINTS)) * 10)
+    if scope_seed and same_scope(url, scope_seed):
+        score += 10
+        reasons.append("same_scope")
 
-    if parts.intersection(LOW_VALUE_PATH_HINTS):
-        score -= 100
+    if not is_bad_url(url):
+        score += 5
+        reasons.append("not_blocked")
 
-    return max(score, 0)
+    depth_penalty = min(len(parts), 10)
+    if depth_penalty:
+        score -= depth_penalty
+        reasons.append("path_depth_penalty")
 
-
-def _add_depth_score(score: int, reasons: set[str], depth: int) -> int:
-    """Apply path-depth score adjustments and reason labels."""
-    adjusted_score = score
-    if depth == 0:
-        adjusted_score += 30
-        reasons.add("root_landing")
-    elif depth <= 2:
-        adjusted_score += 20
-        reasons.add("shallow_root")
-    elif depth <= 3:
-        adjusted_score += 5
-        reasons.add("specific_root")
-    else:
-        adjusted_score -= 80
-        reasons.add("deep_page_penalty")
-    return adjusted_score
+    reason = ",".join(reasons) if reasons else "neutral"
+    return ScoredUrl(url=url, score=score, reason=reason)
 
 
-def score_url(url: str, *, seed: str) -> tuple[str, DiscoveryResult]:
-    """Classify and score a candidate URL for discovery queue review."""
-    clean = normalize_candidate_url(url).rstrip("/") + "/"
-    bad = is_bad_url(clean)
-    if bad:
-        return "blocked", DiscoveryResult(clean, seed, 0, bad)
+def score_url(
+    urls: str | list[str] | tuple[str, ...] | set[str],
+    *,
+    start_url: str = "",
+    seed: str = "",
+) -> list[ScoredUrl]:
+    """Return legacy discovery score results for one or more URLs."""
 
-    score = official_host_confidence(seed, clean)
-    reasons: set[str] = set()
+    candidates = [urls] if isinstance(urls, str) else list(urls)
 
-    if same_scope(seed, clean):
-        reasons.add("same_scope")
-    if looks_like_official_host(seed, clean):
-        reasons.add("official_like_host")
-
-    high_value_parts = path_part_set(clean).intersection(HIGH_VALUE_PATH_HINTS)
-    if high_value_parts:
-        score += len(high_value_parts) * 18
-        reasons.update(high_value_parts)
-
-    score = _add_depth_score(score, reasons, path_depth(clean))
-
-    if not reasons:
-        no_signal = DiscoveryResult(clean, seed, 0, "no_official_knowledge_signal")
-        return "blocked", no_signal
-
-    item = DiscoveryResult(clean, seed, score, ",".join(sorted(reasons)))
-
-    if score >= 95:
-        return "accepted", item
-    if score >= 65:
-        return "review", item
-    return "blocked", DiscoveryResult(clean, seed, score, "weak_official_signal")
-
-
-def should_suppress_candidate_from_review(url: str, reason: str = "") -> bool:
-    """Return True when a blocked candidate should not be shown for review."""
-    clean = normalize_candidate_url(url)
-    reason_lower = reason.lower()
-    if is_blocked_machine_file(clean):
-        return True
-    return any(marker in reason_lower for marker in SUPPRESSED_REVIEW_MARKERS)
+    return sorted(
+        (
+            _score_single_url(
+                url,
+                start_url=start_url,
+                seed=seed,
+            )
+            for url in candidates
+        ),
+        key=lambda item: (-item.score, item.url),
+    )
