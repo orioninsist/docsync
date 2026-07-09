@@ -3,17 +3,9 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-
-@dataclass(frozen=True)
-class DiscoveryResult:
-    """Scored discovery decision for a normalized candidate URL."""
-
-    url: str
-    score: int
-    reason: str
+from crawler.discovery_result import DiscoveryResult
 
 
 TRACKING_QUERY_KEYS = {
@@ -889,7 +881,7 @@ def score_url(url: str, *, seed: str) -> tuple[str, DiscoveryResult]:
     clean = normalize_candidate_url(url).rstrip("/") + "/"
     bad = is_bad_url(clean)
     if bad:
-        return "blocked", DiscoveryResult(clean, 0, bad)
+        return "blocked", DiscoveryResult(clean, seed, 0, bad)
 
     score = official_host_confidence(seed, clean)
     reasons: set[str] = set()
@@ -907,16 +899,16 @@ def score_url(url: str, *, seed: str) -> tuple[str, DiscoveryResult]:
     score = _add_depth_score(score, reasons, path_depth(clean))
 
     if not reasons:
-        no_signal = DiscoveryResult(clean, 0, "no_official_knowledge_signal")
+        no_signal = DiscoveryResult(clean, seed, 0, "no_official_knowledge_signal")
         return "blocked", no_signal
 
-    item = DiscoveryResult(clean, score, ",".join(sorted(reasons)))
+    item = DiscoveryResult(clean, seed, score, ",".join(sorted(reasons)))
 
     if score >= 95:
         return "accepted", item
     if score >= 65:
         return "review", item
-    return "blocked", DiscoveryResult(clean, score, "weak_official_signal")
+    return "blocked", DiscoveryResult(clean, seed, score, "weak_official_signal")
 
 
 def should_suppress_candidate_from_review(url: str, reason: str = "") -> bool:

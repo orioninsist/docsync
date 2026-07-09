@@ -6,7 +6,7 @@ from pathlib import Path
 from shutil import which
 from urllib.parse import urlparse
 
-from crawler.discovery import DiscoveryResult
+from crawler.discovery_result import DiscoveryResult
 
 _ALLOWED_EDITORS = frozenset(
     {

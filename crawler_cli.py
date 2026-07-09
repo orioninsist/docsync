@@ -10,7 +10,8 @@ from urllib.parse import parse_qsl, urlparse
 
 from crawler.config import CrawlerConfig
 from crawler.crawler_engine import CrawlerEngine
-from crawler.discovery import DiscoveryResult, discover
+from crawler.discovery import discover
+from crawler.discovery_result import DiscoveryResult
 from crawler.queue_file import print_review, read_urls_from_txt, write_seed_txt
 from crawler.runtime_paths import build_runtime_paths
 from crawler.source_manifest import SourceManifest

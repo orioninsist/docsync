@@ -164,7 +164,14 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
 
     def add_blocked(self, url: str, reason: str) -> None:
         """Record a blocked URL in the result list."""
-        self.blocked_results.append(DiscoveryResult(url.rstrip("/") + "/", 0, reason))
+        self.blocked_results.append(
+            DiscoveryResult(
+                url=url.rstrip("/") + "/",
+                source="engine_blocked",
+                score=0,
+                reason=reason,
+            )
+        )
 
     def mark_status(self, url: str, status: str, reason: str) -> None:
         """Update persisted status for a discovered URL."""
@@ -190,7 +197,12 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
         if clean is None:
             if raw_url:
                 self.blocked_results.append(
-                    DiscoveryResult(str(raw_url).strip(), 0, "invalid_or_unsafe_url")
+                    DiscoveryResult(
+                        url=str(raw_url).strip(),
+                        source="engine_blocked",
+                        score=0,
+                        reason="invalid_or_unsafe_url",
+                    )
                 )
             return
 

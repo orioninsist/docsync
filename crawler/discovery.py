@@ -11,7 +11,6 @@ import re
 import time
 import xml.etree.ElementTree as ET  # nosec B405
 from html import unescape
-from pathlib import Path
 from typing import Any, cast
 from urllib.parse import ParseResult, parse_qsl, urljoin, urlparse
 
@@ -20,6 +19,8 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from crawler.discovery_bfs import run_recursive_bfs_discovery
+from crawler.discovery_result import DiscoveryResult
+from crawler.discovery_report import write_discovery_coverage_report
 from crawler.discovery_state import (
     discovery_db_key,
     discovery_mark_seen,
@@ -40,7 +41,6 @@ from crawler.discovery_url_rules import (
     LOW_VALUE_PATH_HINTS,
     OFFICIAL_HOST_PREFIXES,
     ROOT_SEED_HINTS,
-    DiscoveryResult,
     canonical_input,
     host_of,
     is_bad_url,
@@ -856,79 +856,17 @@ async def _probe_redirect_final_roots(
     return roots
 
 
-def _report_header(seed: str, elapsed: float) -> list[str]:
-    return [
-        "# Discovery Coverage Report",
-        "",
-        f"Seed: `{normalize_site(seed)}`",
-        f"Elapsed seconds: `{elapsed:.1f}`",
-        "",
-    ]
-
-
-def _report_summary(
-    *,
-    accepted: list[DiscoveryResult],
-    review: list[DiscoveryResult],
-    blocked: list[DiscoveryResult],
-    raw_candidates: list[str],
-    raw_blocked: list[DiscoveryResult],
-) -> list[str]:
-    return [
-        "## Summary",
-        "",
-        f"- Raw candidates discovered: `{len(raw_candidates)}`",
-        f"- Accepted roots: `{len(accepted)}`",
-        f"- Review roots: `{len(review)}`",
-        f"- Blocked candidates: `{len(blocked)}`",
-        f"- Raw blocked candidates: `{len(raw_blocked)}`",
-        "",
-    ]
-
-
-def _report_items(title: str, items: list[DiscoveryResult]) -> list[str]:
-    lines = [f"## {title}", ""]
-
-    for item in items:
-        lines.append(f"- `{item.url}` score={item.score} reason={item.reason}")
-
-    return lines + [""]
-
-
-def write_discovery_coverage_report(
-    *,
-    seed: str,
-    accepted: list[DiscoveryResult],
-    review: list[DiscoveryResult],
-    blocked: list[DiscoveryResult],
-    raw_candidates: list[str],
-    raw_blocked: list[DiscoveryResult],
-    elapsed: float,
-) -> None:
-    report_dir = Path("state/global")
-    report_dir.mkdir(parents=True, exist_ok=True)
-    report_path = report_dir / f"discovery_coverage_{discovery_db_key(seed)}.md"
-
-    lines = _report_header(seed, elapsed)
-    lines.extend(
-        _report_summary(
-            accepted=accepted,
-            review=review,
-            blocked=blocked,
-            raw_candidates=raw_candidates,
-            raw_blocked=raw_blocked,
-        )
-    )
-    lines.extend(_report_items("Accepted", accepted))
-    lines.extend(_report_items("Review", review))
-    lines.extend(_report_items("Blocked examples", blocked[:300]))
-
-    report_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    log(f"       coverage report written: {report_path}")
-
-
 def _discovery_headers() -> dict[str, str]:
     return {"User-Agent": "DocsMarkdownCrawler/1.0 clean discovery"}
+
+
+def _to_discovery_result(item: Any, *, fallback_source: str) -> DiscoveryResult:
+    return DiscoveryResult(
+        url=str(item.url),
+        source=str(getattr(item, "source", fallback_source)),
+        score=int(item.score),
+        reason=str(item.reason),
+    )
 
 
 def _classify_candidate(
@@ -942,17 +880,22 @@ def _classify_candidate(
     final_url, block_reason = final_txt_candidate(base_url, raw_url)
 
     if block_reason or not final_url:
-        blocked_map[raw_url] = DiscoveryResult(raw_url, 0, block_reason or "blocked")
+        blocked_map[raw_url] = DiscoveryResult(
+            raw_url,
+            "final_txt_candidate",
+            0,
+            block_reason or "blocked",
+        )
         return
 
     bucket, item = score_url(final_url, seed=base_url)
 
     if bucket == "accepted":
-        accepted_map[item.url] = item
+        accepted_map[item.url] = _to_discovery_result(item, fallback_source="score_url")
     elif bucket == "review":
-        review_map[item.url] = item
+        review_map[item.url] = _to_discovery_result(item, fallback_source="score_url")
     elif not should_suppress_candidate_from_review(item.url, item.reason):
-        blocked_map[item.url] = item
+        blocked_map[item.url] = _to_discovery_result(item, fallback_source="score_url")
 
 
 def _sorted_results(

@@ -1,10 +1,12 @@
+"""Backward-compatible discovery type exports.
+
+This module is intentionally kept as a thin compatibility shim while older
+call sites are migrated to crawler.discovery_result. The canonical
+DiscoveryResult implementation lives in crawler.discovery_result.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
+from crawler.discovery_result import DiscoveryResult
 
-
-@dataclass(frozen=True)
-class DiscoveryResult:
-    url: str
-    score: int
-    reason: str
+__all__ = ["DiscoveryResult"]

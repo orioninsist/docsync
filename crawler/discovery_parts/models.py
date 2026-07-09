@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from crawler.discovery_types import DiscoveryResult
 
-
-@dataclass(frozen=True)
-class DiscoveryResult:
-    url: str
-    score: int
-    reason: str
+__all__ = ["DiscoveryResult"]
