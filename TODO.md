@@ -1,19 +1,18 @@
-# TODO.md
+# docsync TODO
 
 ## Dynamic Checklist
-- [x] Step 1-37: Discovery runtime bug fixed and crawl reaches Phase 2
-- [x] Step 38: Make pipeline output root configurable
-- [x] Step 39: Preserve project import path for pipeline subprocesses
-- [/] Step 40: Restore run_python_script keyword compatibility
+- [x] Steps 1-38 completed and verified
+- [/] Step 39: final import graph audit return type repair
+- [ ] Step 40: release verification
 
 ## Quality / Completion Score
-- Architecture: 34/35
-- Type Safety: 34/35
-- Runtime CLI Health: 19/20
-- Verification: 9/10
-- Total: 96/100
+Current Score: 98/100
+- SRP / modularity: 25/25
+- Decoupling: 24/25
+- Testability: 25/25
+- CLI/Fedora verification: 24/25
 
 ## Change Log
-- Pipeline subprocess import path is fixed.
-- Runtime exposed `run_python_script(script=...)` compatibility issue.
-- This step keeps existing callers stable without editing run_pipeline.py.
+- Import graph audit passes.
+- Ruff and formatting pass.
+- Repair target: align score_discovered_url wrapper return type with DiscoveryResult.

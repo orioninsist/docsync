@@ -80,7 +80,7 @@ def run_script(script_name: str, project_dir: Path) -> int:
         print(f"[ERROR] Missing pipeline script: {script}")
         return 1
 
-    return run_python_script(script=script, args=(project_dir,))
+    return run_python_script(script=script, args=(str(project_dir),))
 
 
 def validate_readonly(project_dir: Path) -> bool:
@@ -114,7 +114,7 @@ def main() -> int:
     print(f"[1/6] Unlocked markdown files: {unlocked}")
 
     removed_legacy = cleanup_legacy_merged_artifacts(project_dir)
-    print(f"[2/6] Removed legacy merged artifacts: {removed_legacy}")
+    print(f"[2/6] Removed legacy artifacts: {removed_legacy}")
 
     flatten_result = run_script("flatten_docs.py", project_dir)
     if flatten_result != 0:

@@ -70,7 +70,7 @@ def run_project(project_dir: Path) -> int:
 
     return run_python_script(
         script=DOCS_PIPELINE_RUNNER,
-        args=(project_dir,),
+        args=(str(project_dir),),
         cwd=PROJECT_ROOT,
     )
 

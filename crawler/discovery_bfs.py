@@ -82,7 +82,9 @@ def _add_blocked(context: RecursiveBFSContext, raw_url: str, reason: str) -> Non
     """Record a blocked discovery candidate."""
     if raw_url:
         context.blocked.append(
-            context.hooks.discovery_result_type(str(raw_url).strip(), "recursive_bfs_blocked", 0, reason)
+            context.hooks.discovery_result_type(
+                str(raw_url).strip(), "recursive_bfs_blocked", 0, reason
+            )
         )
 
 
