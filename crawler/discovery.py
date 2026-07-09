@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import parse_qsl, urlparse
 
 from crawler.discovery_types import DiscoveryResult
 from crawler.discovery_url_rules import (
@@ -25,6 +26,27 @@ from crawler.discovery_url_rules import (
     same_scope,
     score_url,
 )
+
+
+_REDIRECT_TARGET_PARAMS = {
+    "url",
+    "u",
+    "uri",
+    "target",
+    "redirect",
+    "redirect_url",
+    "redirect_uri",
+    "return",
+    "return_to",
+    "return_url",
+    "next",
+    "next_url",
+    "continue",
+    "continue_url",
+    "dest",
+    "destination",
+    "to",
+}
 
 
 _COMPAT_EXPORTS: dict[str, tuple[str, str]] = {
@@ -72,6 +94,78 @@ def _lazy_callable(name: str) -> Callable[..., Any]:
 
 _promote_discovery_root = _lazy_callable("_promote_discovery_root")
 write_discovery_coverage_report = _lazy_callable("write_discovery_coverage_report")
+
+
+def canonical_input(raw_url: str) -> str:
+    """Return a stable canonical URL string for legacy discovery callers."""
+    normalized = normalize_candidate_url(raw_url)
+    return normalized or raw_url.strip()
+
+
+def _redirect_param_targets(raw_url: str) -> list[str]:
+    """Extract redirect target URLs from common redirect query parameters."""
+    parsed = urlparse(raw_url)
+    targets: list[str] = []
+
+    for key, value in parse_qsl(parsed.query, keep_blank_values=False):
+        if key.lower() not in _REDIRECT_TARGET_PARAMS:
+            continue
+
+        normalized = normalize_candidate_url(value)
+        if normalized is not None:
+            targets.append(normalized)
+
+    return sorted(set(targets))
+
+
+async def _probe_final_working_root(
+    session: Any,
+    *,
+    seed_url: str,
+    raw_url: str,
+) -> str | None:
+    """Probe a URL and return a promoted discovery root when reachable."""
+    del seed_url
+
+    normalized = normalize_candidate_url(raw_url)
+    if normalized is None:
+        return None
+
+    try:
+        async with session.get(normalized, allow_redirects=True) as response:
+            if response.status >= 400:
+                return None
+
+            final_url = str(response.url)
+    except Exception:
+        return None
+
+    promoted = _promote_discovery_root(final_url)
+    return promoted if isinstance(promoted, str) else None
+
+
+async def _probe_redirect_final_roots(
+    session: Any,
+    *,
+    seed_url: str,
+    raw_urls: list[str],
+) -> list[str]:
+    """Probe redirect target candidates and return unique final roots."""
+    roots: list[str] = []
+
+    for raw_url in raw_urls:
+        candidate_urls = _redirect_param_targets(raw_url) or [raw_url]
+
+        for candidate_url in candidate_urls:
+            root = await _probe_final_working_root(
+                session,
+                seed_url=seed_url,
+                raw_url=candidate_url,
+            )
+            if root is not None:
+                roots.append(root)
+
+    return sorted(set(roots))
 
 
 async def fetch_text(session: Any, url: str) -> str | None:
@@ -173,7 +267,11 @@ __all__ = [
     "DiscoveryResult",
     "discover",
     "HIGH_VALUE_PATH_HINTS",
+    "_probe_final_working_root",
+    "_probe_redirect_final_roots",
     "_promote_discovery_root",
+    "_redirect_param_targets",
+    "canonical_input",
     "certificate_transparency_subdomain_candidates",
     "extract_real_urls_from_html",
     "fetch_text",

@@ -7,6 +7,17 @@ content parsing, deduplication, and persistence to specialized collaborators.
 # pylint: disable=too-many-lines
 from __future__ import annotations
 
+from crawler.crawler_engine_url_rules import is_hard_blacklisted_url
+from crawler.crawler_engine_preliminary_summary import (
+    PreliminarySummaryConfig,
+    PreliminarySummaryCounts,
+    print_preliminary_summary,
+)
+from crawler.crawler_engine_run_summary import (
+    RunSummaryPaths,
+    build_run_summary_queue_counts,
+    print_final_run_summary,
+)
 import asyncio
 import logging
 import math
@@ -217,29 +228,24 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
 
             queue_counts = self.database.queue_status_counts()
 
-            print()
-            print("Preliminary Summary")
-            print("-------------------")
-            print(f"Sitemap pages found: {len(sitemap_urls)}")
-            print(f"Seed pages queued: {len(seed_urls)}")
-            print(f"Total queued URLs: {self.database.queued_count()}")
-            print(f"Queue pending: {queue_counts.get('pending', 0)}")
-            print(f"Queue done: {queue_counts.get('done', 0)}")
-            print(f"Queue error: {queue_counts.get('error', 0)}")
-            print(f"Interrupted items restored to pending: {interrupted_count}")
-            print(
-                f"Missing Markdown outputs restored to pending: {repaired_missing_outputs}"
+            sitemap_pages_found = len(sitemap_urls)
+            seed_pages_queued = len(seed_urls)
+            total_queued_urls = sum(queue_counts.values())
+            print_preliminary_summary(
+                counts=PreliminarySummaryCounts(
+                    sitemap_pages_found=sitemap_pages_found,
+                    seed_pages_queued=seed_pages_queued,
+                    total_queued_urls=total_queued_urls,
+                    queue_status_counts=queue_counts,
+                    interrupted_items_restored=interrupted_count,
+                    missing_markdown_outputs_restored=repaired_missing_outputs,
+                ),
+                config=PreliminarySummaryConfig(
+                    recursive_discovery=self.config.recursive_discovery,
+                    max_pages=self.config.max_pages,
+                    auto_continue_until_complete=self.config.auto_continue_until_complete,
+                ),
             )
-
-            pending_count = queue_counts.get("pending", 0)
-            estimated_batches = math.ceil(pending_count / max(self.config.max_pages, 1))
-
-            print(f"Recursive discovery: {self.config.recursive_discovery}")
-            print(f"Max pages per batch: {self.config.max_pages}")
-            print(
-                f"Auto continue until complete: {self.config.auto_continue_until_complete}"
-            )
-            print(f"Estimated batches needed now: {estimated_batches}")
             print(
                 f"Max auto batches: {self._format_unlimited(self.config.max_auto_batches)}"
             )
@@ -774,7 +780,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             url_hash
         )
 
-        if self._is_hard_blacklisted_url(url):
+        if is_hard_blacklisted_url(url):
             self.logger.info(
                 "Skipped by hard blacklist before fetch: url=%s",
                 url,
@@ -1277,60 +1283,21 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         print()
 
     def _print_final_run_summary(self, dashboard: RichDashboard) -> None:
-        queue_counts = self.database.queue_status_counts()
-        pending = queue_counts.get("pending", 0)
-        done = queue_counts.get("done", 0)
-        processing = queue_counts.get("processing", 0)
-        errors = queue_counts.get("error", 0)
-        queued = self.database.queued_count()
+        queue_counts = build_run_summary_queue_counts(
+            raw_queue_counts=self.database.queue_status_counts(),
+            queued=self.database.queued_count(),
+        )
+        paths = RunSummaryPaths(
+            output_dir=self.config.output_dir,
+            db_path=self.config.db_path,
+            log_file=self.config.logs_dir / "crawler.log",
+        )
 
-        print()
-        print("Run Summary")
-        print("-----------")
-        print(f"This command processed: {dashboard.processed}")
-        print(f"This command downloaded/updated/restored: {dashboard.downloaded}")
-        print(f"This command skipped: {dashboard.skipped}")
-        print(f"This command duplicates: {dashboard.duplicates}")
-        print(f"This command errors: {dashboard.errors}")
-        print(f"Database queued total: {queued}")
-        print(f"Database queue done: {done}")
-        print(f"Database queue pending: {pending}")
-        print(f"Database queue processing: {processing}")
-        print(f"Database queue error: {errors}")
-        print(f"Output directory: {self.config.output_dir}")
-        print(f"Database file: {self.config.db_path}")
-        print(f"Log file: {self.config.logs_dir / 'crawler.log'}")
-
-        if pending > 0:
-            remaining_runs = math.ceil(pending / max(self.config.max_pages, 1))
-
-            print()
-            print("STATUS: INCOMPLETE - QUEUE STILL HAS PENDING URLS")
-            print(f"Approximate additional batch count: {remaining_runs}")
-            print(
-                "If auto_continue_until_complete is true and this message still appears, "
-                "the stop reason is usually max_auto_batches, max_queue_size, a crash, "
-                "or no processable pending item. Re-running the same Podman/just command "
-                "continues from the database without duplicating existing Markdown."
-            )
-            return
-
-        if errors > 0:
-            print()
-            print("STATUS: FINISHED WITH ERRORS")
-            print(
-                "No pending URL remains, but some URLs failed. Check the crawler.log "
-                "file for details. Re-running will not duplicate existing Markdown."
-            )
-            return
-
-        print()
-        print("STATUS: COMPLETE")
-        print(
-            "No pending URL remains. The current crawl queue is complete. "
-            "Weekly or later re-runs will only update changed pages, restore missing "
-            "Markdown files, and skip duplicates by URL, final URL, canonical URL, "
-            "redirect target, and content hash."
+        print_final_run_summary(
+            dashboard=dashboard,
+            queue_counts=queue_counts,
+            paths=paths,
+            max_pages=self.config.max_pages,
         )
 
     def _start_url(
@@ -1384,90 +1351,6 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 queued=queued,
             )
         )
-
-    def _is_hard_blacklisted_url(self, url: str) -> bool:
-        parsed = urlparse(url)
-        host = parsed.netloc.lower().removeprefix("www.")
-        path = parsed.path.lower()
-
-        blocked_host_tokens = (
-            "forum",
-            "forums",
-            "community",
-            "communities",
-            "discuss",
-            "discussion",
-            "discussions",
-            "answers",
-            "qna",
-            "qa",
-        )
-
-        blocked_path_tokens = (
-            "/forum",
-            "/forums",
-            "/community",
-            "/communities",
-            "/discuss",
-            "/discussion",
-            "/discussions",
-            "/comments",
-            "/comment",
-            "/replies",
-            "/reply",
-            "/thread",
-            "/threads",
-            "/questions",
-            "/question",
-            "/answers",
-            "/answer",
-            "/users",
-            "/user",
-            "/u/",
-            "/profile",
-            "/profiles",
-            "/search",
-            "/login",
-            "/signin",
-            "/sign-in",
-            "/auth",
-            "/logs",
-            "/client",
-            "/cart",
-            "/checkout",
-            "/_edit",
-            "/_history",
-            "/_compare",
-            "/_new",
-            "/_pages",
-            "/_preview",
-            "/_rollback",
-            "/edit",
-            "/raw",
-            "/blame",
-            "/commits",
-            "/commit",
-            "/pull",
-            "/pulls",
-            "/issues",
-            "/actions",
-            "/security",
-            "/settings",
-            "/graphs",
-            "/network",
-            "/pulse",
-            "/stargazers",
-            "/watchers",
-            "/forks",
-        )
-
-        if any(token in host.split(".") for token in blocked_host_tokens):
-            return True
-
-        if any(token in path for token in blocked_path_tokens):
-            return True
-
-        return False
 
     async def _discover_and_enqueue_links(
         self,
@@ -1526,7 +1409,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 )
                 continue
 
-            if self._is_hard_blacklisted_url(link):
+            if is_hard_blacklisted_url(link):
                 self.observability.record_official_rejected(
                     url=link,
                     reason="hard_blacklist_before_enqueue",
@@ -1678,7 +1561,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 )
                 continue
 
-            if self._is_hard_blacklisted_url(clean):
+            if is_hard_blacklisted_url(clean):
                 self.observability.record_official_rejected(
                     url=clean,
                     reason="hard_blacklist_before_official_graph",
