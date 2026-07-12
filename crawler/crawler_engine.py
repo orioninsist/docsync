@@ -1,5 +1,6 @@
 """Crawler orchestration engine for fetching, parsing, deduplicating, and writing pages.
 
+from typing import Any
 This module coordinates crawl lifecycle operations while delegating network access,
 content parsing, deduplication, and persistence to specialized collaborators.
 """
@@ -7,7 +8,7 @@ content parsing, deduplication, and persistence to specialized collaborators.
 # pylint: disable=too-many-lines
 from __future__ import annotations
 
-from crawler.crawler_engine_url_rules import is_hard_blacklisted_url
+from crawler.url_processor import UrlProcessor
 from crawler.crawler_engine_preliminary_summary import (
     PreliminarySummaryConfig,
     PreliminarySummaryCounts,
@@ -23,12 +24,12 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
 from rich.live import Live
 
 from crawler.config import CrawlerConfig
+from crawler.crawler_discovery import CrawlerDiscoveryService
 from crawler.crawler_context import CrawlerRuntimeContext
 from crawler.database import DatabaseManager
 from crawler.dedup import DeduplicationEngine
@@ -45,7 +46,6 @@ from crawler.policy_engine import PolicyDecision, SmartScopePolicy
 from crawler.progress import RichDashboard
 from crawler.robots import RobotsManager
 from crawler.shared.url_normalizer import (
-    normalize_joined_url,
     normalize_optional_url,
     normalize_url,
 )
@@ -126,6 +126,20 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             config=self.config,
         )
         self.page_quality = PageQualityAnalyzer()
+        self.discovery = CrawlerDiscoveryService(
+            config=self.config,
+            database=self.database,
+            robots=self.robots,
+            dedup=self.dedup,
+            intent_analyzer=self.intent_analyzer,
+            policy=self.policy,
+            official_graph=self.official_graph,
+            observability=self.observability,
+            global_url_registry=self.global_url_registry,
+            owner_project=self.owner_project,
+            logger=self.logger,
+        )
+        self.url_processor = UrlProcessor(self)
 
     def _owner_project_name(self) -> str:
         output_root = Path("output")
@@ -167,108 +181,16 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         try:
             self.logger.info("Crawler started: %s", self.config.start_url)
 
-            interrupted_count = self.database.reset_interrupted_processing()
-
-            repaired_missing_outputs = self._repair_missing_markdown_outputs()
-
-            await self.robots.load()
-            self._apply_robots_delay()
-
-            sitemap = SitemapManager(self.config, self.robots)
-
-            sitemap_urls = []
-
-            if self.config.use_sitemap_discovery:
-                self.logger.info(
-                    "Starting sitemap discovery with timeout=%ss",
-                    self.config.sitemap_discovery_timeout_seconds,
-                )
-                print(
-                    (
-                        "Sitemap discovery started. Timeout: "
-                        f"{self.config.sitemap_discovery_timeout_seconds}s"
-                    ),
-                    flush=True,
-                )
-
-                try:
-                    sitemap_urls = await asyncio.wait_for(
-                        sitemap.discover_urls(),
-                        timeout=self.config.sitemap_discovery_timeout_seconds,
-                    )
-                    self.logger.info(
-                        "Sitemap discovery finished. URLs=%s",
-                        len(sitemap_urls),
-                    )
-                    print(
-                        f"Sitemap discovery finished. URLs found: {len(sitemap_urls)}",
-                        flush=True,
-                    )
-
-                except asyncio.TimeoutError:
-                    self.logger.warning(
-                        "Sitemap discovery timed out after %ss. Falling back to exact start URL.",
-                        self.config.sitemap_discovery_timeout_seconds,
-                    )
-                    print(
-                        "Sitemap discovery timed out. Falling back to exact start URL.",
-                        flush=True,
-                    )
-
-            seed_urls = list(sitemap_urls)
-
-            start_url = sitemap.normalize_url(self.config.start_url)
-            if start_url not in seed_urls:
-                seed_urls.insert(0, start_url)
-
-            seed_urls = [url for url in seed_urls if self.robots.can_fetch(url)]
-
-            seed_urls = self._limit_seed_urls(seed_urls)
-            self._enqueue_seed_urls(seed_urls)
-
-            queue_counts = self.database.queue_status_counts()
-
-            sitemap_pages_found = len(sitemap_urls)
-            seed_pages_queued = len(seed_urls)
-            total_queued_urls = sum(queue_counts.values())
-            print_preliminary_summary(
-                counts=PreliminarySummaryCounts(
-                    sitemap_pages_found=sitemap_pages_found,
-                    seed_pages_queued=seed_pages_queued,
-                    total_queued_urls=total_queued_urls,
-                    queue_status_counts=queue_counts,
-                    interrupted_items_restored=interrupted_count,
-                    missing_markdown_outputs_restored=repaired_missing_outputs,
-                ),
-                config=PreliminarySummaryConfig(
-                    recursive_discovery=self.config.recursive_discovery,
-                    max_pages=self.config.max_pages,
-                    auto_continue_until_complete=self.config.auto_continue_until_complete,
-                ),
-            )
-            print(
-                f"Max auto batches: {self._format_unlimited(self.config.max_auto_batches)}"
-            )
-            print(f"Pause between batches: {self.config.batch_pause_seconds}s")
-            print(f"Max queue size: {self.config.max_queue_size}")
-            print(f"Max depth: {self.config.max_depth}")
-            print(f"Allowed path: {self.config.allowed_path_prefix}")
-            print(f"Rate limit: {self.config.min_delay}s - {self.config.max_delay}s")
-            print(f"Robots crawl-delay: {self.robots.crawl_delay}")
-            print(f"Proceeding in {self.config.proceed_delay_seconds} seconds...")
-            print()
+            runtime = await self._prepare_run_runtime()
+            self._print_preliminary_run_summary(runtime)
 
             await asyncio.sleep(self.config.proceed_delay_seconds)
-
             self._print_terminal_banner()
 
-            if self.config.recursive_discovery:
-                dashboard = await self._run_database_queue_until_complete(sitemap)
-            else:
-                dashboard = await self._run_static(seed_urls, sitemap)
-
-            self._print_final_run_summary(dashboard)
-            self._write_observability_report()
+            dashboard = await self._execute_crawl(
+                runtime["sitemap"], runtime["seed_urls"]
+            )
+            self._finalize_successful_run(dashboard)
 
             self.logger.info("Crawler finished: %s", self.config.start_url)
 
@@ -284,6 +206,125 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self.official_graph.close()
             self.global_url_registry.close()
             self.database.close()
+
+    async def _prepare_run_runtime(self):
+        interrupted_count = self.database.reset_interrupted_processing()
+        repaired_missing_outputs = self._repair_missing_markdown_outputs()
+
+        await self.robots.load()
+        self._apply_robots_delay()
+
+        sitemap = SitemapManager(self.config, self.robots)
+        sitemap_urls = await self._discover_sitemap_urls(sitemap)
+        seed_urls = self._prepare_seed_urls(sitemap, sitemap_urls)
+
+        return {
+            "interrupted_count": interrupted_count,
+            "repaired_missing_outputs": repaired_missing_outputs,
+            "sitemap": sitemap,
+            "sitemap_urls": sitemap_urls,
+            "seed_urls": seed_urls,
+        }
+
+    async def _discover_sitemap_urls(self, sitemap):
+        sitemap_urls = []
+
+        if not self.config.use_sitemap_discovery:
+            return sitemap_urls
+
+        self.logger.info(
+            "Starting sitemap discovery with timeout=%ss",
+            self.config.sitemap_discovery_timeout_seconds,
+        )
+        print(
+            (
+                "Sitemap discovery started. Timeout: "
+                f"{self.config.sitemap_discovery_timeout_seconds}s"
+            ),
+            flush=True,
+        )
+
+        try:
+            sitemap_urls = await asyncio.wait_for(
+                sitemap.discover_urls(),
+                timeout=self.config.sitemap_discovery_timeout_seconds,
+            )
+            self.logger.info(
+                "Sitemap discovery finished. URLs=%s",
+                len(sitemap_urls),
+            )
+            print(
+                f"Sitemap discovery finished. URLs found: {len(sitemap_urls)}",
+                flush=True,
+            )
+
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                "Sitemap discovery timed out after %ss. Falling back to exact start URL.",
+                self.config.sitemap_discovery_timeout_seconds,
+            )
+            print(
+                "Sitemap discovery timed out. Falling back to exact start URL.",
+                flush=True,
+            )
+
+        return sitemap_urls
+
+    def _prepare_seed_urls(self, sitemap, sitemap_urls):
+        seed_urls = list(sitemap_urls)
+
+        start_url = sitemap.normalize_url(self.config.start_url)
+        if start_url not in seed_urls:
+            seed_urls.insert(0, start_url)
+
+        seed_urls = [url for url in seed_urls if self.robots.can_fetch(url)]
+        seed_urls = self._limit_seed_urls(seed_urls)
+        self._enqueue_seed_urls(seed_urls)
+
+        return seed_urls
+
+    def _print_preliminary_run_summary(self, runtime) -> None:
+        queue_counts = self.database.queue_status_counts()
+
+        sitemap_pages_found = len(runtime["sitemap_urls"])
+        seed_pages_queued = len(runtime["seed_urls"])
+        total_queued_urls = sum(queue_counts.values())
+        print_preliminary_summary(
+            counts=PreliminarySummaryCounts(
+                sitemap_pages_found=sitemap_pages_found,
+                seed_pages_queued=seed_pages_queued,
+                total_queued_urls=total_queued_urls,
+                queue_status_counts=queue_counts,
+                interrupted_items_restored=runtime["interrupted_count"],
+                missing_markdown_outputs_restored=runtime["repaired_missing_outputs"],
+            ),
+            config=PreliminarySummaryConfig(
+                recursive_discovery=self.config.recursive_discovery,
+                max_pages=self.config.max_pages,
+                auto_continue_until_complete=self.config.auto_continue_until_complete,
+            ),
+        )
+        print(
+            f"Max auto batches: {self._format_unlimited(self.config.max_auto_batches)}"
+        )
+        print(f"Pause between batches: {self.config.batch_pause_seconds}s")
+        print(f"Max queue size: {self.config.max_queue_size}")
+        print(f"Max depth: {self.config.max_depth}")
+        print(f"Allowed path: {self.config.allowed_path_prefix}")
+        print(f"Rate limit: {self.config.min_delay}s - {self.config.max_delay}s")
+        print(f"Robots crawl-delay: {self.robots.crawl_delay}")
+        print(f"Proceeding in {self.config.proceed_delay_seconds} seconds...")
+        print()
+
+    async def _execute_crawl(self, sitemap, seed_urls):
+        if self.config.recursive_discovery:
+            return await self._run_database_queue_until_complete(sitemap)
+
+        return await self._run_static(seed_urls, sitemap)
+
+    def _finalize_successful_run(self, dashboard) -> None:
+        self._print_final_run_summary(dashboard)
+        self._write_observability_report()
 
     def _repair_missing_markdown_outputs(self) -> int:
         existing_hashes: set[str] = set()
@@ -369,20 +410,6 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 return normalize_optional_url(url)
 
             return normalize_url(url)
-        except ValueError:
-            return None
-
-    def _normalize_joined_english_candidate_url(
-        self,
-        *,
-        base_url: str,
-        candidate_url: str,
-    ) -> str | None:
-        try:
-            if self.config.require_english:
-                return normalize_joined_url(base_url, candidate_url)
-
-            return normalize_url(urljoin(base_url, candidate_url))
         except ValueError:
             return None
 
@@ -753,7 +780,471 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             url=url,
         )
 
+    async def _fetch_page(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        cache_headers: dict[str, str],
+        dashboard: RichDashboard,
+        live: Live,
+    ):
+        result = await self.fetcher.fetch(
+            url,
+            cache_headers=cache_headers,
+        )
+
+        final_url_hash = self.dedup.final_url_hash(result.final_url)
+        redirect_target_hash = self.dedup.redirect_target_hash(
+            original_url=url,
+            final_url=result.final_url,
+        )
+
+        if not result.not_modified:
+            return result, final_url_hash, redirect_target_hash
+
+        if not self.writer.exists(url=result.final_url):
+            self.logger.info(
+                (
+                    "HTTP 304 received but local Markdown is missing, "
+                    "refetching without cache headers: %s"
+                ),
+                url,
+            )
+
+            result = await self.fetcher.fetch(
+                url,
+                cache_headers={},
+            )
+
+            final_url_hash = self.dedup.final_url_hash(result.final_url)
+            redirect_target_hash = self.dedup.redirect_target_hash(
+                original_url=url,
+                final_url=result.final_url,
+            )
+
+            if not result.html:
+                fallback_status = self._status_for_empty_fetch(result.status_code)
+                safe_redirect_target_hash = (
+                    "" if redirect_target_hash is None else redirect_target_hash
+                )
+                safe_status_code = (
+                    0 if result.status_code is None else result.status_code
+                )
+
+                self._finish_empty_refetch_after_not_modified(
+                    status_update=EmptyRefetchStatusUpdate(
+                        url=url,
+                        url_hash=url_hash,
+                        final_url=result.final_url,
+                        final_url_hash=final_url_hash,
+                        redirect_target_hash=safe_redirect_target_hash,
+                        status_code=safe_status_code,
+                        fallback_status=fallback_status,
+                        etag=result.etag,
+                        last_modified=result.last_modified,
+                    ),
+                    dashboard=dashboard,
+                    live=live,
+                )
+                return None
+
+            return result, final_url_hash, redirect_target_hash
+
+        self.database.mark_status(
+            url=url,
+            url_hash=url_hash,
+            status="skipped",
+            final_url=result.final_url,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            etag=result.etag,
+            last_modified=result.last_modified,
+        )
+
+        self._finish_queue_item(
+            url_hash=url_hash,
+            queue_status="done",
+            dashboard=dashboard,
+            live=live,
+            dashboard_status="skipped",
+            url=url,
+        )
+        return None
+
     # pylint: disable=too-many-arguments,too-many-locals,too-many-return-statements,too-many-branches,too-many-statements
+    def _validate_fetch_response(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        result,
+        final_url_hash: str,
+        redirect_target_hash: str | None,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> bool:
+        transport_quality_status = self._detect_transport_quality_issue(
+            result.status_code
+        )
+
+        if not result.html:
+            status = transport_quality_status or "error"
+
+            self.logger.warning(
+                "Fetch returned no HTML: url=%s final_url=%s status=%s mapped_status=%s",
+                url,
+                result.final_url,
+                result.status_code,
+                status,
+            )
+
+            self.database.mark_status(
+                url=url,
+                url_hash=url_hash,
+                status=status,
+                final_url=result.final_url,
+                final_url_hash=final_url_hash,
+                redirect_target_hash=redirect_target_hash,
+                etag=result.etag,
+                last_modified=result.last_modified,
+            )
+
+            self.database.mark_queue_status(
+                url_hash,
+                "done" if status != "error" else "error",
+            )
+            self._finish_url(
+                dashboard,
+                live,
+                "skipped" if status != "error" else "error",
+                url,
+            )
+            return True
+
+        html_quality_status = self._detect_html_quality_issue(
+            html=result.html,
+            status_code=result.status_code,
+        )
+
+        if html_quality_status is not None:
+            self.logger.warning(
+                (
+                    "Skipped low quality, protected, or login page before parsing: "
+                    "url=%s final_url=%s http_status=%s reason=%s"
+                ),
+                url,
+                result.final_url,
+                result.status_code,
+                html_quality_status,
+            )
+
+            self._finish_skipped_page_status(
+                status_update=SkippedPageStatusUpdate(
+                    url=url,
+                    url_hash=url_hash,
+                    status=html_quality_status,
+                    final_url=result.final_url,
+                    final_url_hash=final_url_hash,
+                    redirect_target_hash=redirect_target_hash,
+                    etag=result.etag,
+                    last_modified=result.last_modified,
+                ),
+                dashboard=dashboard,
+                live=live,
+            )
+            return True
+
+        return False
+
+    def _parse_validated_content(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        result,
+        final_url_hash: str,
+        redirect_target_hash: str | None,
+        dashboard: RichDashboard,
+        live: Live,
+    ):
+        if self.config.require_english and not self.language.is_english(
+            result.html,
+            result.final_url,
+        ):
+            self.logger.info(
+                "Skipped non-English page: url=%s final_url=%s",
+                url,
+                result.final_url,
+            )
+
+            self.database.mark_status(
+                url=url,
+                url_hash=url_hash,
+                status="non_english",
+                final_url=result.final_url,
+                final_url_hash=final_url_hash,
+                redirect_target_hash=redirect_target_hash,
+                etag=result.etag,
+                last_modified=result.last_modified,
+            )
+
+            self._finish_queue_item(
+                url_hash=url_hash,
+                queue_status="done",
+                dashboard=dashboard,
+                live=live,
+                dashboard_status="skipped",
+                url=url,
+            )
+            return None
+
+        parsed = self.parser.parse(result.html, result.final_url)
+
+        parsed_quality_status = self._detect_parsed_quality_issue(
+            markdown=parsed.markdown,
+            text_content=parsed.text_content,
+        )
+
+        if parsed_quality_status is not None:
+            self.logger.warning(
+                "Skipped low quality parsed page: url=%s final_url=%s reason=%s title=%s",
+                url,
+                result.final_url,
+                parsed_quality_status,
+                parsed.title,
+            )
+
+            self.database.mark_status(
+                url=url,
+                url_hash=url_hash,
+                status=parsed_quality_status,
+                final_url=result.final_url,
+                final_url_hash=final_url_hash,
+                redirect_target_hash=redirect_target_hash,
+                canonical_url=parsed.canonical_url,
+                etag=result.etag,
+                last_modified=result.last_modified,
+            )
+
+            self._finish_queue_item(
+                url_hash=url_hash,
+                queue_status="done",
+                dashboard=dashboard,
+                live=live,
+                dashboard_status="skipped",
+                url=url,
+            )
+            return None
+
+        return parsed
+
+    def _handle_content_policy(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        result,
+        parsed,
+        final_url_hash: str,
+        redirect_target_hash: str | None,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> bool:
+        content_policy = self.policy.evaluate_content(
+            url=result.final_url,
+            title=parsed.title,
+            text=parsed.text_content,
+        )
+
+        if content_policy.decision in {
+            PolicyDecision.SKIP,
+            PolicyDecision.BLOCK,
+        }:
+            self.logger.info(
+                "Skipped by smart content policy: "
+                "url=%s decision=%s reason=%s title=%s",
+                result.final_url,
+                content_policy.decision.value,
+                content_policy.reason,
+                parsed.title,
+            )
+
+            self._finish_skipped_page_status(
+                status_update=SkippedPageStatusUpdate(
+                    url=url,
+                    url_hash=url_hash,
+                    status=f"policy_{content_policy.decision.value}",
+                    final_url=result.final_url,
+                    final_url_hash=final_url_hash,
+                    redirect_target_hash=redirect_target_hash,
+                    canonical_url=parsed.canonical_url,
+                    etag=result.etag,
+                    last_modified=result.last_modified,
+                ),
+                dashboard=dashboard,
+                live=live,
+            )
+            return True
+
+        if content_policy.decision == PolicyDecision.REVIEW:
+            self.logger.info(
+                (
+                    "Smart content policy marked page for review but allowed it: "
+                    "url=%s reason=%s title=%s"
+                ),
+                result.final_url,
+                content_policy.reason,
+                parsed.title,
+            )
+
+        return False
+
+    def _handle_dedup_result(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        result,
+        parsed,
+        final_url_hash: str,
+        redirect_target_hash: str | None,
+        content_hash: str,
+        dedup_result,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> bool:
+        duplicate_statuses = {
+            "same_content",
+            "same_canonical",
+            "same_final_url",
+            "same_redirect_target",
+        }
+
+        if dedup_result.status in duplicate_statuses:
+            self.logger.info(
+                "Skipped duplicate page: url=%s final_url=%s duplicate_reason=%s",
+                url,
+                result.final_url,
+                dedup_result.status,
+            )
+
+            self.database.mark_status(
+                url=url,
+                url_hash=url_hash,
+                status="duplicate",
+                final_url=result.final_url,
+                final_url_hash=final_url_hash,
+                redirect_target_hash=redirect_target_hash,
+                canonical_url=parsed.canonical_url,
+                content_hash=content_hash,
+                etag=result.etag,
+                last_modified=result.last_modified,
+            )
+
+            self._finish_queue_item(
+                url_hash=url_hash,
+                queue_status="done",
+                dashboard=dashboard,
+                live=live,
+                dashboard_status="duplicate",
+                url=url,
+            )
+            return True
+
+        if dedup_result.status != "same_url_unchanged":
+            return False
+
+        if not self.writer.exists(url=result.final_url):
+            self.writer.write(
+                url=result.final_url,
+                title=parsed.title,
+                markdown=parsed.markdown,
+            )
+            status = "restored"
+        else:
+            status = "skipped"
+
+        self.database.mark_status(
+            url=url,
+            url_hash=url_hash,
+            status=status,
+            final_url=result.final_url,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            canonical_url=parsed.canonical_url,
+            content_hash=content_hash,
+            etag=result.etag,
+            last_modified=result.last_modified,
+        )
+
+        self._finish_queue_item(
+            url_hash=url_hash,
+            queue_status="done",
+            dashboard=dashboard,
+            live=live,
+            dashboard_status=status,
+            url=url,
+        )
+        return True
+
+    # pylint: disable=too-many-arguments
+    def _persist_processed_page(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        result,
+        parsed,
+        final_url_hash: str,
+        redirect_target_hash: str | None,
+        content_hash: str,
+        dedup_result,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> None:
+        """Persist a successfully parsed and deduplicated page."""
+
+        self.writer.write(
+            url=result.final_url,
+            title=parsed.title,
+            markdown=parsed.markdown,
+        )
+
+        status = (
+            "updated" if dedup_result.status == "same_url_changed" else "downloaded"
+        )
+
+        self.database.upsert_page(
+            url=url,
+            url_hash=url_hash,
+            final_url=result.final_url,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            canonical_url=parsed.canonical_url,
+            content_hash=content_hash,
+            etag=result.etag,
+            last_modified=result.last_modified,
+            status=status,
+            content_changed=dedup_result.content_changed,
+        )
+
+        self._finish_queue_item(
+            url_hash=url_hash,
+            queue_status="done",
+            dashboard=dashboard,
+            live=live,
+            dashboard_status=status,
+            url=url,
+        )
+
+        self.logger.info(
+            "URL processed successfully: url=%s final_url=%s status=%s",
+            url,
+            result.final_url,
+            status,
+        )
+
     async def _process_url(
         self,
         *,
@@ -764,511 +1255,16 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         sitemap: SitemapManager,
         use_recursive_discovery: bool,
     ) -> None:
-        normalized_english_url = self._normalize_english_candidate_url(url)
+        """Delegate single-URL lifecycle orchestration to UrlProcessor."""
 
-        if normalized_english_url is None:
-            self._finish_non_english_or_invalid_before_fetch_skip(
-                url=url,
-                dashboard=dashboard,
-                live=live,
-            )
-            return
-
-        url = normalized_english_url
-        url_hash = self.dedup.url_hash(url)
-        cache_headers = self.runtime_context.database.get_cache_headers_by_url_hash(
-            url_hash
+        await self.url_processor.process(
+            url=url,
+            depth=depth,
+            dashboard=dashboard,
+            live=live,
+            sitemap=sitemap,
+            use_recursive_discovery=use_recursive_discovery,
         )
-
-        if is_hard_blacklisted_url(url):
-            self.logger.info(
-                "Skipped by hard blacklist before fetch: url=%s",
-                url,
-            )
-            self.observability.record_official_rejected(
-                url=url,
-                reason="hard_blacklist_before_fetch",
-            )
-            self.database.mark_status(
-                url=url,
-                url_hash=url_hash,
-                status="hard_blacklist",
-            )
-            self._finish_queue_item(
-                url_hash=url_hash,
-                queue_status="done",
-                dashboard=dashboard,
-                live=live,
-                dashboard_status="skipped",
-                url=url,
-            )
-            return
-
-        url_policy = self.policy.evaluate_url(url)
-        if not url_policy.allowed and not self._is_allowed_official_cross_host(url):
-            self.logger.info(
-                "Skipped by smart URL policy: url=%s decision=%s reason=%s",
-                url,
-                url_policy.decision.value,
-                url_policy.reason,
-            )
-            self.database.mark_status(
-                url=url,
-                url_hash=url_hash,
-                status=f"policy_{url_policy.decision.value}",
-            )
-            self._finish_queue_item(
-                url_hash=url_hash,
-                queue_status="done",
-                dashboard=dashboard,
-                live=live,
-                dashboard_status="skipped",
-                url=url,
-            )
-            return
-
-        try:
-            self.logger.info("Processing URL: %s", url)
-            self._start_url(dashboard, live, url, depth)
-
-            result = await self.fetcher.fetch(
-                url,
-                cache_headers=cache_headers,
-            )
-
-            final_url_hash = self.dedup.final_url_hash(result.final_url)
-            redirect_target_hash = self.dedup.redirect_target_hash(
-                original_url=url,
-                final_url=result.final_url,
-            )
-
-            if result.not_modified:
-                if not self.writer.exists(url=result.final_url):
-                    self.logger.info(
-                        (
-                            "HTTP 304 received but local Markdown is missing, "
-                            "refetching without cache headers: %s"
-                        ),
-                        url,
-                    )
-
-                    result = await self.fetcher.fetch(
-                        url,
-                        cache_headers={},
-                    )
-
-                    final_url_hash = self.dedup.final_url_hash(result.final_url)
-                    redirect_target_hash = self.dedup.redirect_target_hash(
-                        original_url=url,
-                        final_url=result.final_url,
-                    )
-
-                    if not result.html:
-                        fallback_status = self._status_for_empty_fetch(
-                            result.status_code
-                        )
-                        safe_redirect_target_hash = (
-                            "" if redirect_target_hash is None else redirect_target_hash
-                        )
-                        safe_status_code = (
-                            0 if result.status_code is None else result.status_code
-                        )
-
-                        self._finish_empty_refetch_after_not_modified(
-                            status_update=EmptyRefetchStatusUpdate(
-                                url=url,
-                                url_hash=url_hash,
-                                final_url=result.final_url,
-                                final_url_hash=final_url_hash,
-                                redirect_target_hash=safe_redirect_target_hash,
-                                status_code=safe_status_code,
-                                fallback_status=fallback_status,
-                                etag=result.etag,
-                                last_modified=result.last_modified,
-                            ),
-                            dashboard=dashboard,
-                            live=live,
-                        )
-                        return
-                else:
-                    self.database.mark_status(
-                        url=url,
-                        url_hash=url_hash,
-                        status="skipped",
-                        final_url=result.final_url,
-                        final_url_hash=final_url_hash,
-                        redirect_target_hash=redirect_target_hash,
-                        etag=result.etag,
-                        last_modified=result.last_modified,
-                    )
-
-                    self._finish_queue_item(
-                        url_hash=url_hash,
-                        queue_status="done",
-                        dashboard=dashboard,
-                        live=live,
-                        dashboard_status="skipped",
-                        url=url,
-                    )
-                    return
-
-            transport_quality_status = self._detect_transport_quality_issue(
-                result.status_code
-            )
-
-            if not result.html:
-                status = transport_quality_status or "error"
-
-                self.logger.warning(
-                    "Fetch returned no HTML: url=%s final_url=%s status=%s mapped_status=%s",
-                    url,
-                    result.final_url,
-                    result.status_code,
-                    status,
-                )
-
-                self.database.mark_status(
-                    url=url,
-                    url_hash=url_hash,
-                    status=status,
-                    final_url=result.final_url,
-                    final_url_hash=final_url_hash,
-                    redirect_target_hash=redirect_target_hash,
-                    etag=result.etag,
-                    last_modified=result.last_modified,
-                )
-
-                self.database.mark_queue_status(
-                    url_hash,
-                    "done" if status != "error" else "error",
-                )
-                self._finish_url(
-                    dashboard,
-                    live,
-                    "skipped" if status != "error" else "error",
-                    url,
-                )
-                return
-
-            html_quality_status = self._detect_html_quality_issue(
-                html=result.html,
-                status_code=result.status_code,
-            )
-
-            if html_quality_status is not None:
-                self.logger.warning(
-                    (
-                        "Skipped low quality, protected, or login page before parsing: "
-                        "url=%s final_url=%s http_status=%s reason=%s"
-                    ),
-                    url,
-                    result.final_url,
-                    result.status_code,
-                    html_quality_status,
-                )
-
-                self._finish_skipped_page_status(
-                    status_update=SkippedPageStatusUpdate(
-                        url=url,
-                        url_hash=url_hash,
-                        status=html_quality_status,
-                        final_url=result.final_url,
-                        final_url_hash=final_url_hash,
-                        redirect_target_hash=redirect_target_hash,
-                        etag=result.etag,
-                        last_modified=result.last_modified,
-                    ),
-                    dashboard=dashboard,
-                    live=live,
-                )
-                return
-
-            if use_recursive_discovery:
-                await self._discover_and_enqueue_links(
-                    html=result.html,
-                    final_url=result.final_url,
-                    depth=depth,
-                    sitemap=sitemap,
-                )
-
-            if self.config.require_english and not self.language.is_english(
-                result.html,
-                result.final_url,
-            ):
-                self.logger.info(
-                    "Skipped non-English page: url=%s final_url=%s",
-                    url,
-                    result.final_url,
-                )
-
-                self.database.mark_status(
-                    url=url,
-                    url_hash=url_hash,
-                    status="non_english",
-                    final_url=result.final_url,
-                    final_url_hash=final_url_hash,
-                    redirect_target_hash=redirect_target_hash,
-                    etag=result.etag,
-                    last_modified=result.last_modified,
-                )
-
-                self._finish_queue_item(
-                    url_hash=url_hash,
-                    queue_status="done",
-                    dashboard=dashboard,
-                    live=live,
-                    dashboard_status="skipped",
-                    url=url,
-                )
-                return
-
-            parsed = self.parser.parse(result.html, result.final_url)
-
-            parsed_quality_status = self._detect_parsed_quality_issue(
-                markdown=parsed.markdown,
-                text_content=parsed.text_content,
-            )
-
-            if parsed_quality_status is not None:
-                self.logger.warning(
-                    "Skipped low quality parsed page: url=%s final_url=%s reason=%s title=%s",
-                    url,
-                    result.final_url,
-                    parsed_quality_status,
-                    parsed.title,
-                )
-
-                self.database.mark_status(
-                    url=url,
-                    url_hash=url_hash,
-                    status=parsed_quality_status,
-                    final_url=result.final_url,
-                    final_url_hash=final_url_hash,
-                    redirect_target_hash=redirect_target_hash,
-                    canonical_url=parsed.canonical_url,
-                    etag=result.etag,
-                    last_modified=result.last_modified,
-                )
-
-                self._finish_queue_item(
-                    url_hash=url_hash,
-                    queue_status="done",
-                    dashboard=dashboard,
-                    live=live,
-                    dashboard_status="skipped",
-                    url=url,
-                )
-                return
-
-            content_policy = self.policy.evaluate_content(
-                url=result.final_url,
-                title=parsed.title,
-                text=parsed.text_content,
-            )
-
-            if content_policy.decision in {PolicyDecision.SKIP, PolicyDecision.BLOCK}:
-                self.logger.info(
-                    "Skipped by smart content policy: url=%s decision=%s reason=%s title=%s",
-                    result.final_url,
-                    content_policy.decision.value,
-                    content_policy.reason,
-                    parsed.title,
-                )
-
-                self.database.mark_status(
-                    url=url,
-                    url_hash=url_hash,
-                    status=f"policy_{content_policy.decision.value}",
-                    final_url=result.final_url,
-                    final_url_hash=final_url_hash,
-                    redirect_target_hash=redirect_target_hash,
-                    canonical_url=parsed.canonical_url,
-                    etag=result.etag,
-                    last_modified=result.last_modified,
-                )
-
-                self._finish_queue_item(
-                    url_hash=url_hash,
-                    queue_status="done",
-                    dashboard=dashboard,
-                    live=live,
-                    dashboard_status="skipped",
-                    url=url,
-                )
-                return
-
-            if content_policy.decision == PolicyDecision.REVIEW:
-                self.logger.info(
-                    (
-                        "Smart content policy marked page for review but allowed it: "
-                        "url=%s reason=%s title=%s"
-                    ),
-                    result.final_url,
-                    content_policy.reason,
-                    parsed.title,
-                )
-
-            content_hash = self.dedup.content_hash(parsed.text_content)
-
-            dedup_result = self.dedup.check(
-                url_hash=url_hash,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                canonical_url=parsed.canonical_url,
-                content_hash=content_hash,
-            )
-
-            if dedup_result.status in {
-                "same_content",
-                "same_canonical",
-                "same_final_url",
-                "same_redirect_target",
-            }:
-                self.logger.info(
-                    "Skipped duplicate page: url=%s final_url=%s duplicate_reason=%s",
-                    url,
-                    result.final_url,
-                    dedup_result.status,
-                )
-
-                self.database.mark_status(
-                    url=url,
-                    url_hash=url_hash,
-                    status="duplicate",
-                    final_url=result.final_url,
-                    final_url_hash=final_url_hash,
-                    redirect_target_hash=redirect_target_hash,
-                    canonical_url=parsed.canonical_url,
-                    content_hash=content_hash,
-                    etag=result.etag,
-                    last_modified=result.last_modified,
-                )
-
-                self._finish_queue_item(
-                    url_hash=url_hash,
-                    queue_status="done",
-                    dashboard=dashboard,
-                    live=live,
-                    dashboard_status="duplicate",
-                    url=url,
-                )
-                return
-
-            if dedup_result.status == "same_url_unchanged":
-                if not self.writer.exists(url=result.final_url):
-                    self.writer.write(
-                        url=result.final_url,
-                        title=parsed.title,
-                        markdown=parsed.markdown,
-                    )
-
-                    self.database.mark_status(
-                        url=url,
-                        url_hash=url_hash,
-                        status="restored",
-                        final_url=result.final_url,
-                        final_url_hash=final_url_hash,
-                        redirect_target_hash=redirect_target_hash,
-                        canonical_url=parsed.canonical_url,
-                        content_hash=content_hash,
-                        etag=result.etag,
-                        last_modified=result.last_modified,
-                    )
-
-                    self._finish_queue_item(
-                        url_hash=url_hash,
-                        queue_status="done",
-                        dashboard=dashboard,
-                        live=live,
-                        dashboard_status="restored",
-                        url=url,
-                    )
-                    return
-
-                self.database.mark_status(
-                    url=url,
-                    url_hash=url_hash,
-                    status="skipped",
-                    final_url=result.final_url,
-                    final_url_hash=final_url_hash,
-                    redirect_target_hash=redirect_target_hash,
-                    canonical_url=parsed.canonical_url,
-                    content_hash=content_hash,
-                    etag=result.etag,
-                    last_modified=result.last_modified,
-                )
-
-                self._finish_queue_item(
-                    url_hash=url_hash,
-                    queue_status="done",
-                    dashboard=dashboard,
-                    live=live,
-                    dashboard_status="skipped",
-                    url=url,
-                )
-                return
-
-            self.writer.write(
-                url=result.final_url,
-                title=parsed.title,
-                markdown=parsed.markdown,
-            )
-
-            status = (
-                "updated" if dedup_result.status == "same_url_changed" else "downloaded"
-            )
-
-            self.database.upsert_page(
-                url=url,
-                url_hash=url_hash,
-                final_url=result.final_url,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                canonical_url=parsed.canonical_url,
-                content_hash=content_hash,
-                etag=result.etag,
-                last_modified=result.last_modified,
-                status=status,
-                content_changed=dedup_result.content_changed,
-            )
-
-            self._finish_queue_item(
-                url_hash=url_hash,
-                queue_status="done",
-                dashboard=dashboard,
-                live=live,
-                dashboard_status=status,
-                url=url,
-            )
-
-            self.logger.info(
-                "URL processed successfully: url=%s final_url=%s status=%s",
-                url,
-                result.final_url,
-                status,
-            )
-
-        except (OSError, RuntimeError, ValueError):
-            self.logger.exception(
-                "URL processing failed: url=%s depth=%s",
-                url,
-                depth,
-            )
-
-            self.database.mark_status(
-                url=url,
-                url_hash=url_hash,
-                status="error",
-            )
-
-            self._finish_queue_item(
-                url_hash=url_hash,
-                queue_status="error",
-                dashboard=dashboard,
-                live=live,
-                dashboard_status="error",
-                url=url,
-            )
 
     def _print_terminal_banner(self) -> None:
         print()
@@ -1352,247 +1348,6 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             )
         )
 
-    async def _discover_and_enqueue_links(
-        self,
-        *,
-        html: str,
-        final_url: str,
-        depth: int,
-        sitemap: SitemapManager,
-    ) -> None:
-        if self._max_depth_reached(depth):
-            self.logger.info(
-                "Max crawl depth reached, skipping link discovery: url=%s depth=%s max_depth=%s",
-                final_url,
-                depth,
-                self.config.max_depth,
-            )
-            return
-
-        if self.database.queued_count() >= self.config.max_queue_size:
-            self.logger.warning(
-                "Max queue size already reached, skipping link discovery: url=%s max_queue_size=%s",
-                final_url,
-                self.config.max_queue_size,
-            )
-            return
-
-        new_links = sitemap.extract_links(
-            html=html,
-            base_url=final_url,
-        )
-
-        if self.config.allow_official_cross_host_discovery:
-            new_links.extend(
-                self._extract_official_cross_host_links(
-                    html=html,
-                    base_url=final_url,
-                    depth=depth,
-                )
-            )
-
-        new_links = sorted(dict.fromkeys(new_links))
-
-        next_depth = depth + 1
-
-        for raw_link in new_links:
-            link = await self._resolve_phase2_redirect_final_link(
-                raw_link=raw_link,
-                parent_url=final_url,
-                depth=next_depth,
-            )
-
-            if link is None:
-                self.observability.record_official_rejected(
-                    url=raw_link,
-                    reason="non_english_or_invalid_discovered_url_before_enqueue",
-                )
-                continue
-
-            if is_hard_blacklisted_url(link):
-                self.observability.record_official_rejected(
-                    url=link,
-                    reason="hard_blacklist_before_enqueue",
-                )
-                continue
-
-            intent = self.intent_analyzer.evaluate_url(
-                link,
-                source_url=final_url,
-            )
-            if not intent.allowed:
-                self.logger.info(
-                    "Smart Router skipped discovered URL before queue: url=%s reason=%s",
-                    link,
-                    intent.reason,
-                )
-                self.observability.record_official_rejected(
-                    url=link,
-                    reason=f"smart_router:{intent.reason}",
-                )
-                continue
-
-            if not self.robots.can_fetch(link):
-                continue
-
-            if self.database.queued_count() >= self.config.max_queue_size:
-                self.logger.warning(
-                    "Max queue size reached during recursive discovery: max_queue_size=%s",
-                    self.config.max_queue_size,
-                )
-                break
-
-            if not self._claim_url_ownership(link):
-                continue
-
-            link_hash = self.dedup.url_hash(link)
-
-            self.database.enqueue_url(
-                url=link,
-                url_hash=link_hash,
-                depth=next_depth,
-                discovered_from=final_url,
-                priority=intent.priority,
-            )
-
-    async def _resolve_phase2_redirect_final_link(
-        self,
-        *,
-        raw_link: str,
-        parent_url: str,
-        depth: int,
-    ) -> str | None:
-        """Normalize and scope-check a discovered Phase 2 link before enqueue."""
-        link = self._normalize_joined_english_candidate_url(
-            base_url=parent_url,
-            candidate_url=raw_link,
-        )
-
-        if link is None:
-            return None
-
-        url_policy = self.policy.evaluate_url(link)
-
-        if url_policy.allowed:
-            return link
-
-        if self._is_allowed_official_cross_host(
-            link,
-            parent_url=parent_url,
-            depth=depth,
-        ):
-            return link
-
-        self.observability.record_official_rejected(
-            url=link,
-            reason=f"smart_url_policy:{url_policy.reason}",
-        )
-        self.logger.info(
-            "Smart URL policy rejected discovered URL before enqueue: url=%s "
-            "decision=%s reason=%s",
-            link,
-            url_policy.decision.value,
-            url_policy.reason,
-        )
-        return None
-
-    def _is_allowed_official_cross_host(
-        self,
-        url: str,
-        parent_url: str | None = None,
-        depth: int = 0,
-    ) -> bool:
-        if not self.config.allow_official_cross_host_discovery:
-            return False
-        decision = self.official_graph.evaluate_url(
-            url=url,
-            parent_url=parent_url,
-            depth=depth,
-        )
-
-        if decision.allowed:
-            self.observability.record_official_allowed(
-                url=url,
-                reason=decision.reason,
-            )
-            self.logger.info(
-                "Official host graph allowed URL: url=%s host=%s confidence=%s reason=%s",
-                url,
-                decision.host,
-                decision.confidence,
-                decision.reason,
-            )
-            return True
-
-        self.observability.record_official_rejected(
-            url=url,
-            reason=decision.reason,
-        )
-        return False
-
-    def _extract_official_cross_host_links(
-        self,
-        *,
-        html: str,
-        base_url: str,
-        depth: int = 0,
-    ) -> list[str]:
-        soup = BeautifulSoup(html, "html.parser")
-        links: list[str] = []
-        seen: set[str] = set()
-
-        for tag in soup.select("a[href], link[href]"):
-            href = str(tag.get("href", "")).strip()
-
-            if not href or href.startswith(
-                ("#", "mailto:", "tel:", "javascript:", "data:", "blob:")
-            ):
-                continue
-
-            clean = self._normalize_joined_english_candidate_url(
-                base_url=base_url,
-                candidate_url=href,
-            )
-
-            if clean is None:
-                self.observability.record_official_rejected(
-                    url=urljoin(base_url, href),
-                    reason="non_english_or_invalid_cross_host_url_before_graph",
-                )
-                continue
-
-            if is_hard_blacklisted_url(clean):
-                self.observability.record_official_rejected(
-                    url=clean,
-                    reason="hard_blacklist_before_official_graph",
-                )
-                continue
-
-            if clean in seen:
-                continue
-
-            if not self._is_allowed_official_cross_host(
-                clean,
-                parent_url=base_url,
-                depth=depth + 1,
-            ):
-                continue
-
-            seen.add(clean)
-            links.append(clean)
-
-            if len(links) >= self.config.max_official_cross_host_links_per_page:
-                break
-
-        if links:
-            self.logger.info(
-                "Official host graph discovered links: base_url=%s count=%s",
-                base_url,
-                len(links),
-            )
-
-        return links
-
     def _write_observability_report(self) -> None:
         report_path = self.observability.write_report()
         print()
@@ -1629,6 +1384,3 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             markdown=markdown,
             text_content=text_content,
         )
-
-    def _max_depth_reached(self, depth: int) -> bool:
-        return depth >= self.config.max_depth

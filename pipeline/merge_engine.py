@@ -1,513 +1,374 @@
-#!/usr/bin/env python3
+"""Create deterministic, immutable merge plans without performing I/O."""
+
 from __future__ import annotations
 
-import argparse
-import hashlib
-import os
 import re
-import sqlite3
+import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
-from pipeline.file_hash import sha256_file
-from pipeline.time_utils import utc_now
-
-READ_ONLY_MODE = 0o444
-WRITE_MODE = 0o644
-
-MERGED_DIR_NAME = "_merged"
-CURRENT_DIR_NAME = "current"
-HISTORY_DIR_NAME = "history"
-STALE_DIR_NAME = "stale"
-STATE_DIR_NAME = ".state"
-DATABASE_NAME = "merge.db"
-
-IGNORED_DIR_NAMES = {
-    "_merged",
-    "_archive",
-    "_raw",
-    ".state",
-    ".git",
-    "__pycache__",
-}
-
-MAX_FILES_PER_MERGE = 40
+DEFAULT_MAX_SOURCES_PER_TARGET = 40
+DEFAULT_TARGET_STEM = "merged-docs"
+MARKDOWN_SUFFIX = ".md"
+MAX_TITLE_SLUG_LENGTH = 40
 
 
-@dataclass(frozen=True)
-class SourceFile:
-    path: Path
+class MergePlanningError(ValueError):
+    """Base error raised when a deterministic merge plan cannot be created."""
+
+
+class InvalidMergeSourceError(MergePlanningError):
+    """Raised when a merge source violates the planner contract."""
+
+
+class DuplicateSourceError(MergePlanningError):
+    """Raised when two sources resolve to the same canonical source key."""
+
+
+class DuplicateTargetError(MergePlanningError):
+    """Raised when two planned groups resolve to the same target name."""
+
+
+@dataclass(frozen=True, slots=True)
+class MergeSource:
+    """Describe one normalized document supplied to the merge planner."""
+
     relative_path: str
-    sha256: str
-    size: int
     title: str
-    sort_key: str
+    fingerprint: str
+    size: int
+
+    def __post_init__(self) -> None:
+        """Validate immutable source metadata at the planner boundary."""
+        normalized_path = _normalize_relative_path(self.relative_path)
+        normalized_title = self.title.strip()
+        normalized_fingerprint = self.fingerprint.strip()
+
+        if not normalized_title:
+            raise InvalidMergeSourceError("Source title must not be empty.")
+
+        if not normalized_fingerprint:
+            raise InvalidMergeSourceError("Source fingerprint must not be empty.")
+
+        if self.size < 0:
+            raise InvalidMergeSourceError("Source size must not be negative.")
+
+        object.__setattr__(self, "relative_path", normalized_path)
+        object.__setattr__(self, "title", normalized_title)
+        object.__setattr__(self, "fingerprint", normalized_fingerprint)
 
 
-def sha256_text(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+@dataclass(frozen=True, slots=True)
+class PlannedSource:
+    """Store one source together with its deterministic position."""
+
+    position: int
+    source: MergeSource
+
+    def __post_init__(self) -> None:
+        """Ensure source positions remain one-based and valid."""
+        if self.position < 1:
+            raise MergePlanningError("Planned source position must be positive.")
 
 
-def lock(path: Path) -> None:
-    if path.exists():
-        os.chmod(path, READ_ONLY_MODE)
+@dataclass(frozen=True, slots=True)
+class MergeTargetPlan:
+    """Describe one target file and its ordered source membership."""
+
+    position: int
+    target_name: str
+    sources: tuple[PlannedSource, ...]
+    source_signature: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Validate a single immutable target plan."""
+        if self.position < 1:
+            raise MergePlanningError("Target position must be positive.")
+
+        if not self.target_name.endswith(MARKDOWN_SUFFIX):
+            raise MergePlanningError("Target name must use the Markdown suffix.")
+
+        if not self.sources:
+            raise MergePlanningError("A merge target must contain at least one source.")
+
+        expected_positions = tuple(range(1, len(self.sources) + 1))
+        actual_positions = tuple(item.position for item in self.sources)
+
+        if actual_positions != expected_positions:
+            raise MergePlanningError(
+                "Planned source positions must be consecutive and one-based."
+            )
+
+        expected_signature = tuple(
+            _source_signature_item(item.source) for item in self.sources
+        )
+
+        if self.source_signature != expected_signature:
+            raise MergePlanningError(
+                "Target source signature does not match its ordered sources."
+            )
 
 
-def unlock(path: Path) -> None:
-    if path.exists():
-        os.chmod(path, WRITE_MODE)
+@dataclass(frozen=True, slots=True)
+class MergePlan:
+    """Contain the complete deterministic plan for one project."""
+
+    project_name: str
+    targets: tuple[MergeTargetPlan, ...]
+    source_count: int
+
+    def __post_init__(self) -> None:
+        """Validate complete-plan counts, positions, and target uniqueness."""
+        normalized_project_name = self.project_name.strip()
+
+        if not normalized_project_name:
+            raise MergePlanningError("Project name must not be empty.")
+
+        if self.source_count < 0:
+            raise MergePlanningError("Source count must not be negative.")
+
+        target_positions = tuple(target.position for target in self.targets)
+        expected_positions = tuple(range(1, len(self.targets) + 1))
+
+        if target_positions != expected_positions:
+            raise MergePlanningError(
+                "Merge target positions must be consecutive and one-based."
+            )
+
+        planned_source_count = sum(len(target.sources) for target in self.targets)
+
+        if planned_source_count != self.source_count:
+            raise MergePlanningError(
+                "Merge plan source count does not match target membership."
+            )
+
+        target_keys = tuple(target.target_name.casefold() for target in self.targets)
+
+        if len(target_keys) != len(set(target_keys)):
+            raise DuplicateTargetError("Merge plan contains duplicate target names.")
+
+        object.__setattr__(self, "project_name", normalized_project_name)
 
 
-def safe_slug(value: str) -> str:
-    value = value.strip().lower()
-    value = re.sub(r"[^a-z0-9]+", "-", value)
-    value = value.strip("-")
-    return value or "merged-docs"
+@dataclass(frozen=True, slots=True)
+class MergePlanner:
+    """Create deterministic merge plans from normalized source metadata."""
+
+    max_sources_per_target: int = DEFAULT_MAX_SOURCES_PER_TARGET
+
+    def __post_init__(self) -> None:
+        """Validate planner configuration."""
+        if self.max_sources_per_target < 1:
+            raise MergePlanningError(
+                "Maximum sources per target must be greater than zero."
+            )
+
+    def plan(
+        self,
+        project_name: str,
+        sources: Sequence[MergeSource],
+    ) -> MergePlan:
+        """Return a deterministic plan without reading or writing any files."""
+        normalized_project_name = project_name.strip()
+
+        if not normalized_project_name:
+            raise MergePlanningError("Project name must not be empty.")
+
+        ordered_sources = _order_sources(sources)
+        _reject_duplicate_sources(ordered_sources)
+
+        groups = _partition_sources(
+            ordered_sources,
+            self.max_sources_per_target,
+        )
+
+        targets = _build_target_plans(
+            project_name=normalized_project_name,
+            groups=groups,
+        )
+
+        return MergePlan(
+            project_name=normalized_project_name,
+            targets=targets,
+            source_count=len(ordered_sources),
+        )
 
 
-def ignored_path(path: Path, project_dir: Path) -> bool:
-    relative = path.relative_to(project_dir)
-    return any(part in IGNORED_DIR_NAMES for part in relative.parts)
+def create_merge_plan(
+    project_name: str,
+    sources: Sequence[MergeSource],
+    *,
+    max_sources_per_target: int = DEFAULT_MAX_SOURCES_PER_TARGET,
+) -> MergePlan:
+    """Create a merge plan through the default functional boundary."""
+    planner = MergePlanner(max_sources_per_target=max_sources_per_target)
+    return planner.plan(project_name=project_name, sources=sources)
 
 
-def discover_markdown_files(project_dir: Path) -> list[Path]:
-    return sorted(
-        path
-        for path in project_dir.rglob("*.md")
-        if path.is_file() and not ignored_path(path, project_dir)
+def _normalize_relative_path(value: str) -> str:
+    """Return a portable relative path suitable for deterministic comparison."""
+    normalized = value.strip().replace("\\", "/")
+    normalized = re.sub(r"/+", "/", normalized)
+    normalized = normalized.removeprefix("./").strip("/")
+
+    if not normalized:
+        raise InvalidMergeSourceError("Source relative path must not be empty.")
+
+    parts = normalized.split("/")
+
+    if any(part in {"", ".", ".."} for part in parts):
+        raise InvalidMergeSourceError(
+            "Source relative path must not contain empty or traversal segments."
+        )
+
+    return "/".join(parts)
+
+
+def _canonical_source_key(source: MergeSource) -> str:
+    """Return the stable key used for ordering and duplicate detection."""
+    return source.relative_path.casefold()
+
+
+def _order_sources(sources: Sequence[MergeSource]) -> tuple[MergeSource, ...]:
+    """Return sources ordered by path and stable metadata tie-breakers."""
+    return tuple(
+        sorted(
+            sources,
+            key=lambda source: (
+                _canonical_source_key(source),
+                source.relative_path,
+                source.title.casefold(),
+                source.fingerprint,
+                source.size,
+            ),
+        )
     )
 
 
-def extract_title(path: Path) -> str:
-    try:
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            clean = line.strip()
-            if clean.startswith("# "):
-                return clean.lstrip("#").strip()
-    except OSError:
-        pass
+def _reject_duplicate_sources(sources: Sequence[MergeSource]) -> None:
+    """Reject canonical path collisions before target planning begins."""
+    seen_keys: set[str] = set()
 
-    return path.stem.replace("-", " ").replace("_", " ").strip().title() or "Untitled"
+    for source in sources:
+        source_key = _canonical_source_key(source)
+
+        if source_key in seen_keys:
+            raise DuplicateSourceError(
+                f"Duplicate source path detected: {source.relative_path}"
+            )
+
+        seen_keys.add(source_key)
 
 
-def load_sources(project_dir: Path) -> list[SourceFile]:
-    sources: list[SourceFile] = []
+def _partition_sources(
+    sources: Sequence[MergeSource],
+    group_size: int,
+) -> tuple[tuple[MergeSource, ...], ...]:
+    """Partition ordered sources into stable fixed-size groups."""
+    return tuple(
+        tuple(sources[index : index + group_size])
+        for index in range(0, len(sources), group_size)
+    )
 
-    for path in discover_markdown_files(project_dir):
-        relative = path.relative_to(project_dir).as_posix()
-        digest = sha256_file(path)
 
-        sources.append(
-            SourceFile(
-                path=path,
-                relative_path=relative,
-                sha256=digest,
-                size=path.stat().st_size,
-                title=extract_title(path),
-                sort_key=relative.lower(),
+def _build_target_plans(
+    project_name: str,
+    groups: Sequence[Sequence[MergeSource]],
+) -> tuple[MergeTargetPlan, ...]:
+    """Build immutable target plans and reject target-name collisions."""
+    total_groups = len(groups)
+    targets: list[MergeTargetPlan] = []
+    target_keys: set[str] = set()
+
+    for target_position, group in enumerate(groups, start=1):
+        target_name = _build_target_name(
+            project_name=project_name,
+            target_position=target_position,
+            total_groups=total_groups,
+            first_source=group[0],
+        )
+        target_key = target_name.casefold()
+
+        if target_key in target_keys:
+            raise DuplicateTargetError(
+                f"Duplicate merge target detected: {target_name}"
+            )
+
+        target_keys.add(target_key)
+        planned_sources = _build_planned_sources(group)
+
+        targets.append(
+            MergeTargetPlan(
+                position=target_position,
+                target_name=target_name,
+                sources=planned_sources,
+                source_signature=tuple(
+                    _source_signature_item(item.source) for item in planned_sources
+                ),
             )
         )
 
-    return sorted(sources, key=lambda item: item.sort_key)
+    return tuple(targets)
 
 
-def connect_db(project_dir: Path) -> sqlite3.Connection:
-    state_dir = project_dir / STATE_DIR_NAME
-    state_dir.mkdir(parents=True, exist_ok=True)
-    db_path = state_dir / DATABASE_NAME
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=FULL;")
-    conn.execute("PRAGMA foreign_keys=ON;")
-    conn.execute("PRAGMA busy_timeout=30000;")
-
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS merge_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_dir TEXT NOT NULL,
-            source_count INTEGER NOT NULL,
-            merged_count INTEGER NOT NULL,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS merged_files (
-            filename TEXT PRIMARY KEY,
-            content_hash TEXT NOT NULL,
-            source_signature TEXT NOT NULL,
-            source_count INTEGER NOT NULL,
-            size INTEGER NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS merged_sources (
-            filename TEXT NOT NULL,
-            source_path TEXT NOT NULL,
-            source_sha256 TEXT NOT NULL,
-            source_size INTEGER NOT NULL,
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY(filename, source_path)
-        );
-        """
+def _build_planned_sources(
+    sources: Sequence[MergeSource],
+) -> tuple[PlannedSource, ...]:
+    """Attach stable one-based positions to ordered source metadata."""
+    return tuple(
+        PlannedSource(position=position, source=source)
+        for position, source in enumerate(sources, start=1)
     )
 
-    conn.commit()
-    return conn
 
-
-def chunk_sources(sources: list[SourceFile]) -> list[list[SourceFile]]:
-    return [
-        sources[index : index + MAX_FILES_PER_MERGE]
-        for index in range(0, len(sources), MAX_FILES_PER_MERGE)
-    ]
-
-
-def build_group_name(
-    project_dir: Path, group_index: int, total_groups: int, group: list[SourceFile]
+def _build_target_name(
+    *,
+    project_name: str,
+    target_position: int,
+    total_groups: int,
+    first_source: MergeSource,
 ) -> str:
-    project_slug = safe_slug(project_dir.name)
+    """Return the deterministic Markdown target name for one source group."""
+    project_slug = _safe_slug(project_name)
 
     if total_groups == 1:
-        return f"{project_slug}__merged.md"
+        return f"{project_slug}__merged{MARKDOWN_SUFFIX}"
 
-    first_title = safe_slug(group[0].title)[:40]
-    return f"{project_slug}__part-{group_index:03d}__{first_title}.md"
+    title_slug = _safe_slug(first_source.title)[:MAX_TITLE_SLUG_LENGTH]
 
-
-def build_source_signature(group: list[SourceFile]) -> str:
-    raw = "\n".join(
-        f"{source.relative_path}\t{source.sha256}\t{source.size}" for source in group
-    )
-    return sha256_text(raw)
+    return f"{project_slug}__part-{target_position:03d}__{title_slug}{MARKDOWN_SUFFIX}"
 
 
-def read_source_body(source: SourceFile) -> str:
-    return source.path.read_text(encoding="utf-8", errors="replace").strip()
+def _safe_slug(value: str) -> str:
+    """Convert text into a stable ASCII slug without external dependencies."""
+    decomposed = unicodedata.normalize("NFKD", value)
+    ascii_value = decomposed.encode("ascii", "ignore").decode("ascii")
+    normalized = ascii_value.strip().lower()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return normalized or DEFAULT_TARGET_STEM
 
 
-def build_merged_document(
-    project_dir: Path, filename: str, group: list[SourceFile]
-) -> str:
-    lines: list[str] = []
-
-    lines.append(f"# {project_dir.name} merged documentation")
-    lines.append("")
-    lines.append(f"Generated file: `{filename}`")
-    lines.append("Generated by: `docsync merge_engine`")
-    lines.append(f"Source files: `{len(group)}`")
-    lines.append("")
-    lines.append("<!--")
-    lines.append("This file is generated by docsync.")
-    lines.append("Do not edit manually. The pipeline will lock it as read-only.")
-    lines.append("-->")
-    lines.append("")
-    lines.append("## Source Index")
-    lines.append("")
-
-    for index, source in enumerate(group, start=1):
-        lines.append(f"{index}. `{source.relative_path}` - `{source.sha256}`")
-
-    lines.append("")
-
-    for index, source in enumerate(group, start=1):
-        lines.append("---")
-        lines.append("")
-        lines.append(f"## Source {index}: {source.title}")
-        lines.append("")
-        lines.append(f"Source path: `{source.relative_path}`")
-        lines.append(f"Source sha256: `{source.sha256}`")
-        lines.append("")
-        lines.append(read_source_body(source))
-        lines.append("")
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def write_if_changed(path: Path, content: str) -> tuple[bool, str]:
-    content_hash = sha256_text(content)
-
-    if path.exists():
-        existing = path.read_text(encoding="utf-8", errors="replace")
-        if sha256_text(existing) == content_hash:
-            lock(path)
-            return False, content_hash
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    unlock(path)
-    path.write_text(content, encoding="utf-8")
-    lock(path)
-    return True, content_hash
-
-
-def archive_old_version(
-    current_path: Path, history_dir: Path, old_hash: str
-) -> Path | None:
-    if not current_path.exists():
-        return None
-
-    history_dir.mkdir(parents=True, exist_ok=True)
-    archive_path = history_dir / f"{current_path.stem}__{old_hash[:16]}.md"
-
-    if archive_path.exists():
-        lock(archive_path)
-        return archive_path
-
-    unlock(current_path)
-    archive_path.write_text(
-        current_path.read_text(encoding="utf-8", errors="replace"),
-        encoding="utf-8",
-    )
-    lock(archive_path)
-    return archive_path
-
-
-def move_stale_current_files(
-    current_dir: Path,
-    stale_dir: Path,
-    expected_names: set[str],
-) -> int:
-    moved = 0
-
-    if not current_dir.exists():
-        return moved
-
-    stale_dir.mkdir(parents=True, exist_ok=True)
-
-    for path in current_dir.glob("*.md"):
-        if path.name in expected_names:
-            continue
-
-        unlock(path)
-
-        target = stale_dir / path.name
-
-        if target.exists():
-            target_hash = sha256_file(target)
-            source_hash = sha256_file(path)
-
-            if target_hash == source_hash:
-                path.unlink()
-                lock(target)
-            else:
-                target = stale_dir / f"{path.stem}__{source_hash[:16]}{path.suffix}"
-                path.rename(target)
-                lock(target)
-        else:
-            path.rename(target)
-            lock(target)
-
-        moved += 1
-
-    return moved
-
-
-def update_database(
-    conn: sqlite3.Connection,
-    filename: str,
-    content_hash: str,
-    source_signature: str,
-    group: list[SourceFile],
-    output_path: Path,
-) -> None:
-    now = utc_now()
-
-    conn.execute(
-        """
-        INSERT INTO merged_files (
-            filename,
-            content_hash,
-            source_signature,
-            source_count,
-            size,
-            updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(filename)
-        DO UPDATE SET
-            content_hash = excluded.content_hash,
-            source_signature = excluded.source_signature,
-            source_count = excluded.source_count,
-            size = excluded.size,
-            updated_at = excluded.updated_at;
-        """,
+def _source_signature_item(source: MergeSource) -> str:
+    """Return stable source metadata consumed later by persistence boundaries."""
+    return "\t".join(
         (
-            filename,
-            content_hash,
-            source_signature,
-            len(group),
-            output_path.stat().st_size,
-            now,
-        ),
+            source.relative_path,
+            source.fingerprint,
+            str(source.size),
+        )
     )
 
-    conn.execute(
-        "DELETE FROM merged_sources WHERE filename = ?;",
-        (filename,),
-    )
 
-    for source in group:
-        conn.execute(
-            """
-            INSERT INTO merged_sources (
-                filename,
-                source_path,
-                source_sha256,
-                source_size,
-                updated_at
-            )
-            VALUES (?, ?, ?, ?, ?);
-            """,
-            (
-                filename,
-                source.relative_path,
-                source.sha256,
-                source.size,
-                now,
-            ),
-        )
-
-
-def run_merge(project_dir: Path) -> int:
-    sources = load_sources(project_dir)
-
-    if not sources:
-        print(f"[SKIP] No markdown files found: {project_dir}")
-        return 0
-
-    merged_root = project_dir / MERGED_DIR_NAME
-    current_dir = merged_root / CURRENT_DIR_NAME
-    history_dir = merged_root / HISTORY_DIR_NAME
-    stale_dir = merged_root / STALE_DIR_NAME
-
-    groups = chunk_sources(sources)
-    total_groups = len(groups)
-
-    conn = connect_db(project_dir)
-
-    created_or_updated = 0
-    unchanged = 0
-    archived = 0
-    expected_names: set[str] = set()
-
-    try:
-        conn.execute("BEGIN IMMEDIATE;")
-
-        for index, group in enumerate(groups, start=1):
-            filename = build_group_name(project_dir, index, total_groups, group)
-            expected_names.add(filename)
-
-            output_path = current_dir / filename
-            source_signature = build_source_signature(group)
-            content = build_merged_document(project_dir, filename, group)
-            new_hash = sha256_text(content)
-
-            existing = conn.execute(
-                """
-                SELECT content_hash
-                FROM merged_files
-                WHERE filename = ?
-                LIMIT 1;
-                """,
-                (filename,),
-            ).fetchone()
-
-            if (
-                existing is not None
-                and existing["content_hash"] != new_hash
-                and output_path.exists()
-            ):
-                archive_old_version(
-                    output_path, history_dir, str(existing["content_hash"])
-                )
-                archived += 1
-
-            changed, content_hash = write_if_changed(output_path, content)
-
-            if changed:
-                created_or_updated += 1
-            else:
-                unchanged += 1
-
-            update_database(
-                conn=conn,
-                filename=filename,
-                content_hash=content_hash,
-                source_signature=source_signature,
-                group=group,
-                output_path=output_path,
-            )
-
-        stale_moved = move_stale_current_files(
-            current_dir=current_dir,
-            stale_dir=stale_dir,
-            expected_names=expected_names,
-        )
-
-        conn.execute(
-            """
-            INSERT INTO merge_runs (
-                project_dir,
-                source_count,
-                merged_count,
-                created_at
-            )
-            VALUES (?, ?, ?, ?);
-            """,
-            (
-                project_dir.as_posix(),
-                len(sources),
-                total_groups,
-                utc_now(),
-            ),
-        )
-
-        conn.commit()
-
-    except Exception:
-        conn.rollback()
-        raise
-
-    finally:
-        conn.close()
-
-    for md_file in merged_root.rglob("*.md"):
-        lock(md_file)
-
-    print()
-    print("Merge Engine Summary")
-    print("--------------------")
-    print(f"Project: {project_dir}")
-    print(f"Source files: {len(sources)}")
-    print(f"Merged files: {total_groups}")
-    print(f"Created/updated: {created_or_updated}")
-    print(f"Unchanged: {unchanged}")
-    print(f"Archived old versions: {archived}")
-    print(f"Moved stale current files: {stale_moved}")
-    print(f"Current output: {current_dir}")
-    print(f"History output: {history_dir}")
-    print(f"Stale output: {stale_dir}")
-    print(f"State database: {project_dir / STATE_DIR_NAME / DATABASE_NAME}")
-
-    return 0
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Stable, idempotent Markdown merge engine for docsync."
-    )
-    parser.add_argument("project_dir")
-    args = parser.parse_args()
-
-    project_dir = Path(args.project_dir).resolve()
-
-    if not project_dir.is_dir():
-        print(f"ERROR: Project directory not found: {project_dir}")
-        return 1
-
-    return run_merge(project_dir)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+__all__ = [
+    "DEFAULT_MAX_SOURCES_PER_TARGET",
+    "DuplicateSourceError",
+    "DuplicateTargetError",
+    "InvalidMergeSourceError",
+    "MergePlan",
+    "MergePlanner",
+    "MergePlanningError",
+    "MergeSource",
+    "MergeTargetPlan",
+    "PlannedSource",
+    "create_merge_plan",
+]

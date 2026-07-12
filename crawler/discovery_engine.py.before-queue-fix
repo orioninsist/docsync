@@ -143,7 +143,6 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
     connection: sqlite3.Connection
     started: float = field(default_factory=time.time)
     queue: deque[DiscoveryQueueItem] = field(default_factory=deque)
-    queued_urls: set[str] = field(default_factory=set)
     discovered: list[str] = field(default_factory=list)
     blocked_results: list[DiscoveryResult] = field(default_factory=list)
     processed: int = 0
@@ -222,10 +221,7 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
             )
             return
 
-        if clean in self.queued_urls:
-            return
-
-        discovery_mark_seen(
+        inserted = discovery_mark_seen(
             self.connection,
             seed_key=self.seed_key,
             url=clean,
@@ -235,17 +231,17 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
             reason=reason,
         )
 
-        self.queued_urls.add(clean)
-        self.queue.append(
-            DiscoveryQueueItem(
-                clean,
-                depth,
-                discovered_from,
+        if inserted or reason == "seed":
+            self.queue.append(
+                DiscoveryQueueItem(
+                    clean,
+                    depth,
+                    discovered_from,
+                )
             )
-        )
 
-        if clean not in self.discovered:
-            self.discovered.append(clean)
+            if clean not in self.discovered:
+                self.discovered.append(clean)
 
     def log_progress(self, current_url: str, depth: int) -> None:
         """Log progress for the active traversal."""

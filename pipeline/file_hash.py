@@ -1,3 +1,5 @@
+"""Provide deterministic SHA-256 hashing for individual files."""
+
 from __future__ import annotations
 
 import hashlib
@@ -7,6 +9,7 @@ CHUNK_SIZE_BYTES = 1024 * 1024
 
 
 def sha256_file(path: Path) -> str:
+    """Return the hexadecimal SHA-256 digest of the file at the given path."""
     digest = hashlib.sha256()
 
     with path.open("rb") as file:

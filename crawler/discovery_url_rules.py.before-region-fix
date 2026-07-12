@@ -200,23 +200,21 @@ def is_english(value: str) -> bool:
 
 
 def segment_declares_region(value: str) -> bool:
-    """Return True only when the complete segment is a region or locale token."""
+    """Return True when a segment is an ISO region or configured alias."""
 
     normalized = value.strip().lower().replace("_", "-")
     if not normalized:
         return False
 
-    region_tokens = EXTRA_REGION_ALIASES.union(ISO_3166_REGION_CODES)
-
-    if normalized in region_tokens:
-        return True
-
-    locale_match = re.fullmatch(r"([a-z]{2})-([a-z]{2})", normalized)
-    if locale_match is None:
-        return False
-
-    language_or_region, region = locale_match.groups()
-    return language_or_region in region_tokens or region in ISO_3166_REGION_CODES
+    parts = [part for part in normalized.split("-") if part]
+    direct_match = (
+        normalized in EXTRA_REGION_ALIASES or normalized in ISO_3166_REGION_CODES
+    )
+    prefix_match = bool(parts) and parts[0] in EXTRA_REGION_ALIASES.union(
+        ISO_3166_REGION_CODES
+    )
+    suffix_match = 2 <= len(parts) and parts[-1] in ISO_3166_REGION_CODES
+    return direct_match or prefix_match or suffix_match
 
 
 def host_declares_non_english_region(host: str) -> bool:
