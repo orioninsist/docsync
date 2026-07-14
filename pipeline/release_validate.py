@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
+"""Validate DOCSYNC source code and generated project outputs."""
+
 from __future__ import annotations
 
 import stat
-import sys
 from pathlib import Path
 
-from pipeline.paths import OUTPUT_ROOT, PROJECT_ROOT, STATE_ROOT
+from pipeline.paths import (
+    OUTPUT_DIR_NAME,
+    PROJECT_ROOT,
+    discover_project_output_directories,
+)
 from pipeline.subprocess_runner import run_command
 
-FORBIDDEN_PATHS = [
-    PROJECT_ROOT / "pipeline" / "incremental_state.db",
-    STATE_ROOT / "global_url_registry.db",
-]
+READ_ONLY_MODE = 0o444
 
-REQUIRED_FILES = [
+REQUIRED_FILES = (
     PROJECT_ROOT / "crawler" / "crawler_engine.py",
     PROJECT_ROOT / "crawler" / "markdown_writer.py",
     PROJECT_ROOT / "pipeline" / "run_pipeline.py",
@@ -21,33 +23,28 @@ REQUIRED_FILES = [
     PROJECT_ROOT / "pipeline" / "flatten_docs.py",
     PROJECT_ROOT / "pipeline" / "incremental_update.py",
     PROJECT_ROOT / "pipeline" / "merge_engine.py",
-    PROJECT_ROOT / "pipeline" / "global_url_registry.py",
-]
+)
 
-IGNORED_SOURCE_DIR_NAMES = {
-    "_merged",
-    "_archive",
-    "_raw",
-    ".state",
-    ".git",
-    "__pycache__",
-}
+FORBIDDEN_PATHS = (
+    PROJECT_ROOT / "pipeline" / "incremental_state.db",
+)
 
-READ_ONLY_MODE = 0o444
-
-
-def run(command: list[str]) -> int:
-    print()
-    print("$ " + " ".join(command))
-    return run_command(command, cwd=PROJECT_ROOT)
+CODE_ROOTS = (
+    PROJECT_ROOT / "crawler",
+    PROJECT_ROOT / "pipeline",
+    PROJECT_ROOT / "tests",
+    PROJECT_ROOT / "tools",
+)
 
 
 def fail(message: str) -> int:
+    """Print a validation failure and return a non-zero status."""
     print(f"[FAIL] {message}")
     return 1
 
 
 def check_required_files() -> int:
+    """Verify that all release-critical source files exist."""
     missing = [path for path in REQUIRED_FILES if not path.is_file()]
 
     if missing:
@@ -60,156 +57,133 @@ def check_required_files() -> int:
 
 
 def check_forbidden_paths() -> int:
-    bad = [path for path in FORBIDDEN_PATHS if path.exists()]
+    """Verify that forbidden legacy pipeline paths are absent."""
+    existing = [path for path in FORBIDDEN_PATHS if path.exists()]
 
-    if bad:
-        for path in bad:
+    if existing:
+        for path in existing:
             print(f"[FORBIDDEN] {path}")
-        return fail("Forbidden legacy state paths still exist.")
+        return fail("Forbidden legacy pipeline paths still exist.")
 
-    print("[OK] Forbidden legacy state paths are absent.")
+    print("[OK] Forbidden legacy pipeline paths are absent.")
     return 0
 
 
-def check_pycache_absent() -> int:
-    excluded_roots = {
-        ".venv",
-        "venv",
-        "output",
-        "state",
-        "logs",
-        ".git",
+def clean_project_pycache() -> int:
+    """Remove project-local Python bytecode cache directories."""
+    cache_dirs = {
+        cache
+        for root in CODE_ROOTS
+        if root.is_dir()
+        for cache in root.rglob("__pycache__")
+        if cache.is_dir()
     }
 
-    pycache_dirs = [
-        p
-        for p in sorted(PROJECT_ROOT.rglob("__pycache__"))
-        if not any(part in excluded_roots for part in p.parts)
-    ]
+    root_cache = PROJECT_ROOT / "__pycache__"
+    if root_cache.is_dir():
+        cache_dirs.add(root_cache)
 
-    for path in pycache_dirs:
+    for cache_dir in sorted(cache_dirs, reverse=True):
+        for item in cache_dir.iterdir():
+            if item.is_file() or item.is_symlink():
+                item.unlink()
+
         try:
-            for item in path.rglob("*"):
-                if item.is_file():
-                    item.unlink()
-            path.rmdir()
-            print(f"[CLEANED PYCACHE] {path}")
+            cache_dir.rmdir()
         except OSError:
-            return fail(f"Could not remove __pycache__: {path}")
+            return fail(f"Could not remove __pycache__: {cache_dir}")
 
-    print("[OK] __pycache__ directories cleaned.")
+        print(f"[CLEANED PYCACHE] {cache_dir}")
+
+    print("[OK] Project __pycache__ directories cleaned.")
     return 0
 
 
-def compile_python() -> int:
-    python_files = [
-        str(path.relative_to(PROJECT_ROOT))
-        for path in sorted(PROJECT_ROOT.rglob("*.py"))
-        if ".git" not in path.parts
-        and ".venv" not in path.parts
-        and "venv" not in path.parts
-        and "__pycache__" not in path.parts
-    ]
-
-    if not python_files:
-        return fail("No Python files found.")
-
-    return run([sys.executable, "-m", "py_compile", *python_files])
-
-
-def project_has_source_markdown(project_dir: Path) -> bool:
-    return any(
-        path.is_file()
-        and path.suffix.lower() == ".md"
-        and not any(
-            part in IGNORED_SOURCE_DIR_NAMES
-            for part in path.relative_to(project_dir).parts
-        )
-        for path in project_dir.rglob("*.md")
-    )
-
-
-def ignored_project_candidate(path: Path) -> bool:
-    try:
-        relative = path.relative_to(OUTPUT_ROOT)
-    except ValueError:
-        return True
-
-    return any(part in IGNORED_SOURCE_DIR_NAMES for part in relative.parts)
-
-
-def discover_projects() -> list[Path]:
-    if not OUTPUT_ROOT.is_dir():
-        return []
-
-    candidates = [
+def project_python_files() -> list[Path]:
+    """Return all project Python files that must compile."""
+    files = {
         path
-        for path in OUTPUT_ROOT.rglob("*")
-        if path.is_dir()
-        and not ignored_project_candidate(path)
-        and project_has_source_markdown(path)
+        for root in CODE_ROOTS
+        if root.is_dir()
+        for path in root.rglob("*.py")
+        if path.is_file()
+    }
+
+    cli_path = PROJECT_ROOT / "crawler_cli.py"
+    if cli_path.is_file():
+        files.add(cli_path)
+
+    return sorted(files)
+
+
+def compile_project_python() -> int:
+    """Compile all project Python files through uv."""
+    files = project_python_files()
+
+    if not files:
+        return fail("No project Python files found.")
+
+    command = [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "py_compile",
+        *(str(path.relative_to(PROJECT_ROOT)) for path in files),
     ]
+    return run_command(command, cwd=PROJECT_ROOT)
 
-    leaf_projects = []
 
-    for candidate in candidates:
-        has_child_project = any(
-            other != candidate and candidate in other.parents for other in candidates
+def discover_project_directories() -> list[Path]:
+    """Return project directories owning discovered crawler outputs."""
+    output_directories = discover_project_output_directories(
+        require_markdown=True
+    )
+    return sorted({output_dir.parent for output_dir in output_directories})
+
+
+def check_project_outputs() -> int:
+    """Verify pipeline state for every discovered crawler project."""
+    project_directories = discover_project_directories()
+
+    if not project_directories:
+        return fail(
+            "No sources/<project>/output directories containing Markdown "
+            "were found."
         )
 
-        if not has_child_project:
-            leaf_projects.append(candidate)
+    for project_dir in project_directories:
+        output_dir = project_dir / OUTPUT_DIR_NAME
 
-    return sorted(leaf_projects)
+        if not output_dir.is_dir():
+            print(f"[MISSING OUTPUT] {output_dir}")
+            return fail("A discovered project is missing its crawler output.")
 
-
-def check_project_state_files() -> int:
-    projects = discover_projects()
-
-    if not projects:
-        return fail("No output projects found.")
-
-    checked = 0
-
-    for project_dir in projects:
-        if not project_has_source_markdown(project_dir):
-            continue
-
-        checked += 1
-
-        required_state = [
+        required_paths = (
             project_dir / ".state" / "flatten.db",
             project_dir / ".state" / "incremental.db",
-            project_dir / ".state" / "merge.db",
-        ]
+        )
 
-        for db_path in required_state:
-            if not db_path.is_file():
-                print(f"[MISSING STATE] {db_path}")
-                return fail("A project is missing pipeline state database.")
+        for path in required_paths:
+            if not path.is_file():
+                print(f"[MISSING STATE] {path}")
+                return fail("A project is missing required pipeline state.")
 
-        merged_current = project_dir / "_merged" / "current"
-
-        if not merged_current.is_dir():
-            print(f"[MISSING MERGED CURRENT] {merged_current}")
-            return fail("A project is missing _merged/current output.")
-
-    if checked == 0:
-        return fail("No source markdown projects found.")
-
-    print(f"[OK] Project state files verified: {checked}")
+    print(f"[OK] Project state verified: {len(project_directories)}")
     return 0
 
 
 def check_markdown_readonly() -> int:
-    writable: list[Path] = []
-
-    for project_dir in discover_projects():
-        for md_file in project_dir.rglob("*.md"):
-            mode = stat.S_IMODE(md_file.stat().st_mode)
-
-            if mode != READ_ONLY_MODE:
-                writable.append(md_file)
+    """Verify that crawler output Markdown files are read-only."""
+    writable = [
+        path
+        for output_dir in discover_project_output_directories(
+            require_markdown=True
+        )
+        for path in output_dir.rglob("*.md")
+        if path.is_file()
+        and stat.S_IMODE(path.stat().st_mode) != READ_ONLY_MODE
+    ]
 
     if writable:
         for path in writable[:50]:
@@ -218,32 +192,32 @@ def check_markdown_readonly() -> int:
         if len(writable) > 50:
             print(f"[NOT READONLY] ... and {len(writable) - 50} more")
 
-        return fail("Some Markdown files are not locked as read-only.")
+        return fail("Some crawler Markdown files are not read-only.")
 
-    print("[OK] Markdown files are read-only.")
+    print("[OK] Crawler Markdown files are read-only.")
     return 0
 
 
 def main() -> int:
+    """Run all release validation checks."""
     print()
     print("DOCSYNC RELEASE VALIDATION")
     print("==========================")
 
-    checks = [
+    checks = (
         check_required_files,
         check_forbidden_paths,
-        check_pycache_absent,
-        compile_python,
-        check_project_state_files,
+        clean_project_pycache,
+        compile_project_python,
+        check_project_outputs,
         check_markdown_readonly,
-    ]
+    )
 
     for check in checks:
-        code = check()
-        if code != 0:
+        if check() != 0:
             print()
             print("RELEASE VALIDATION FAILED")
-            return code
+            return 1
 
     print()
     print("RELEASE VALIDATION PASSED")

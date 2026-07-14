@@ -28,6 +28,7 @@ ENV/
 .coverage.*
 htmlcov/
 coverage.xml
+coverage.json
 
 # Logs
 logs/
@@ -51,6 +52,9 @@ radon_cc.txt
 radon_mi.txt
 tree.txt
 tree.md
+crawler_discovery_full.txt
+step*-audit.txt
+step*-discovery.txt
 
 # Generated architecture artifacts
 architecture.svg

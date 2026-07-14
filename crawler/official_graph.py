@@ -17,7 +17,7 @@ from crawler.discovery import (
     same_scope,
     score_url,
 )
-from pipeline.time_utils import utc_now
+from crawler.time_utils import utc_now
 
 GRAPH_DB_PATH = Path("state/global/official_host_graph.db")
 

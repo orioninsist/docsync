@@ -1,123 +1,147 @@
 #!/usr/bin/env python3
+"""Discover crawler project directories and execute the release pipeline."""
+
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from pipeline.paths import DOCS_PIPELINE_RUNNER, OUTPUT_ROOT, PROJECT_ROOT
 from pipeline.subprocess_runner import run_python_script
 
-IGNORED_SOURCE_DIR_NAMES = {
-    "_merged",
-    "_archive",
-    "_raw",
-    ".state",
-    ".git",
-    "__pycache__",
-}
+SEPARATOR_WIDTH = 72
 
 
-def project_has_markdown(project_dir: Path) -> bool:
+@dataclass(frozen=True, slots=True)
+class PipelineSummary:
+    """Store aggregate pipeline execution results."""
+
+    processed: int
+    succeeded: int
+    failed: int
+
+    @property
+    def completed_successfully(self) -> bool:
+        """Return whether every discovered project succeeded."""
+        return self.failed == 0
+
+
+def contains_direct_markdown(project_directory: Path) -> bool:
+    """Return whether a project directory directly contains Markdown files."""
     return any(
-        path.is_file()
-        and path.suffix.lower() == ".md"
-        and not any(
-            part in IGNORED_SOURCE_DIR_NAMES
-            for part in path.relative_to(project_dir).parts
-        )
-        for path in project_dir.rglob("*.md")
+        markdown_path.is_file()
+        for markdown_path in project_directory.glob("*.md")
     )
-
-
-def ignored_project_candidate(path: Path) -> bool:
-    try:
-        relative = path.relative_to(OUTPUT_ROOT)
-    except ValueError:
-        return True
-
-    return any(part in IGNORED_SOURCE_DIR_NAMES for part in relative.parts)
 
 
 def discover_projects() -> list[Path]:
-    if not OUTPUT_ROOT.exists():
+    """Discover sources/<project> directories containing crawler Markdown."""
+    if not OUTPUT_ROOT.is_dir():
         return []
 
-    candidates = [
-        path
-        for path in OUTPUT_ROOT.rglob("*")
-        if path.is_dir()
-        and not ignored_project_candidate(path)
-        and project_has_markdown(path)
-    ]
-
-    leaf_projects = []
-
-    for candidate in candidates:
-        has_child_project = any(
-            other != candidate and candidate in other.parents for other in candidates
-        )
-
-        if not has_child_project:
-            leaf_projects.append(candidate)
-
-    return sorted(leaf_projects)
-
-
-def run_project(project_dir: Path) -> int:
-    print()
-    print("=" * 70)
-    print(f"PROJECT: {project_dir.name}")
-    print("=" * 70)
-
-    return run_python_script(
-        script=DOCS_PIPELINE_RUNNER,
-        args=(str(project_dir),),
-        cwd=PROJECT_ROOT,
+    return sorted(
+        project_directory
+        for project_directory in OUTPUT_ROOT.iterdir()
+        if project_directory.is_dir()
+        and not project_directory.name.startswith(".")
+        and contains_direct_markdown(project_directory)
     )
 
 
+def print_project_header(project_directory: Path) -> None:
+    """Print a visible project execution boundary."""
+    print()
+    print("=" * SEPARATOR_WIDTH)
+    print(f"PROJECT: {project_directory.name}")
+    print("=" * SEPARATOR_WIDTH)
+
+
+def process_project(project_directory: Path) -> bool:
+    """Execute the documentation pipeline for one crawler project."""
+    print_project_header(project_directory)
+
+    result = run_python_script(
+        script=DOCS_PIPELINE_RUNNER,
+        args=(str(project_directory),),
+    )
+
+    if result == 0:
+        print(f"[OK] Pipeline completed: {project_directory.name}")
+        return True
+
+    print(f"[FAILED] Pipeline failed: {project_directory.name}")
+    return False
+
+
+def process_projects(projects: list[Path]) -> PipelineSummary:
+    """Execute the pipeline independently for every discovered project."""
+    succeeded = 0
+    failed = 0
+
+    for project_directory in projects:
+        if process_project(project_directory):
+            succeeded += 1
+        else:
+            failed += 1
+
+    return PipelineSummary(
+        processed=len(projects),
+        succeeded=succeeded,
+        failed=failed,
+    )
+
+
+def print_summary(summary: PipelineSummary) -> None:
+    """Print aggregate pipeline execution results."""
+    print()
+    print("PIPELINE SUMMARY")
+    print("================")
+    print(f"Processed: {summary.processed}")
+    print(f"Succeeded: {summary.succeeded}")
+    print(f"Failed:    {summary.failed}")
+    print()
+
+
+def validate_runtime() -> str | None:
+    """Return a runtime validation error or None."""
+    if not PROJECT_ROOT.is_dir():
+        return f"Project root does not exist: {PROJECT_ROOT}"
+
+    if not OUTPUT_ROOT.is_dir():
+        return f"Sources root does not exist: {OUTPUT_ROOT}"
+
+    if not DOCS_PIPELINE_RUNNER.is_file():
+        return f"Pipeline runner does not exist: {DOCS_PIPELINE_RUNNER}"
+
+    return None
+
+
 def main() -> int:
+    """Run the documentation release pipeline."""
     print()
     print("DOCSYNC RELEASE PIPELINE")
     print("========================")
+    print(f"Sources root: {OUTPUT_ROOT}")
 
-    if not DOCS_PIPELINE_RUNNER.is_file():
-        print(f"[ERROR] Missing runner: {DOCS_PIPELINE_RUNNER}")
+    validation_error = validate_runtime()
+
+    if validation_error is not None:
+        print(f"[ERROR] {validation_error}")
         return 1
 
     projects = discover_projects()
 
     if not projects:
-        print(f"[ERROR] No project folders found under: {OUTPUT_ROOT}")
+        print(
+            "[ERROR] No crawler project directories containing direct Markdown "
+            f"were found under: {OUTPUT_ROOT}"
+        )
         return 1
 
-    processed = 0
-    skipped = 0
-    failed = 0
+    summary = process_projects(projects)
+    print_summary(summary)
 
-    for project_dir in projects:
-        if not project_has_markdown(project_dir):
-            print(f"[SKIP] No source markdown files: {project_dir}")
-            skipped += 1
-            continue
-
-        code = run_project(project_dir)
-
-        if code == 0:
-            processed += 1
-        else:
-            failed += 1
-            print(f"[FAILED] {project_dir.name}")
-
-    print()
-    print("=" * 70)
-    print("DOCSYNC RELEASE PIPELINE SUMMARY")
-    print("--------------------------------")
-    print(f"Projects found: {len(projects)}")
-    print(f"Processed: {processed}")
-    print(f"Skipped: {skipped}")
-    print(f"Failed: {failed}")
-
-    if failed:
+    if not summary.completed_successfully:
         return 1
 
     print("PIPELINE COMPLETE")

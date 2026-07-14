@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional, Sequence, cast
 
-from pipeline.time_utils import utc_now
+from crawler.time_utils import utc_now
 
 DEFAULT_QUEUE_PRIORITY = 500
 

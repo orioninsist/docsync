@@ -16,6 +16,7 @@ from crawler.config import CrawlerConfig
 from crawler.crawler_engine_url_rules import is_hard_blacklisted_url
 from crawler.database import DatabaseManager
 from crawler.dedup import DeduplicationEngine
+from crawler.global_url_registry import GlobalUrlRegistry
 from crawler.intent_analyzer import IntentAnalyzer
 from crawler.observability import CrawlerObservability
 from crawler.official_graph import OfficialHostGraph
@@ -26,7 +27,6 @@ from crawler.shared.url_normalizer import (
     normalize_url,
 )
 from crawler.sitemap import SitemapManager
-from pipeline.global_url_registry import GlobalUrlRegistry
 
 
 class CrawlerDiscoveryService:

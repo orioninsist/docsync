@@ -3,37 +3,57 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
 from typing import ClassVar
 
 
 def _positive_int(value: int, fallback: int) -> int:
     """Return fallback when an integer setting is not positive."""
-    return fallback if value <= 0 else value
+    return value if value > 0 else fallback
 
 
 def _minimum_int(value: int, minimum: int) -> int:
-    """Return minimum when an integer setting is below the allowed floor."""
-    return minimum if value < minimum else value
+    """Return at least the configured integer minimum."""
+    return max(value, minimum)
 
 
 def _non_negative_int(value: int) -> int:
     """Return zero when an integer setting is negative."""
-    return 0 if value < 0 else value
+    return max(value, 0)
 
 
 def _non_negative_float(value: float, fallback: float) -> float:
-    """Return fallback when a float setting is negative."""
-    return fallback if value < 0 else value
+    """Return fallback for negative or non-finite floating-point values."""
+    return value if isfinite(value) and value >= 0 else fallback
 
 
-@dataclass(frozen=True)
+def _normalized_path_prefix(value: str) -> str:
+    """Return a normalized absolute URL path prefix."""
+    stripped = value.strip()
+
+    if not stripped:
+        return "/"
+
+    return stripped if stripped.startswith("/") else f"/{stripped}"
+
+
+@dataclass(frozen=True, slots=True)
 class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
     """Immutable crawler configuration with safe normalized defaults."""
 
     DEFAULT_MAX_PAGES: ClassVar[int] = 300
     DEFAULT_MAX_QUEUE_SIZE: ClassVar[int] = 10000
     DEFAULT_MAX_DEPTH: ClassVar[int] = 5
+
+    DEFAULT_MIN_DELAY: ClassVar[float] = 1.5
+    DEFAULT_MAX_DELAY: ClassVar[float] = 5.0
+
+    MIN_CONCURRENT_REQUESTS: ClassVar[int] = 1
+    MIN_MAX_RETRIES: ClassVar[int] = 1
+    MIN_REQUEST_TIMEOUT_SECONDS: ClassVar[int] = 5
+    MIN_PLAYWRIGHT_TIMEOUT_MS: ClassVar[int] = 5000
+    MIN_SITEMAP_TIMEOUT_SECONDS: ClassVar[int] = 1
 
     start_url: str
     output_dir: Path = Path("output")
@@ -44,8 +64,8 @@ class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
         "DocsMarkdownCrawler/1.0 (compatible; respectful documentation crawler)"
     )
 
-    min_delay: float = 1.5
-    max_delay: float = 5.0
+    min_delay: float = DEFAULT_MIN_DELAY
+    max_delay: float = DEFAULT_MAX_DELAY
     max_retries: int = 3
 
     request_timeout: int = 30
@@ -89,18 +109,22 @@ class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
     batch_pause_seconds: int = 10
 
     def __post_init__(self) -> None:
-        """Normalize unsafe configuration values after dataclass creation."""
-        self._validate_start_url()
+        """Validate required values and normalize unsafe configuration."""
+        self._normalize_start_url()
         self._normalize_limit_settings()
         self._normalize_request_settings()
         self._normalize_playwright_settings()
         self._normalize_discovery_settings()
         self._normalize_queue_settings()
 
-    def _validate_start_url(self) -> None:
-        """Ensure the required seed URL is present."""
-        if not self.start_url.strip():
+    def _normalize_start_url(self) -> None:
+        """Strip surrounding whitespace from the required seed URL."""
+        normalized_url = self.start_url.strip()
+
+        if not normalized_url:
             raise ValueError("start_url must not be empty.")
+
+        object.__setattr__(self, "start_url", normalized_url)
 
     def _normalize_limit_settings(self) -> None:
         """Normalize crawler page, queue, and depth limits."""
@@ -125,27 +149,47 @@ class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
         object.__setattr__(
             self,
             "concurrent_requests",
-            _minimum_int(self.concurrent_requests, 1),
+            _minimum_int(
+                self.concurrent_requests,
+                self.MIN_CONCURRENT_REQUESTS,
+            ),
         )
         object.__setattr__(
             self,
             "min_delay",
-            _non_negative_float(self.min_delay, 1.5),
+            _non_negative_float(
+                self.min_delay,
+                self.DEFAULT_MIN_DELAY,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "max_delay",
+            _non_negative_float(
+                self.max_delay,
+                self.DEFAULT_MAX_DELAY,
+            ),
         )
         object.__setattr__(
             self,
             "max_retries",
-            _minimum_int(self.max_retries, 1),
+            _minimum_int(
+                self.max_retries,
+                self.MIN_MAX_RETRIES,
+            ),
         )
         object.__setattr__(
             self,
             "request_timeout",
-            _minimum_int(self.request_timeout, 5),
+            _minimum_int(
+                self.request_timeout,
+                self.MIN_REQUEST_TIMEOUT_SECONDS,
+            ),
         )
-        self._normalize_max_delay()
+        self._normalize_delay_range()
 
-    def _normalize_max_delay(self) -> None:
-        """Ensure max delay is never lower than min delay."""
+    def _normalize_delay_range(self) -> None:
+        """Ensure maximum request delay is not lower than minimum delay."""
         if self.max_delay < self.min_delay:
             object.__setattr__(self, "max_delay", self.min_delay)
 
@@ -154,7 +198,10 @@ class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
         object.__setattr__(
             self,
             "playwright_timeout_ms",
-            _minimum_int(self.playwright_timeout_ms, 5000),
+            _minimum_int(
+                self.playwright_timeout_ms,
+                self.MIN_PLAYWRIGHT_TIMEOUT_MS,
+            ),
         )
         object.__setattr__(
             self,
@@ -172,18 +219,21 @@ class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
         object.__setattr__(
             self,
             "sitemap_discovery_timeout_seconds",
-            _minimum_int(self.sitemap_discovery_timeout_seconds, 1),
+            _minimum_int(
+                self.sitemap_discovery_timeout_seconds,
+                self.MIN_SITEMAP_TIMEOUT_SECONDS,
+            ),
         )
-        self._normalize_allowed_path_prefix()
-
-    def _normalize_allowed_path_prefix(self) -> None:
-        """Ensure allowed path prefix starts with a slash."""
-        if not self.allowed_path_prefix.startswith("/"):
-            object.__setattr__(
-                self,
-                "allowed_path_prefix",
-                f"/{self.allowed_path_prefix}",
-            )
+        object.__setattr__(
+            self,
+            "max_official_cross_host_links_per_page",
+            _non_negative_int(self.max_official_cross_host_links_per_page),
+        )
+        object.__setattr__(
+            self,
+            "allowed_path_prefix",
+            _normalized_path_prefix(self.allowed_path_prefix),
+        )
 
     def _normalize_queue_settings(self) -> None:
         """Normalize queue approval and batch continuation settings."""

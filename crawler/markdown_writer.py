@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 
 from crawler.shared.url_normalizer import normalize_url
-from pipeline.time_utils import utc_now
+from crawler.time_utils import utc_now
 
 READ_ONLY_MODE = 0o444
 WRITE_MODE = 0o644

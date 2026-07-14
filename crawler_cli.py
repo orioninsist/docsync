@@ -26,6 +26,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("target")
     parser.add_argument("sites", nargs="*")
+    parser.add_argument(
+        "--workspace",
+        help="Optional workspace name used when resolving a URL or TXT target.",
+    )
     parser.add_argument("--limit", type=int, default=80)
     parser.add_argument("--yes", action="store_true")
     return parser.parse_args()

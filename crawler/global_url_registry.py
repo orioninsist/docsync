@@ -1,22 +1,20 @@
-#!/usr/bin/env python3
-"""Provide persistent, project-level ownership tracking for normalized URLs."""
+"""Persist and enforce project-level URL ownership."""
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
-from pipeline.time_utils import utc_now
+from crawler.time_utils import utc_now
 
 GLOBAL_REGISTRY_DB = Path("state/global/global_url_registry.db")
 _SUPPORTED_SCHEMES = frozenset({"http", "https"})
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class OwnershipResult:
     """Describe the result of claiming or checking URL ownership."""
 
@@ -48,21 +46,18 @@ def normalize_url(raw_url: str) -> str:
     if hostname is None:
         raise ValueError("URL must contain a hostname.")
 
-    normalized_host = hostname.rstrip(".").lower()
-    if not normalized_host:
+    normalized_hostname = hostname.rstrip(".").lower()
+    if not normalized_hostname:
         raise ValueError("URL hostname must not be empty.")
-
-    normalized_netloc = _normalized_netloc(
-        scheme=scheme,
-        hostname=normalized_host,
-        port=_validated_port(parsed),
-    )
-    normalized_path = parsed.path or "/"
 
     normalized = SplitResult(
         scheme=scheme,
-        netloc=normalized_netloc,
-        path=normalized_path,
+        netloc=_normalized_netloc(
+            scheme=scheme,
+            hostname=normalized_hostname,
+            port=_validated_port(parsed),
+        ),
+        path=parsed.path or "/",
         query=parsed.query,
         fragment="",
     )
@@ -70,7 +65,7 @@ def normalize_url(raw_url: str) -> str:
 
 
 def _validated_port(parsed: SplitResult) -> int | None:
-    """Return the parsed port while converting invalid ports to ValueError."""
+    """Return the parsed port and normalize invalid-port errors."""
 
     try:
         return parsed.port
@@ -91,7 +86,10 @@ def _normalized_netloc(
     if port is None:
         return host
 
-    if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+    is_default_http_port = scheme == "http" and port == 80
+    is_default_https_port = scheme == "https" and port == 443
+
+    if is_default_http_port or is_default_https_port:
         return host
 
     return f"{host}:{port}"
@@ -109,25 +107,33 @@ class GlobalUrlRegistry:
     def __init__(self, db_path: Path = GLOBAL_REGISTRY_DB) -> None:
         """Open the registry database and ensure its schema exists."""
 
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(str(self.db_path))
-        self.connection.row_factory = sqlite3.Row
-        self._configure()
+        self._db_path = db_path
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        self._connection = sqlite3.connect(str(self._db_path))
+        self._connection.row_factory = sqlite3.Row
+
+        self._configure_connection()
         self._create_schema()
 
-    def _configure(self) -> None:
-        """Configure SQLite for safe concurrent registry access."""
+    @property
+    def db_path(self) -> Path:
+        """Return the registry database path."""
 
-        self.connection.execute("PRAGMA journal_mode=WAL;")
-        self.connection.execute("PRAGMA synchronous=NORMAL;")
-        self.connection.execute("PRAGMA busy_timeout=30000;")
-        self.connection.execute("PRAGMA foreign_keys=ON;")
+        return self._db_path
+
+    def _configure_connection(self) -> None:
+        """Configure SQLite for concurrent registry access."""
+
+        self._connection.execute("PRAGMA journal_mode=WAL;")
+        self._connection.execute("PRAGMA synchronous=NORMAL;")
+        self._connection.execute("PRAGMA busy_timeout=30000;")
+        self._connection.execute("PRAGMA foreign_keys=ON;")
 
     def _create_schema(self) -> None:
-        """Create the URL ownership table and supporting index."""
+        """Create the URL ownership table and its lookup index."""
 
-        self.connection.execute(
+        self._connection.execute(
             """
             CREATE TABLE IF NOT EXISTS url_ownership (
                 url_hash TEXT PRIMARY KEY,
@@ -139,13 +145,13 @@ class GlobalUrlRegistry:
             );
             """
         )
-        self.connection.execute(
+        self._connection.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_url_ownership_owner_project
             ON url_ownership(owner_project);
             """
         )
-        self.connection.commit()
+        self._connection.commit()
 
     def claim_or_check(
         self,
@@ -160,11 +166,42 @@ class GlobalUrlRegistry:
         if not normalized_project:
             raise ValueError("owner_project must not be empty.")
 
-        normalized = normalize_url(raw_url)
-        digest = url_hash(normalized)
-        now = utc_now()
+        normalized_url = normalize_url(raw_url)
+        digest = url_hash(normalized_url)
+        timestamp = utc_now()
 
-        existing = self.connection.execute(
+        existing_owner = self._find_owner(digest)
+
+        if existing_owner is None:
+            return self._claim_new_url(
+                digest=digest,
+                normalized_url=normalized_url,
+                owner_project=normalized_project,
+                owner_project_dir=owner_project_dir,
+                timestamp=timestamp,
+            )
+
+        if existing_owner == normalized_project:
+            return self._allow_existing_owner(
+                digest=digest,
+                normalized_url=normalized_url,
+                owner_project=existing_owner,
+                timestamp=timestamp,
+            )
+
+        return OwnershipResult(
+            allowed=False,
+            status="blocked_foreign_owner",
+            url_hash=digest,
+            normalized_url=normalized_url,
+            owner_project=existing_owner,
+            message=f"[BLOCKED] URL already belongs to project: {existing_owner}",
+        )
+
+    def _find_owner(self, digest: str) -> str | None:
+        """Return the owning project for a URL hash when registered."""
+
+        row = self._connection.execute(
             """
             SELECT owner_project
             FROM url_ownership
@@ -174,32 +211,10 @@ class GlobalUrlRegistry:
             (digest,),
         ).fetchone()
 
-        if existing is None:
-            return self._claim_new_url(
-                digest=digest,
-                normalized_url=normalized,
-                owner_project=normalized_project,
-                owner_project_dir=owner_project_dir,
-                timestamp=now,
-            )
+        if row is None:
+            return None
 
-        existing_owner = str(existing["owner_project"])
-        if existing_owner == normalized_project:
-            return self._allow_existing_owner(
-                digest=digest,
-                normalized_url=normalized,
-                owner_project=existing_owner,
-                timestamp=now,
-            )
-
-        return OwnershipResult(
-            allowed=False,
-            status="blocked_foreign_owner",
-            url_hash=digest,
-            normalized_url=normalized,
-            owner_project=existing_owner,
-            message=(f"[BLOCKED] URL already belongs to project: {existing_owner}"),
-        )
+        return str(row["owner_project"])
 
     def _claim_new_url(
         self,
@@ -212,7 +227,7 @@ class GlobalUrlRegistry:
     ) -> OwnershipResult:
         """Persist and return a newly claimed URL."""
 
-        self.connection.execute(
+        self._connection.execute(
             """
             INSERT INTO url_ownership (
                 url_hash,
@@ -233,7 +248,7 @@ class GlobalUrlRegistry:
                 timestamp,
             ),
         )
-        self.connection.commit()
+        self._connection.commit()
 
         return OwnershipResult(
             allowed=True,
@@ -254,7 +269,7 @@ class GlobalUrlRegistry:
     ) -> OwnershipResult:
         """Refresh and return ownership held by the requesting project."""
 
-        self.connection.execute(
+        self._connection.execute(
             """
             UPDATE url_ownership
             SET last_seen_at = ?
@@ -262,7 +277,7 @@ class GlobalUrlRegistry:
             """,
             (timestamp, digest),
         )
-        self.connection.commit()
+        self._connection.commit()
 
         return OwnershipResult(
             allowed=True,
@@ -270,54 +285,25 @@ class GlobalUrlRegistry:
             url_hash=digest,
             normalized_url=normalized_url,
             owner_project=owner_project,
-            message=(f"[ALLOWED] URL already belongs to this project: {owner_project}"),
+            message=f"[ALLOWED] URL already belongs to this project: {owner_project}",
         )
 
     def close(self) -> None:
         """Close the underlying SQLite connection."""
 
-        self.connection.close()
+        self._connection.close()
 
+    def __enter__(self) -> GlobalUrlRegistry:
+        """Return this registry as a context manager."""
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Build the command-line argument parser."""
+        return self
 
-    parser = argparse.ArgumentParser(
-        description="Global URL ownership registry for docsync projects."
-    )
-    parser.add_argument("--project", required=True)
-    parser.add_argument("--project-dir", required=True)
-    parser.add_argument("urls", nargs="+")
-    return parser
+    def __exit__(
+        self,
+        exc_type: object,
+        exc_value: object,
+        traceback: object,
+    ) -> None:
+        """Close the registry when leaving a context manager."""
 
-
-def main() -> int:
-    """Run the global URL registry command-line interface."""
-
-    args = _build_parser().parse_args()
-    registry = GlobalUrlRegistry()
-    exit_code = 0
-
-    try:
-        for raw_url in args.urls:
-            result = registry.claim_or_check(
-                raw_url=raw_url,
-                owner_project=args.project,
-                owner_project_dir=Path(args.project_dir),
-            )
-
-            print(result.message)
-            print(f"status={result.status}")
-            print(f"url_hash={result.url_hash}")
-            print(f"normalized_url={result.normalized_url}")
-
-            if not result.allowed:
-                exit_code = 10
-    finally:
-        registry.close()
-
-    return exit_code
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        self.close()

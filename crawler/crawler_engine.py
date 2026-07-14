@@ -50,7 +50,7 @@ from crawler.shared.url_normalizer import (
     normalize_url,
 )
 from crawler.sitemap import SitemapManager
-from pipeline.global_url_registry import GlobalUrlRegistry
+from crawler.global_url_registry import GlobalUrlRegistry
 
 
 @dataclass(frozen=True, slots=True)

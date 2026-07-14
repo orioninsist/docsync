@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pipeline.time_utils import utc_now
+from crawler.time_utils import utc_now
 
 
 def host_of(url: str) -> str:
