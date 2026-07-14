@@ -1,152 +1,92 @@
-#!/usr/bin/env python3
-"""Discover crawler project directories and execute the release pipeline."""
+"""Run the release pipeline for every discovered crawler output directory."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import subprocess
+import sys
 from pathlib import Path
 
-from pipeline.paths import DOCS_PIPELINE_RUNNER, OUTPUT_ROOT, PROJECT_ROOT
-from pipeline.subprocess_runner import run_python_script
+from pipeline.paths import SOURCES_ROOT
 
-SEPARATOR_WIDTH = 72
-
-
-@dataclass(frozen=True, slots=True)
-class PipelineSummary:
-    """Store aggregate pipeline execution results."""
-
-    processed: int
-    succeeded: int
-    failed: int
-
-    @property
-    def completed_successfully(self) -> bool:
-        """Return whether every discovered project succeeded."""
-        return self.failed == 0
+OUTPUT_DIRECTORY_NAME = "output"
 
 
-def contains_direct_markdown(project_directory: Path) -> bool:
-    """Return whether a project directory directly contains Markdown files."""
-    return any(
-        markdown_path.is_file()
-        for markdown_path in project_directory.glob("*.md")
-    )
+def discover_project_output_directories(
+    sources_root: Path,
+) -> tuple[Path, ...]:
+    """Return valid sources/<project>/output directories in stable order."""
+    if not sources_root.is_dir():
+        raise FileNotFoundError(f"Sources root does not exist: {sources_root}")
 
-
-def discover_projects() -> list[Path]:
-    """Discover sources/<project> directories containing crawler Markdown."""
-    if not OUTPUT_ROOT.is_dir():
-        return []
-
-    return sorted(
-        project_directory
-        for project_directory in OUTPUT_ROOT.iterdir()
+    output_directories = tuple(
+        project_directory / OUTPUT_DIRECTORY_NAME
+        for project_directory in sorted(
+            sources_root.iterdir(),
+            key=lambda path: path.name.casefold(),
+        )
         if project_directory.is_dir()
         and not project_directory.name.startswith(".")
-        and contains_direct_markdown(project_directory)
+        and (project_directory / OUTPUT_DIRECTORY_NAME).is_dir()
     )
 
+    if not output_directories:
+        raise FileNotFoundError(
+            f"No crawler output directories found under: {sources_root}"
+        )
 
-def print_project_header(project_directory: Path) -> None:
-    """Print a visible project execution boundary."""
-    print()
-    print("=" * SEPARATOR_WIDTH)
-    print(f"PROJECT: {project_directory.name}")
-    print("=" * SEPARATOR_WIDTH)
+    return output_directories
 
 
-def process_project(project_directory: Path) -> bool:
-    """Execute the documentation pipeline for one crawler project."""
-    print_project_header(project_directory)
-
-    result = run_python_script(
-        script=DOCS_PIPELINE_RUNNER,
-        args=(str(project_directory),),
+def run_project_pipeline(output_directory: Path) -> None:
+    """Execute the project pipeline against one crawler output directory."""
+    completed_process = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pipeline.docs_pipeline_runner",
+            str(output_directory),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        check=False,
     )
 
-    if result == 0:
-        print(f"[OK] Pipeline completed: {project_directory.name}")
-        return True
-
-    print(f"[FAILED] Pipeline failed: {project_directory.name}")
-    return False
-
-
-def process_projects(projects: list[Path]) -> PipelineSummary:
-    """Execute the pipeline independently for every discovered project."""
-    succeeded = 0
-    failed = 0
-
-    for project_directory in projects:
-        if process_project(project_directory):
-            succeeded += 1
-        else:
-            failed += 1
-
-    return PipelineSummary(
-        processed=len(projects),
-        succeeded=succeeded,
-        failed=failed,
-    )
+    if completed_process.returncode != 0:
+        raise RuntimeError(
+            "Project pipeline failed "
+            f"with exit code {completed_process.returncode}: "
+            f"{output_directory}"
+        )
 
 
-def print_summary(summary: PipelineSummary) -> None:
-    """Print aggregate pipeline execution results."""
+def print_project_header(output_directory: Path) -> None:
+    """Print the active project and its resolved crawler output path."""
+    project_name = output_directory.parent.name
+
     print()
-    print("PIPELINE SUMMARY")
-    print("================")
-    print(f"Processed: {summary.processed}")
-    print(f"Succeeded: {summary.succeeded}")
-    print(f"Failed:    {summary.failed}")
+    print("=" * 72)
+    print(f"PROJECT: {project_name}")
+    print(f"OUTPUT:  {output_directory}")
+    print("=" * 72)
     print()
 
 
-def validate_runtime() -> str | None:
-    """Return a runtime validation error or None."""
-    if not PROJECT_ROOT.is_dir():
-        return f"Project root does not exist: {PROJECT_ROOT}"
+def main() -> None:
+    """Run the pipeline for every dynamically discovered crawler output."""
+    output_directories = discover_project_output_directories(SOURCES_ROOT)
 
-    if not OUTPUT_ROOT.is_dir():
-        return f"Sources root does not exist: {OUTPUT_ROOT}"
-
-    if not DOCS_PIPELINE_RUNNER.is_file():
-        return f"Pipeline runner does not exist: {DOCS_PIPELINE_RUNNER}"
-
-    return None
-
-
-def main() -> int:
-    """Run the documentation release pipeline."""
-    print()
     print("DOCSYNC RELEASE PIPELINE")
     print("========================")
-    print(f"Sources root: {OUTPUT_ROOT}")
+    print(f"Sources root: {SOURCES_ROOT}")
 
-    validation_error = validate_runtime()
+    for output_directory in output_directories:
+        print_project_header(output_directory)
+        run_project_pipeline(output_directory)
 
-    if validation_error is not None:
-        print(f"[ERROR] {validation_error}")
-        return 1
-
-    projects = discover_projects()
-
-    if not projects:
-        print(
-            "[ERROR] No crawler project directories containing direct Markdown "
-            f"were found under: {OUTPUT_ROOT}"
-        )
-        return 1
-
-    summary = process_projects(projects)
-    print_summary(summary)
-
-    if not summary.completed_successfully:
-        return 1
-
-    print("PIPELINE COMPLETE")
-    return 0
+    print()
+    print("DOCSYNC RELEASE PIPELINE COMPLETED")
+    print("==================================")
+    print(f"Projects processed: {len(output_directories)}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
