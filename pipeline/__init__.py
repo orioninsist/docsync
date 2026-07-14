@@ -1,1 +1,1 @@
-"""Pipeline package for discovery and document synchronization workflows."""
+"""Post-crawl document processing pipeline for DOCSYNC."""

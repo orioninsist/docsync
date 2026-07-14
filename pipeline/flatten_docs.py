@@ -1,30 +1,41 @@
-"""Flatten crawler markdown outputs into a project's output root."""
+"""Flatten crawler Markdown outputs into one project output root."""
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 from pipeline.file_hash import sha256_file
+from pipeline.flattened_file_repository import (
+    FlattenedFileRepository,
+    create_flattened_file_record,
+)
+from pipeline.sqlite_connection import sqlite_connection, sqlite_transaction
 
-RAW_DIRECTORY_NAME = "_raw"
-IGNORED_DIR_NAMES = {
-    "_merged",
-    "_archive",
-    ".state",
-}
-STATE_DIR_NAME = ".state"
-DATABASE_NAME = "flatten.db"
+WRITE_MODE = 0o644
 READ_ONLY_MODE = 0o444
 
+IGNORED_DIR_NAMES = frozenset(
+    {
+        "_merged",
+        "_archive",
+        "_raw",
+        ".state",
+    }
+)
 
-@dataclass(frozen=True)
+STATE_DIR_NAME = ".state"
+DATABASE_NAME = "flatten.db"
+
+
+@dataclass(frozen=True, slots=True)
 class MovePlan:
-    """Describe one immutable markdown flattening operation."""
+    """Describe one deterministic Markdown flattening operation."""
 
     source: Path
     target: Path
@@ -32,181 +43,244 @@ class MovePlan:
     size: int
 
 
-def safe_name(value: str) -> str:
-    """Return a filesystem-safe name while preserving readable context."""
+@dataclass(frozen=True, slots=True)
+class FlattenResult:
+    """Aggregate counters produced by one flattening execution."""
 
-    normalized_characters = [
-        character if character.isalnum() or character in {"-", "_", "."} else "-"
-        for character in value.strip()
-    ]
-    normalized_name = "".join(normalized_characters)
-
-    while "--" in normalized_name:
-        normalized_name = normalized_name.replace("--", "-")
-
-    return normalized_name.strip("-") or "document"
+    moved: int
+    skipped: int
+    deduplicated: int
 
 
-def unlock(path: Path) -> None:
-    """Make an existing file writable before replacement or deletion."""
+def parse_arguments(arguments: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse the project output directory argument."""
 
-    try:
-        os.chmod(path, 0o644)
-    except FileNotFoundError:
-        return
+    parser = argparse.ArgumentParser(
+        description="Flatten nested Markdown files into one output directory."
+    )
+    parser.add_argument(
+        "project_dir",
+        help="Resolved sources/<project>/output directory.",
+    )
+    return parser.parse_args(arguments)
 
 
-def lock(path: Path) -> None:
-    """Make a generated markdown file strictly read-only."""
+def run_flatten(project_dir: Path) -> FlattenResult:
+    """Flatten one dynamically resolved crawler output directory."""
 
-    os.chmod(path, READ_ONLY_MODE)
+    plans = build_move_plans(project_dir)
+    database = project_dir / STATE_DIR_NAME / DATABASE_NAME
+
+    with sqlite_connection(database) as connection:
+        repository = FlattenedFileRepository(connection)
+        repository.initialize()
+
+        with sqlite_transaction(connection):
+            return apply_plans(
+                project_dir=project_dir,
+                plans=plans,
+                repository=repository,
+            )
+
+
+def build_move_plans(project_dir: Path) -> tuple[MovePlan, ...]:
+    """Create immutable movement plans for every eligible Markdown file."""
+
+    return tuple(
+        create_move_plan(source_path, project_dir)
+        for source_path in discover_markdown(project_dir)
+    )
+
+
+def create_move_plan(source_path: Path, project_dir: Path) -> MovePlan:
+    """Create one deterministic movement plan."""
+
+    digest = sha256_file(source_path)
+
+    return MovePlan(
+        source=source_path,
+        target=unique_target(source_path, project_dir, digest),
+        sha256=digest,
+        size=source_path.stat().st_size,
+    )
+
+
+def discover_markdown(project_dir: Path) -> tuple[Path, ...]:
+    """Return eligible Markdown files in deterministic order."""
+
+    return tuple(
+        path
+        for path in sorted(project_dir.rglob("*.md"))
+        if path.is_file() and not ignored_path(path, project_dir)
+    )
 
 
 def ignored_path(path: Path, project_dir: Path) -> bool:
-    """Return whether a path belongs to a pipeline-owned ignored directory."""
+    """Return whether a path belongs to an ignored pipeline directory."""
 
     relative_path = path.relative_to(project_dir)
     return any(part in IGNORED_DIR_NAMES for part in relative_path.parts)
 
 
-def is_raw_markdown(path: Path, project_dir: Path) -> bool:
-    """Return whether a file is a crawler markdown artifact under `_raw`."""
+def unique_target(path: Path, project_dir: Path, digest: str) -> Path:
+    """Resolve a collision-safe flat target for one Markdown source."""
 
-    if not path.is_file() or path.suffix.lower() != ".md":
-        return False
+    target = project_dir / build_flat_name(path, project_dir)
 
-    relative_path = path.relative_to(project_dir)
+    if target == path:
+        return target
 
-    if RAW_DIRECTORY_NAME not in relative_path.parts:
-        return False
+    if not target.exists():
+        return target
 
-    return not ignored_path(path, project_dir)
+    if files_match(path, target):
+        return target
 
-
-def connect_db(project_dir: Path) -> sqlite3.Connection:
-    """Open the project-local flattening state database."""
-
-    state_dir = project_dir / STATE_DIR_NAME
-    state_dir.mkdir(parents=True, exist_ok=True)
-
-    connection = sqlite3.connect(state_dir / DATABASE_NAME)
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS flattened_files (
-            target_path TEXT PRIMARY KEY,
-            original_path TEXT NOT NULL,
-            sha256 TEXT NOT NULL,
-            size INTEGER NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_flattened_files_sha256
-        ON flattened_files(sha256)
-        """
-    )
-    connection.commit()
-
-    return connection
-
-
-def discover_markdown(project_dir: Path) -> list[Path]:
-    """Discover only crawler markdown files stored beneath `_raw` directories."""
-
-    return sorted(
-        path
-        for path in project_dir.rglob("*.md")
-        if is_raw_markdown(path, project_dir)
-    )
+    return target.with_name(f"{target.stem}__{digest[:12]}{target.suffix}")
 
 
 def build_flat_name(path: Path, project_dir: Path) -> str:
-    """Create a context-aware flat filename from a crawler raw path."""
+    """Build a deterministic flat Markdown filename."""
 
     relative_path = path.relative_to(project_dir)
-    raw_index = relative_path.parts.index(RAW_DIRECTORY_NAME)
 
-    context_parts = relative_path.parts[:raw_index]
-    content_hash_parts = relative_path.parts[raw_index + 1 : -1]
+    if len(relative_path.parts) == 1:
+        return safe_name(path.name)
 
-    name_parts = [
+    stem_parts = tuple(
         safe_name(part)
-        for part in (*context_parts, *content_hash_parts)
-        if part
-    ]
-
-    if not name_parts:
-        name_parts.append(safe_name(path.stem))
-
-    return "__".join(name_parts) + ".md"
+        for part in relative_path.with_suffix("").parts
+    )
+    return "__".join(stem_parts) + ".md"
 
 
-def unique_target(path: Path, project_dir: Path, digest: str) -> Path:
-    """Resolve a deterministic target without overwriting different content."""
+def safe_name(value: str) -> str:
+    """Normalize one path component for a flat filename."""
 
-    candidate = project_dir / build_flat_name(path, project_dir)
+    normalized = value.strip().replace(" ", "-")
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", normalized)
+    normalized = re.sub(r"-{2,}", "-", normalized)
+    normalized = normalized.strip("-._")
 
-    if not candidate.exists():
-        return candidate
+    return normalized or "document"
 
-    if candidate.is_file() and sha256_file(candidate) == digest:
-        return candidate
 
-    return candidate.with_name(
-        f"{candidate.stem}__{digest[:12]}{candidate.suffix}"
+def files_match(left: Path, right: Path) -> bool:
+    """Return whether two files contain identical bytes."""
+
+    try:
+        return left.stat().st_size == right.stat().st_size and (
+            sha256_file(left) == sha256_file(right)
+        )
+    except OSError:
+        return False
+
+
+def apply_plans(
+    *,
+    project_dir: Path,
+    plans: Sequence[MovePlan],
+    repository: FlattenedFileRepository,
+) -> FlattenResult:
+    """Apply filesystem plans and persist their resulting state."""
+
+    moved = 0
+    skipped = 0
+    deduplicated = 0
+
+    for plan in plans:
+        outcome = apply_plan(plan)
+
+        if outcome == "moved":
+            moved += 1
+        elif outcome == "deduplicated":
+            deduplicated += 1
+        else:
+            skipped += 1
+
+        persist_plan(
+            repository=repository,
+            project_dir=project_dir,
+            plan=plan,
+        )
+
+    return FlattenResult(
+        moved=moved,
+        skipped=skipped,
+        deduplicated=deduplicated,
     )
 
 
-def build_move_plans(project_dir: Path) -> list[MovePlan]:
-    """Build deterministic plans for every raw crawler markdown file."""
+def apply_plan(plan: MovePlan) -> str:
+    """Apply one movement plan and return its stable outcome."""
 
-    plans: list[MovePlan] = []
+    if plan.source == plan.target:
+        lock(plan.target)
+        return "skipped"
 
-    for source_path in discover_markdown(project_dir):
-        digest = sha256_file(source_path)
-        target_path = unique_target(source_path, project_dir, digest)
+    if plan.target.exists() and files_match(plan.source, plan.target):
+        remove_duplicate_source(plan.source)
+        lock(plan.target)
+        return "deduplicated"
 
-        plans.append(
-            MovePlan(
-                source=source_path,
-                target=target_path,
-                sha256=digest,
-                size=source_path.stat().st_size,
-            )
-        )
-
-    return plans
+    move_source(plan.source, plan.target)
+    lock(plan.target)
+    return "moved"
 
 
 def remove_duplicate_source(source: Path) -> None:
-    """Delete a raw file whose content already exists at its flat target."""
+    """Delete one nested source already represented by its target."""
 
     unlock(source)
     source.unlink()
 
 
 def move_source(source: Path, target: Path) -> None:
-    """Move one crawler artifact to the flat root and lock it."""
+    """Move one source to its planned flat target."""
 
     target.parent.mkdir(parents=True, exist_ok=True)
     unlock(source)
     shutil.move(str(source), str(target))
-    lock(target)
+
+
+def persist_plan(
+    *,
+    repository: FlattenedFileRepository,
+    project_dir: Path,
+    plan: MovePlan,
+) -> None:
+    """Persist the final state represented by one movement plan."""
+
+    record = create_flattened_file_record(
+        project_directory=project_dir,
+        target_path=plan.target,
+        source_path=plan.source,
+        sha256=plan.sha256,
+        size=plan.size,
+    )
+    repository.save(record)
 
 
 def remove_empty_dirs(project_dir: Path) -> int:
-    """Remove empty crawler directories while preserving pipeline state areas."""
+    """Remove empty non-pipeline directories below the project output."""
 
-    removed_count = 0
+    removed = 0
+
     directories = sorted(
-        (path for path in project_dir.rglob("*") if path.is_dir()),
+        (
+            path
+            for path in project_dir.rglob("*")
+            if path.is_dir()
+        ),
         key=lambda path: len(path.parts),
         reverse=True,
     )
 
     for directory in directories:
-        if directory == project_dir or ignored_path(directory, project_dir):
+        if directory == project_dir:
+            continue
+
+        if ignored_path(directory, project_dir):
             continue
 
         try:
@@ -214,101 +288,39 @@ def remove_empty_dirs(project_dir: Path) -> int:
                 continue
 
             directory.rmdir()
-            removed_count += 1
+            removed += 1
         except OSError:
             continue
 
-    return removed_count
+    return removed
 
 
-def record_plan(
-    connection: sqlite3.Connection,
-    project_dir: Path,
-    plan: MovePlan,
-) -> None:
-    """Persist one completed flattening operation."""
+def unlock(path: Path) -> None:
+    """Make an existing path writable when possible."""
 
-    relative_target = plan.target.relative_to(project_dir).as_posix()
-    relative_source = plan.source.relative_to(project_dir).as_posix()
-
-    connection.execute(
-        """
-        INSERT INTO flattened_files(
-            target_path,
-            original_path,
-            sha256,
-            size
-        )
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(target_path)
-        DO UPDATE SET
-            original_path = excluded.original_path,
-            sha256 = excluded.sha256,
-            size = excluded.size
-        """,
-        (
-            relative_target,
-            relative_source,
-            plan.sha256,
-            plan.size,
-        ),
-    )
-
-
-def apply_plans(
-    project_dir: Path,
-    plans: list[MovePlan],
-) -> tuple[int, int, int]:
-    """Apply flattening plans with content-based duplicate protection."""
-
-    connection = connect_db(project_dir)
-    moved_count = 0
-    skipped_count = 0
-    deduplicated_count = 0
+    if not path.exists():
+        return
 
     try:
-        for plan in plans:
-            target_exists = plan.target.exists()
-
-            if target_exists and sha256_file(plan.target) == plan.sha256:
-                remove_duplicate_source(plan.source)
-                lock(plan.target)
-                deduplicated_count += 1
-            elif target_exists:
-                skipped_count += 1
-                continue
-            else:
-                move_source(plan.source, plan.target)
-                moved_count += 1
-
-            record_plan(connection, project_dir, plan)
-
-        connection.commit()
-    finally:
-        connection.close()
-
-    return moved_count, skipped_count, deduplicated_count
+        os.chmod(path, WRITE_MODE)
+    except OSError:
+        return
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse the project output directory argument."""
+def lock(path: Path) -> None:
+    """Make an existing Markdown file read-only when possible."""
 
-    parser = argparse.ArgumentParser(
-        description="Flatten crawler markdown files from nested `_raw` directories."
-    )
-    parser.add_argument(
-        "project_dir",
-        help="Resolved sources/<project>/output directory.",
-    )
+    if not path.exists():
+        return
 
-    return parser.parse_args()
+    try:
+        os.chmod(path, READ_ONLY_MODE)
+    except OSError:
+        return
 
 
-def main() -> int:
-    """Flatten one dynamically resolved crawler output directory."""
-
-    arguments = parse_args()
-    project_dir = Path(arguments.project_dir).resolve()
+def validate_project_directory(project_dir: Path) -> None:
+    """Reject invalid project output paths."""
 
     if not project_dir.exists():
         raise FileNotFoundError(
@@ -320,26 +332,50 @@ def main() -> int:
             f"Project output path is not a directory: {project_dir}"
         )
 
-    plans = build_move_plans(project_dir)
-    moved_count, skipped_count, deduplicated_count = apply_plans(
-        project_dir,
-        plans,
-    )
-    removed_directory_count = remove_empty_dirs(project_dir)
+
+def print_summary(
+    *,
+    project_dir: Path,
+    scanned: int,
+    result: FlattenResult,
+    removed_directories: int,
+) -> None:
+    """Print the deterministic flattening summary."""
 
     print()
     print("Flatten Docs Summary")
     print("--------------------")
     print(f"Project: {project_dir}")
-    print(f"Markdown files scanned: {len(plans)}")
-    print(f"Moved to flat root: {moved_count}")
-    print(f"Already existing / skipped: {skipped_count}")
-    print(f"Duplicate nested files removed: {deduplicated_count}")
-    print(f"Empty directories removed: {removed_directory_count}")
+    print(f"Markdown files scanned: {scanned}")
+    print(f"Moved to flat root: {result.moved}")
+    print(f"Already flat / skipped: {result.skipped}")
+    print(f"Duplicate nested files removed: {result.deduplicated}")
+    print(f"Empty directories removed: {removed_directories}")
     print(f"State database: {project_dir / STATE_DIR_NAME / DATABASE_NAME}")
-    print(
-        "Ignored directories: "
-        f"{', '.join(sorted(IGNORED_DIR_NAMES))}"
+    print(f"Ignored directories: {', '.join(sorted(IGNORED_DIR_NAMES))}")
+
+
+def main(arguments: Sequence[str] | None = None) -> int:
+    """Run the flattening command."""
+
+    parsed_arguments = parse_arguments(arguments)
+    project_dir = Path(parsed_arguments.project_dir).resolve()
+
+    try:
+        validate_project_directory(project_dir)
+    except (FileNotFoundError, NotADirectoryError) as error:
+        print(f"ERROR: {error}")
+        return 1
+
+    plans = build_move_plans(project_dir)
+    result = run_flatten(project_dir)
+    removed_directories = remove_empty_dirs(project_dir)
+
+    print_summary(
+        project_dir=project_dir,
+        scanned=len(plans),
+        result=result,
+        removed_directories=removed_directories,
     )
 
     return 0
