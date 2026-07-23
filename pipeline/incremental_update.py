@@ -1,23 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import sqlite3
 import sys
 from pathlib import Path
 
+from pipeline.constants import (
+    IGNORED_DIRECTORY_NAMES,
+    INCREMENTAL_DATABASE_NAME,
+    STATE_DIRECTORY_NAME,
+)
 from pipeline.file_hash import sha256_file
 from pipeline.file_snapshot_repository import FileSnapshot, FileSnapshotRepository
 from pipeline.sqlite_connection import sqlite_connection, sqlite_transaction
-
-STATE_DIR_NAME = ".state"
-DATABASE_NAME = "incremental.db"
-IGNORED_DIR_NAMES = frozenset(
-    {
-        "_merged",
-        "_archive",
-        "_raw",
-        ".state",
-    }
-)
 
 
 def main() -> int:
@@ -83,13 +78,13 @@ def scan_project(project_directory: Path) -> int:
 
 
 def resolve_database_path(project_directory: Path) -> Path:
-    return project_directory / STATE_DIR_NAME / DATABASE_NAME
+    return project_directory / STATE_DIRECTORY_NAME / INCREMENTAL_DATABASE_NAME
 
 
 def update_snapshots(
     *,
     repository: FileSnapshotRepository,
-    connection: object,
+    connection: sqlite3.Connection,
     project_directory: Path,
     markdown_files: list[Path],
 ) -> dict[str, int]:
@@ -177,7 +172,7 @@ def discover_source_markdown_files(project_directory: Path) -> list[Path]:
 def is_source_markdown(path: Path, project_directory: Path) -> bool:
     relative_path = path.relative_to(project_directory)
 
-    if any(part in IGNORED_DIR_NAMES for part in relative_path.parts):
+    if any(part in IGNORED_DIRECTORY_NAMES for part in relative_path.parts):
         return False
 
     if not path.is_file():
@@ -200,7 +195,7 @@ def print_summary(
     print(f"New: {counts['new']}")
     print(f"Changed: {counts['changed']}")
     print(f"Unchanged: {counts['unchanged']}")
-    print(f"Ignored directories: {', '.join(sorted(IGNORED_DIR_NAMES))}")
+    print(f"Ignored directories: {', '.join(sorted(IGNORED_DIRECTORY_NAMES))}")
     print(f"State database: {database_path}")
 
 

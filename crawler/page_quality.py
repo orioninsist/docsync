@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from bs4 import BeautifulSoup
+from bs4.element import AttributeValueList
 
 
 class PageQualityDetector:
@@ -137,7 +138,8 @@ class PageQualityDetector:
             return "login_required"
 
         if not has_article_content and self._contains_any(
-            normalized_text, self.JS_REQUIRED_PATTERNS
+            normalized_text,
+            self.JS_REQUIRED_PATTERNS,
         ):
             return "javascript_required"
 
@@ -282,10 +284,17 @@ class PageQualityDetector:
             )
             action = self._normalize_text_for_detection(str(form.get("action", "")))
             form_id = self._normalize_text_for_detection(str(form.get("id", "")))
-            form_class = self._normalize_text_for_detection(
-                " ".join(str(value) for value in form.get("class", []))
-            )
 
+            raw_form_class = form.get("class")
+
+            if isinstance(raw_form_class, AttributeValueList):
+                form_class_text = " ".join(str(value) for value in raw_form_class)
+            elif isinstance(raw_form_class, str):
+                form_class_text = raw_form_class
+            else:
+                form_class_text = ""
+
+            form_class = self._normalize_text_for_detection(form_class_text)
             haystack = " ".join([form_text, action, form_id, form_class])
 
             if self._contains_any(haystack, self.LOGIN_PATTERNS):
@@ -371,5 +380,4 @@ class PageQualityDetector:
         return " ".join(text.split()).lower()
 
 
-# Backward-compatible public API expected by crawler_engine.py.
 PageQualityAnalyzer = PageQualityDetector

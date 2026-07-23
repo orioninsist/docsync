@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from crawler.discovery_filters import (
+    DISCOVERY_BLOCKED_FILE_EXTENSIONS as DISCOVERY_BLOCKED_FILE_EXTENSIONS,
+)
+from crawler.discovery_filters import (
+    DISCOVERY_BLOCKED_SCHEMES as DISCOVERY_BLOCKED_SCHEMES,
+)
+
 DISCOVERY_BLOCKED_HOST_EXACT = {
     "g",
     "localhost",
@@ -12,54 +19,6 @@ DISCOVERY_BLOCKED_HOST_SUFFIXES = (
     ".invalid",
     ".test",
     ".example",
-)
-
-DISCOVERY_BLOCKED_FILE_EXTENSIONS = (
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".webp",
-    ".svg",
-    ".ico",
-    ".pdf",
-    ".doc",
-    ".docx",
-    ".xls",
-    ".xlsx",
-    ".ppt",
-    ".pptx",
-    ".zip",
-    ".rar",
-    ".7z",
-    ".tar",
-    ".gz",
-    ".mp4",
-    ".webm",
-    ".mov",
-    ".avi",
-    ".mp3",
-    ".wav",
-    ".css",
-    ".js",
-    ".mjs",
-    ".json",
-    ".rss",
-    ".atom",
-    ".woff",
-    ".woff2",
-    ".ttf",
-    ".eot",
-)
-
-DISCOVERY_BLOCKED_SCHEMES = (
-    "mailto:",
-    "tel:",
-    "javascript:",
-    "data:",
-    "blob:",
-    "file:",
-    "ftp:",
 )
 
 DISCOVERY_MAX_DEFAULT_PAGES = 900

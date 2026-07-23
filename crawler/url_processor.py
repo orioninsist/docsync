@@ -36,6 +36,7 @@ class UrlProcessorHost(Protocol):
 
     def _normalize_english_candidate_url(self, url: str) -> str | None:
         """Normalize a URL or reject it when invalid for this crawl."""
+        ...
 
     def _finish_non_english_or_invalid_before_fetch_skip(
         self,
@@ -45,6 +46,7 @@ class UrlProcessorHost(Protocol):
         live: Live,
     ) -> None:
         """Persist and finish a URL rejected before fetching."""
+        ...
 
     def _finish_queue_item(
         self,
@@ -57,6 +59,7 @@ class UrlProcessorHost(Protocol):
         url: str,
     ) -> None:
         """Finish a queue item and update runtime progress."""
+        ...
 
     def _start_url(
         self,
@@ -66,6 +69,7 @@ class UrlProcessorHost(Protocol):
         depth: int,
     ) -> None:
         """Record that processing has started for a URL."""
+        ...
 
     async def _fetch_page(
         self,
@@ -77,6 +81,7 @@ class UrlProcessorHost(Protocol):
         live: Live,
     ) -> tuple[Any, str, str | None] | None:
         """Fetch a URL and return its response lifecycle values."""
+        ...
 
     def _validate_fetch_response(
         self,
@@ -90,6 +95,7 @@ class UrlProcessorHost(Protocol):
         live: Live,
     ) -> bool:
         """Validate a fetched response and finish rejected responses."""
+        ...
 
     def _parse_validated_content(
         self,
@@ -103,6 +109,7 @@ class UrlProcessorHost(Protocol):
         live: Live,
     ) -> Any | None:
         """Parse a validated response or finish a rejected page."""
+        ...
 
     def _handle_content_policy(
         self,
@@ -117,6 +124,7 @@ class UrlProcessorHost(Protocol):
         live: Live,
     ) -> bool:
         """Evaluate parsed content and finish policy rejections."""
+        ...
 
     def _handle_dedup_result(
         self,
@@ -133,6 +141,7 @@ class UrlProcessorHost(Protocol):
         live: Live,
     ) -> bool:
         """Handle duplicate or unchanged content outcomes."""
+        ...
 
     def _persist_processed_page(
         self,
@@ -149,6 +158,7 @@ class UrlProcessorHost(Protocol):
         live: Live,
     ) -> None:
         """Persist a successfully processed page."""
+        ...
 
 
 class UrlProcessor:
@@ -299,7 +309,7 @@ class UrlProcessor:
                 live=live,
             )
 
-        except (OSError, RuntimeError, ValueError):
+        except OSError, RuntimeError, ValueError:
             self._finish_processing_error(
                 url=url,
                 url_hash=url_hash,

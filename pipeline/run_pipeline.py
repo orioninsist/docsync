@@ -1,4 +1,4 @@
-"""Run the document pipeline for every discovered crawler output directory."""
+"""Run the document pipeline for every discovered source project directory."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Sequence
 from pipeline.paths import (
     PROJECT_ROOT,
     SOURCES_ROOT,
-    discover_project_output_directories,
+    discover_project_directories,
 )
 from pipeline.subprocess_runner import run_command
 
@@ -17,32 +17,32 @@ SECTION_WIDTH = 72
 PIPELINE_RUNNER_MODULE = "pipeline.docs_pipeline_runner"
 
 
-def run_project_pipeline(output_directory: Path) -> None:
-    """Run the document pipeline for one crawler output directory."""
+def run_project_pipeline(project_directory: Path) -> None:
+    """Run the document pipeline for one source project directory."""
     run_command(
         [
             sys.executable,
             "-m",
             PIPELINE_RUNNER_MODULE,
-            str(output_directory),
+            str(project_directory),
         ],
         cwd=PROJECT_ROOT,
     )
 
 
 def print_release_header() -> None:
-    """Print the release pipeline header and dynamically resolved source root."""
+    """Print the release pipeline header and resolved sources root."""
     print("DOCSYNC RELEASE PIPELINE")
     print("========================")
     print(f"Sources root: {SOURCES_ROOT.resolve()}")
 
 
-def print_project_header(output_directory: Path) -> None:
-    """Print the project identity and its resolved crawler output directory."""
+def print_project_header(project_directory: Path) -> None:
+    """Print the project identity and resolved source directory."""
     print()
     print("=" * SECTION_WIDTH)
-    print(f"PROJECT: {output_directory.parent.name}")
-    print(f"OUTPUT:  {output_directory}")
+    print(f"PROJECT: {project_directory.name}")
+    print(f"SOURCE:  {project_directory}")
     print("=" * SECTION_WIDTH)
     print()
 
@@ -55,32 +55,32 @@ def print_release_summary(project_count: int) -> None:
     print(f"Projects processed: {project_count}")
 
 
-def require_discovered_outputs(
-    output_directories: Sequence[Path],
+def require_discovered_projects(
+    project_directories: Sequence[Path],
 ) -> None:
-    """Raise an error when no crawler output directories are available."""
-    if not output_directories:
+    """Raise an error when no source project directories are available."""
+    if not project_directories:
         raise FileNotFoundError(
-            f"No crawler output directories found under {SOURCES_ROOT.resolve()}."
+            f"No source project directories found under {SOURCES_ROOT.resolve()}."
         )
 
 
-def run_release_pipeline(output_directories: Sequence[Path]) -> None:
-    """Run the release pipeline for all discovered crawler outputs."""
-    require_discovered_outputs(output_directories)
+def run_release_pipeline(project_directories: Sequence[Path]) -> None:
+    """Run the release pipeline for all discovered source projects."""
+    require_discovered_projects(project_directories)
     print_release_header()
 
-    for output_directory in output_directories:
-        print_project_header(output_directory)
-        run_project_pipeline(output_directory)
+    for project_directory in project_directories:
+        print_project_header(project_directory)
+        run_project_pipeline(project_directory)
 
-    print_release_summary(len(output_directories))
+    print_release_summary(len(project_directories))
 
 
 def main() -> None:
-    """Discover crawler outputs and start the release pipeline."""
-    output_directories = tuple(discover_project_output_directories())
-    run_release_pipeline(output_directories)
+    """Discover source projects and start the release pipeline."""
+    project_directories = discover_project_directories()
+    run_release_pipeline(project_directories)
 
 
 if __name__ == "__main__":

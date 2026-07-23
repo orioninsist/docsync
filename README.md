@@ -75,7 +75,6 @@ gibi sistemler için hazırlanmıştır.
 crawler/
 pipeline/
 sources/
-tools/
 tests/
 README.md
 ```
@@ -174,9 +173,9 @@ Her proje için kendi output klasörünü işler.
 Örnek:
 
 ```
-sources/docs/output/
-sources/pinnacle/output/
-sources/smithay/output/
+sources/docs/
+sources/pinnacle/
+sources/smithay/
 ```
 
 Pipeline hiçbir zaman sabit bir klasöre bağlı değildir.
@@ -260,17 +259,25 @@ Bu sayede iki sistem birbirinden bağımsız olarak geliştirilebilir.
 
 # Çıktılar
 
-Crawler çıktıları:
+Crawler kaynak Markdown dosyaları doğrudan proje dizinine yazılır:
 
-```
+~~~
 sources/<project>/
-```
+~~~
 
-Pipeline çıktıları:
+Crawler ve pipeline tamamen bağımsızdır. Pipeline, proje dizinindeki kaynak
+Markdown dosyalarını yalnızca okur; crawler database, queue veya çalışma
+durumuna erişmez.
 
-```
-sources/<project>/output/
-```
+Pipeline tarafından oluşturulan birleştirilmiş dokümanlar ve durum dosyaları:
+
+~~~
+sources/<project>/_merged/
+├── documents/
+└── state/
+~~~
+
+`_merged/` üretilmiş çıktı alanıdır ve kaynak Markdown keşfine dahil edilmez.
 
 ---
 

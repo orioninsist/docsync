@@ -123,9 +123,11 @@ class DocumentReader(Protocol):
 
     def supports(self, path: Path) -> bool:
         """Return whether this reader supports the supplied document path."""
+        ...
 
     def read(self, request: DocumentReadRequest) -> DocumentReadResult:
         """Read one document without propagating expected filesystem errors."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)

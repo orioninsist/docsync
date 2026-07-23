@@ -1,3 +1,5 @@
+"""URL and content deduplication engine."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -8,19 +10,22 @@ import xxhash
 from crawler.database import DatabaseManager
 from crawler.shared.url_normalizer import normalize_url, url_sha256
 
+
 DedupStatus = Literal[
-    "new",
     "same_url_unchanged",
     "same_url_changed",
     "same_final_url",
     "same_redirect_target",
-    "same_content",
     "same_canonical",
+    "same_content",
+    "new",
 ]
 
 
 @dataclass(frozen=True)
 class DedupResult:
+    """Result returned by deduplication checks."""
+
     status: DedupStatus
     content_changed: bool
 
@@ -29,7 +34,7 @@ class DeduplicationEngine:
     def __init__(self, database: DatabaseManager) -> None:
         self.database = database
 
-    def normalize_url(self, url: str) -> str:
+    def normalize_url(self, url: str) -> str | None:
         return normalize_url(url)
 
     def hash_url(self, url: str) -> str:
@@ -41,7 +46,11 @@ class DeduplicationEngine:
     def final_url_hash(self, final_url: str) -> str:
         return self.hash_url(final_url)
 
-    def redirect_target_hash(self, original_url: str, final_url: str) -> str | None:
+    def redirect_target_hash(
+        self,
+        original_url: str,
+        final_url: str,
+    ) -> str | None:
         original_normalized = self.normalize_url(original_url)
         final_normalized = self.normalize_url(final_url)
 
@@ -58,10 +67,10 @@ class DeduplicationEngine:
         self,
         *,
         url_hash: str,
+        content_hash: str,
         final_url_hash: str | None,
         redirect_target_hash: str | None,
         canonical_url: str | None,
-        content_hash: str,
     ) -> DedupResult:
         same_url = self.database.get_by_url_hash(url_hash)
 
@@ -80,7 +89,9 @@ class DeduplicationEngine:
             )
 
         if final_url_hash:
-            same_final_url = self.database.get_by_final_url_hash(final_url_hash)
+            same_final_url = self.database.get_by_final_url_hash(
+                final_url_hash
+            )
 
             if same_final_url is not None:
                 return DedupResult(
@@ -101,15 +112,17 @@ class DeduplicationEngine:
 
         if canonical_url:
             normalized_canonical_url = self.normalize_url(canonical_url)
-            same_canonical = self.database.get_by_canonical_url(
-                normalized_canonical_url
-            )
 
-            if same_canonical is not None:
-                return DedupResult(
-                    status="same_canonical",
-                    content_changed=False,
+            if normalized_canonical_url is not None:
+                same_canonical = self.database.get_by_canonical_url(
+                    normalized_canonical_url
                 )
+
+                if same_canonical is not None:
+                    return DedupResult(
+                        status="same_canonical",
+                        content_changed=False,
+                    )
 
         same_content = self.database.get_by_content_hash(content_hash)
 

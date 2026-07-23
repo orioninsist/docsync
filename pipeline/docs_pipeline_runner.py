@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Orchestrate document processing for one crawler output directory."""
+"""Orchestrate document processing for one source project directory."""
 
 from __future__ import annotations
 
@@ -8,9 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+from pipeline.constants import READ_ONLY_MODE, WRITE_MODE
 from pipeline.document_workspace import (
-    READ_ONLY_MODE,
-    WRITE_MODE,
     cleanup_legacy_merged_artifacts,
     resolve_project_directory,
     set_markdown_mode,
@@ -54,15 +53,15 @@ PIPELINE_STAGES = (
 
 
 def parse_arguments(arguments: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse the crawler output directory supplied to the pipeline."""
+    """Parse the source project directory supplied to the pipeline."""
 
     parser = argparse.ArgumentParser(
-        description="Run the document pipeline for one crawler output directory."
+        description="Run the document pipeline for one source project directory."
     )
     parser.add_argument(
-        "output_directory",
+        "project_directory",
         type=Path,
-        help="Crawler output directory to process.",
+        help="Source project directory to process.",
     )
     return parser.parse_args(arguments)
 
@@ -95,8 +94,7 @@ def execute_pipeline_stage(
 
     if return_code != 0:
         raise PipelineExecutionError(
-            f"Pipeline stage failed with exit code {return_code}: "
-            f"{stage.script_name}"
+            f"Pipeline stage failed with exit code {return_code}: {stage.script_name}"
         )
 
     print(f"[{stage.number}/6] {stage.completion_message}")
@@ -110,43 +108,41 @@ def execute_pipeline_stages(project_directory: Path) -> None:
 
 
 def print_pipeline_header(project_directory: Path) -> None:
-    """Print the active pipeline workspace."""
+    """Print the active source project directory."""
 
     print()
     print("DOCS PIPELINE FINAL RUNNER")
     print("--------------------------")
-    print(f"Output directory: {project_directory}")
+    print(f"Project directory: {project_directory}")
     print()
 
 
-def run_document_pipeline(output_directory: Path) -> None:
-    """Run the complete document pipeline against one output directory."""
+def run_document_pipeline(project_directory: Path) -> None:
+    """Run the complete document pipeline against one source project."""
 
-    project_directory = resolve_project_directory(output_directory)
-    print_pipeline_header(project_directory)
+    resolved_project_directory = resolve_project_directory(project_directory)
+    print_pipeline_header(resolved_project_directory)
 
     unlocked_file_count = set_markdown_mode(
-        project_directory,
+        resolved_project_directory,
         WRITE_MODE,
     )
     print(f"[1/6] Unlocked markdown files: {unlocked_file_count}")
 
-    removed_artifact_count = cleanup_legacy_merged_artifacts(
-        project_directory
-    )
+    removed_artifact_count = cleanup_legacy_merged_artifacts(resolved_project_directory)
     print(f"[2/6] Removed legacy artifacts: {removed_artifact_count}")
 
     locked_file_count = 0
 
     try:
-        execute_pipeline_stages(project_directory)
+        execute_pipeline_stages(resolved_project_directory)
     finally:
         locked_file_count = set_markdown_mode(
-            project_directory,
+            resolved_project_directory,
             READ_ONLY_MODE,
         )
 
-    validate_markdown_readonly(project_directory)
+    validate_markdown_readonly(resolved_project_directory)
 
     print(f"[6/6] Locked markdown files: {locked_file_count}")
     print("Pipeline completed successfully.")
@@ -158,7 +154,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parsed_arguments = parse_arguments(arguments)
 
     try:
-        run_document_pipeline(parsed_arguments.output_directory)
+        run_document_pipeline(parsed_arguments.project_directory)
     except (PipelineExecutionError, OSError, ValueError) as error:
         print(f"ERROR: {error}")
         return 1

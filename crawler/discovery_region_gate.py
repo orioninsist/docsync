@@ -1,235 +1,68 @@
+"""Discovery URL region and language gate."""
+
 from __future__ import annotations
 
 from urllib.parse import parse_qsl, urlparse
 
-ISO_3166_REGION_CODES = {
-    "ad",
-    "ae",
-    "af",
-    "ag",
-    "ai",
-    "al",
-    "am",
-    "ao",
-    "aq",
-    "ar",
-    "as",
-    "at",
-    "au",
-    "aw",
-    "ax",
-    "az",
-    "ba",
-    "bb",
-    "bd",
-    "be",
-    "bf",
-    "bg",
-    "bh",
-    "bi",
-    "bj",
-    "bl",
-    "bm",
-    "bn",
-    "bo",
-    "bq",
-    "br",
-    "bs",
-    "bt",
-    "bv",
-    "bw",
-    "by",
-    "bz",
-    "ca",
-    "cc",
-    "cd",
-    "cf",
-    "cg",
-    "ch",
-    "ci",
-    "ck",
-    "cl",
-    "cm",
-    "cn",
-    "co",
-    "cr",
-    "cu",
-    "cv",
-    "cw",
-    "cx",
-    "cy",
-    "cz",
-    "de",
-    "dj",
-    "dk",
-    "dm",
-    "do",
-    "dz",
-    "ec",
-    "ee",
-    "eg",
-    "es",
-    "et",
-    "fi",
-    "fj",
-    "fr",
-    "gb",
-    "gr",
-    "hk",
-    "hr",
-    "hu",
-    "id",
-    "ie",
-    "il",
-    "in",
-    "it",
-    "jp",
-    "kr",
-    "mx",
-    "my",
-    "nl",
-    "no",
-    "nz",
-    "pl",
-    "pt",
-    "ro",
-    "ru",
-    "se",
-    "sg",
-    "tr",
-    "tw",
-    "ua",
-    "uk",
-    "us",
-    "vn",
-    "za",
-}
+from crawler.shared.iso_language_gate import (
+    LANGUAGE_QUERY_KEYS,
+    SAFE_HOST_PREFIXES,
+    is_english_value,
+    normalize_lang_value,
+    segment_declares_region,
+)
 
-EXTRA_REGION_ALIASES = {
-    "uk",
-    "usa",
-    "u-s",
-    "u-s-a",
-    "america",
-    "united-states",
-    "united-kingdom",
-}
-
-SAFE_HOST_PREFIXES = {
-    "www",
-    "docs",
-    "doc",
-    "developer",
-    "developers",
-    "help",
-    "support",
-    "learn",
-    "blog",
-    "api",
-    "cloud",
-    "business",
+DISCOVERY_SAFE_HOST_PREFIXES = SAFE_HOST_PREFIXES | {
     "research",
     "labs",
 }
 
-LANGUAGE_QUERY_KEYS = {"hl", "lang", "language", "locale"}
-
-ENGLISH_VALUES = {
-    "en",
-    "en-us",
-    "en-gb",
-    "en-au",
-    "en-ca",
-    "en-ie",
-    "en-in",
-    "en-my",
-    "en-nz",
-    "en-ph",
-    "en-sg",
-    "en-uk",
-    "en-za",
-    "english",
-}
-
-
-def _normalize(value: str) -> str:
-    return value.strip().lower().replace("_", "-")
-
-
-def _is_english(value: str) -> bool:
-    normalized = _normalize(value)
-    return (
-        normalized == "en"
-        or normalized.startswith("en-")
-        or normalized in ENGLISH_VALUES
-    )
-
-
-def _segment_declares_region(value: str) -> bool:
-    normalized = _normalize(value)
-
-    if not normalized:
-        return False
-
-    if normalized in EXTRA_REGION_ALIASES:
-        return True
-
-    if normalized in ISO_3166_REGION_CODES:
-        return True
-
-    parts = [part for part in normalized.split("-") if part]
-
-    if not parts:
-        return False
-
-    if parts[0] in EXTRA_REGION_ALIASES:
-        return True
-
-    if parts[0] in ISO_3166_REGION_CODES:
-        return True
-
-    if len(parts) >= 2 and parts[-1] in ISO_3166_REGION_CODES:
-        return True
-
-    return False
-
 
 def discovery_region_block_reason(raw_url: str) -> str | None:
+    """Return the reason a URL declares a non-English region or language."""
+
     parsed = urlparse(raw_url)
     host = parsed.netloc.lower().removeprefix("www.")
     labels = [label for label in host.split(".") if label]
 
     if labels:
-        first_label = _normalize(labels[0])
+        first_label = normalize_lang_value(labels[0])
 
         if (
             first_label
-            and first_label not in SAFE_HOST_PREFIXES
-            and _segment_declares_region(first_label)
+            and first_label not in DISCOVERY_SAFE_HOST_PREFIXES
+            and segment_declares_region(first_label)
         ):
             return f"iso_block_host_label:{first_label}"
 
         for label in labels:
-            normalized = _normalize(label)
-            if "-" in normalized and _segment_declares_region(normalized):
-                return f"iso_block_host_suffix:{normalized.rsplit('-', 1)[-1]}"
+            normalized = normalize_lang_value(label)
+
+            if "-" in normalized and segment_declares_region(normalized):
+                region = normalized.rsplit("-", 1)[-1]
+                return f"iso_block_host_suffix:{region}"
 
     path_parts = [
-        _normalize(part) for part in parsed.path.strip("/").split("/") if part.strip()
+        normalize_lang_value(part)
+        for part in parsed.path.strip("/").split("/")
+        if part.strip()
     ]
 
     for part in path_parts:
-        if _is_english(part):
+        if is_english_value(part):
             continue
 
-        if _segment_declares_region(part):
+        if segment_declares_region(part):
             return f"iso_block_path_segment:{part}"
 
     for key, value in parse_qsl(parsed.query, keep_blank_values=False):
-        if key.lower().strip() not in LANGUAGE_QUERY_KEYS:
+        normalized_key = key.lower().strip()
+
+        if normalized_key not in LANGUAGE_QUERY_KEYS:
             continue
 
-        if value.strip() and not _is_english(value):
-            return f"iso_block_query:{key.lower().strip()}={_normalize(value)}"
+        if value.strip() and not is_english_value(value):
+            normalized_value = normalize_lang_value(value)
+            return f"iso_block_query:{normalized_key}={normalized_value}"
 
     return None

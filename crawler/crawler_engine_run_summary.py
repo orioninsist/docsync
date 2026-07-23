@@ -14,22 +14,27 @@ class RunSummaryDashboard(Protocol):
     @property
     def processed(self) -> int:
         """Number of URLs processed by the current command."""
+        ...
 
     @property
     def downloaded(self) -> int:
         """Number of URLs downloaded, updated, or restored by the current command."""
+        ...
 
     @property
     def skipped(self) -> int:
         """Number of URLs skipped by the current command."""
+        ...
 
     @property
     def duplicates(self) -> int:
         """Number of duplicate URLs found by the current command."""
+        ...
 
     @property
     def errors(self) -> int:
         """Number of errors seen by the current command."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,9 +105,9 @@ def print_final_run_summary(
         print(f"Approximate additional batch count: {remaining_runs}")
         print(
             "If auto_continue_until_complete is true and this message still appears, "
-            "the stop reason is usually max_auto_batches, max_queue_size, a crash, "
-            "or no processable pending item. Re-running the same Podman/just command "
-            "continues from the database without duplicating existing Markdown."
+            + "the stop reason is usually max_auto_batches, max_queue_size, a crash, "
+            + "or no processable pending item. Re-running the same Podman/just command "
+            + "continues from the database without duplicating existing Markdown."
         )
         return
 
@@ -111,7 +116,7 @@ def print_final_run_summary(
         print("STATUS: FINISHED WITH ERRORS")
         print(
             "No pending URL remains, but some URLs failed. Check the crawler.log "
-            "file for details. Re-running will not duplicate existing Markdown."
+            + "file for details. Re-running will not duplicate existing Markdown."
         )
         return
 
@@ -119,7 +124,7 @@ def print_final_run_summary(
     print("STATUS: COMPLETE")
     print(
         "No pending URL remains. The current crawl queue is complete. "
-        "Weekly or later re-runs will only update changed pages, restore missing "
-        "Markdown files, and skip duplicates by URL, final URL, canonical URL, "
-        "redirect target, and content hash."
+        + "Weekly or later re-runs will only update changed pages, restore missing "
+        + "Markdown files, and skip duplicates by URL, final URL, canonical URL, "
+        + "redirect target, and content hash."
     )

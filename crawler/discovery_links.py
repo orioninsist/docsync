@@ -1,223 +1,91 @@
-"""HTML discovery link extraction helpers."""
+"""Utilities for extracting crawlable links."""
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
-from html import unescape
-from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-from bs4.element import Tag
+
+from crawler.shared.url_policy import BLOCKED_SCHEMES
 
 NormalizeUrl = Callable[[str], str | None]
 BadUrlChecker = Callable[[str], str | None]
 
 _SKIP_PREFIXES = (
     "#",
-    "mailto:",
-    "tel:",
-    "javascript:",
-    "data:",
-    "blob:",
-    "file:",
-    "ftp:",
+    *(f"{scheme}:" for scheme in BLOCKED_SCHEMES),
 )
 
 
 def _clean_attr_value(value: str | None) -> str | None:
     """Return a stripped attribute value when it is useful for crawling."""
-    clean = (value or "").strip()
-    if not clean:
-        return None
-    if clean.lower().startswith(_SKIP_PREFIXES):
-        return None
-    return clean
-
-
-def _normalized_joined_url(
-    value: str,
-    *,
-    base_url: str,
-    normalize: NormalizeUrl,
-) -> str | None:
-    """Join a candidate URL with the page URL and normalize it safely."""
-    try:
-        return normalize(urljoin(base_url, unescape(value)))
-    except (TypeError, ValueError):
+    if not value:
         return None
 
+    cleaned = value.strip()
 
-def _append_candidate(
-    urls: list[str],
-    value: str | None,
+    if not cleaned:
+        return None
+
+    return cleaned
+
+
+def extract_links(
+    html_links: list[str],
     *,
-    base_url: str,
-    normalize: NormalizeUrl,
-) -> None:
-    """Append a normalized candidate URL when it passes lightweight checks."""
-    clean_value = _clean_attr_value(value)
-    if clean_value is None:
-        return
+    normalize_url: NormalizeUrl,
+    bad_url_checker: BadUrlChecker,
+) -> list[str]:
+    """Return normalized crawlable links."""
+    results: list[str] = []
 
-    clean_url = _normalized_joined_url(
-        clean_value,
-        base_url=base_url,
-        normalize=normalize,
-    )
-    if clean_url:
-        urls.append(clean_url)
+    for raw_link in html_links:
+        cleaned = _clean_attr_value(raw_link)
 
+        if not cleaned:
+            continue
 
-def _tag_attr(tag: Tag, attr_name: str) -> str | None:
-    """Read a string attribute from a BeautifulSoup tag."""
-    value = tag.get(attr_name)
-    if isinstance(value, str):
-        return value
-    return None
+        if cleaned.startswith(_SKIP_PREFIXES):
+            continue
 
+        normalized = normalize_url(cleaned)
 
-def _append_standard_tag_url(
-    urls: list[str],
-    tag: Tag,
-    *,
-    base_url: str,
-    normalize: NormalizeUrl,
-) -> None:
-    """Append URL candidates from common link-bearing HTML tags."""
-    if tag.name in {"a", "link", "area"}:
-        _append_candidate(
-            urls,
-            _tag_attr(tag, "href"),
-            base_url=base_url,
-            normalize=normalize,
-        )
-        return
+        if not normalized:
+            continue
 
-    if tag.name in {"script", "img", "iframe", "source", "video", "audio"}:
-        _append_candidate(
-            urls,
-            _tag_attr(tag, "src"),
-            base_url=base_url,
-            normalize=normalize,
-        )
+        if bad_url_checker(normalized):
+            continue
 
+        results.append(normalized)
 
-def _append_meta_url(
-    urls: list[str],
-    tag: Tag,
-    *,
-    base_url: str,
-    normalize: NormalizeUrl,
-) -> None:
-    """Append URL candidates from metadata tags."""
-    if tag.name != "meta":
-        return
-
-    property_value = (_tag_attr(tag, "property") or "").lower()
-    name_value = (_tag_attr(tag, "name") or "").lower()
-    if property_value == "og:url" or name_value in {"twitter:url", "url"}:
-        _append_candidate(
-            urls,
-            _tag_attr(tag, "content"),
-            base_url=base_url,
-            normalize=normalize,
-        )
-
-
-def _append_srcset_urls(
-    urls: list[str],
-    tag: Tag,
-    *,
-    base_url: str,
-    normalize: NormalizeUrl,
-) -> None:
-    """Append URL candidates from srcset attributes."""
-    srcset = _tag_attr(tag, "srcset")
-    if not srcset:
-        return
-
-    for item in srcset.split(","):
-        candidate = item.strip().split(" ", maxsplit=1)[0]
-        _append_candidate(
-            urls,
-            candidate,
-            base_url=base_url,
-            normalize=normalize,
-        )
-
-
-def _append_inline_markdown_urls(
-    urls: list[str],
-    html: str,
-    *,
-    base_url: str,
-    normalize: NormalizeUrl,
-) -> None:
-    """Append URL-like values embedded in inline markdown fragments."""
-    for match in re.finditer(r"\]\(([^)]+)\)", html):
-        _append_candidate(
-            urls,
-            match.group(1),
-            base_url=base_url,
-            normalize=normalize,
-        )
+    return results
 
 
 def extract_real_urls_from_html(
     html: str,
     base_url: str,
+    *,
     normalize: NormalizeUrl,
 ) -> list[str]:
-    """Extract normalized URL candidates from HTML without filtering scope."""
+    """Extract normalized URLs from HTML content."""
     soup = BeautifulSoup(html, "html.parser")
-    urls: list[str] = []
 
-    for tag in soup.find_all(True):
-        if not isinstance(tag, Tag):
-            continue
+    hrefs: list[str] = []
 
-        _append_standard_tag_url(
-            urls,
-            tag,
-            base_url=base_url,
-            normalize=normalize,
-        )
-        _append_meta_url(
-            urls,
-            tag,
-            base_url=base_url,
-            normalize=normalize,
-        )
-        _append_srcset_urls(
-            urls,
-            tag,
-            base_url=base_url,
-            normalize=normalize,
-        )
+    for tag in soup.find_all("a", href=True):
+        href = tag.get("href")
 
-    _append_inline_markdown_urls(
-        urls,
-        html,
-        base_url=base_url,
-        normalize=normalize,
+        if isinstance(href, str):
+            hrefs.append(href)
+
+    return extract_links(
+        hrefs,
+        normalize_url=normalize,
+        bad_url_checker=lambda url: None,
     )
 
-    return sorted(set(urls))
 
-
-def extract_recursive_links(
-    html: str,
-    base_url: str,
-    normalize: NormalizeUrl,
-    is_bad_url: BadUrlChecker,
-) -> list[str]:
-    """Extract normalized recursive links after bad URL filtering."""
-    links: list[str] = []
-
-    for url in extract_real_urls_from_html(html, base_url, normalize):
-        if is_bad_url(url):
-            continue
-        links.append(url)
-
-    return sorted(set(links))
+__all__ = [
+    "extract_links",
+    "extract_real_urls_from_html",
+]

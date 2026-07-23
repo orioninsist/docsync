@@ -14,6 +14,9 @@ from crawler.discovery import discover
 from crawler.discovery_result import DiscoveryResult
 from crawler.queue_file import print_review, read_urls_from_txt, write_seed_txt
 from crawler.runtime_paths import build_runtime_paths
+from crawler.scope_prefix import (
+    build_allowed_path_prefix as shared_allowed_path_prefix,
+)
 from crawler.source_manifest import SourceManifest
 from crawler.target_resolver import resolve_target, target_is_file
 
@@ -320,19 +323,8 @@ def should_allow_cross_host_discovery(start_url: str) -> bool:
 
 
 def build_allowed_path_prefix(start_url: str) -> str:
-    parsed = urlparse(start_url)
-    path = parsed.path.rstrip("/")
-
-    if not path:
-        return "/"
-
-    suffix = Path(path).suffix.lower()
-
-    if suffix in {".html", ".htm", ".xhtml", ".php", ".asp", ".aspx"}:
-        parent = str(Path(path).parent).replace("\\", "/")
-        return "/" if parent in {"", "."} else parent
-
-    return path
+    """Return the shared crawler path boundary for one start URL."""
+    return shared_allowed_path_prefix(start_url)
 
 
 def build_auto_config(start_url: str, workspace: str | None) -> CrawlerConfig:
@@ -340,15 +332,14 @@ def build_auto_config(start_url: str, workspace: str | None) -> CrawlerConfig:
     allowed_path_prefix = build_allowed_path_prefix(start_url)
 
     if workspace:
-        output_dir = (
-            SourceManifest.from_project_name(
-                project_name=workspace, root_dir=SOURCES_ROOT
-            ).output_dir
-            / project_slug
-        )
+        output_dir = SourceManifest.from_project_name(
+            project_name=workspace,
+            root_dir=SOURCES_ROOT,
+        ).output_dir
     else:
         output_dir = SourceManifest.from_project_name(
-            project_name=project_slug, root_dir=SOURCES_ROOT
+            project_name=project_slug,
+            root_dir=SOURCES_ROOT,
         ).output_dir
 
     db_path, logs_dir = build_runtime_paths(project_slug, workspace)
@@ -360,7 +351,7 @@ def build_auto_config(start_url: str, workspace: str | None) -> CrawlerConfig:
         db_path=db_path,
         logs_dir=logs_dir,
         require_english=True,
-        recursive_discovery=False,
+        recursive_discovery=True,
         use_sitemap_discovery=False,
         auto_continue_until_complete=True,
         allow_official_cross_host_discovery=should_allow_cross_host_discovery(
@@ -470,12 +461,16 @@ async def run_one(
 async def main() -> None:
     args = parse_args()
 
-    target_is_existing_workspace = (
-        SourceManifest.from_project_name(
-            project_name=args.target, root_dir=SOURCES_ROOT
-        ).output_dir
-    ).is_dir()
+    target_is_url = is_url(args.target)
     target_is_file_flag = target_is_file(args.target)
+    target_is_existing_workspace = (
+        not target_is_url
+        and not target_is_file_flag
+        and SourceManifest.from_project_name(
+            project_name=args.target,
+            root_dir=SOURCES_ROOT,
+        ).output_dir.is_dir()
+    )
 
     if args.sites:
         sites = args.sites
@@ -499,7 +494,11 @@ async def main() -> None:
         )
     else:
         targets, resolved_workspace = resolve_target(args.target, args.workspace)
-        workspace = resolved_workspace or args.target
+        workspace = (
+            resolved_workspace
+            if resolved_workspace is not None
+            else args.workspace
+        )
 
     if not targets:
         print("No URLs found.")
@@ -509,6 +508,7 @@ async def main() -> None:
     processed = 0
     skipped = 0
     failed = 0
+    linear_download = bool(args.sites) or not is_url(args.target)
 
     for index, url in enumerate(targets, start=1):
         try:
@@ -517,7 +517,7 @@ async def main() -> None:
                 index,
                 total,
                 workspace,
-                linear_download=True,
+                linear_download=linear_download,
             )
             if status == "processed":
                 processed += 1

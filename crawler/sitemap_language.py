@@ -6,93 +6,12 @@ from html import unescape
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-ENGLISH_PATH_HINTS = (
-    "/en/",
-    "/en-us/",
-    "/en-gb/",
-    "/english/",
+from crawler.shared.language_policy import (
+    ENGLISH_PATH_HINTS,
+    LANGUAGE_QUERY_KEYS,
+    NON_ENGLISH_PATH_HINTS,
+    NORMALIZED_ENGLISH_QUERY_VALUES,
 )
-
-NON_ENGLISH_PATH_HINTS = (
-    "/tr/",
-    "/de/",
-    "/fr/",
-    "/es/",
-    "/it/",
-    "/pt/",
-    "/pt-br/",
-    "/ru/",
-    "/ja/",
-    "/ko/",
-    "/zh/",
-    "/zh-cn/",
-    "/zh-tw/",
-    "/ar/",
-    "/hi/",
-    "/id/",
-    "/nl/",
-    "/pl/",
-    "/uk/",
-    "/vi/",
-    "/th/",
-    "/cs/",
-    "/da/",
-    "/el/",
-    "/fi/",
-    "/he/",
-    "/hu/",
-    "/ms/",
-    "/no/",
-    "/ro/",
-    "/sk/",
-    "/sv/",
-    "/bg/",
-    "/hr/",
-    "/lt/",
-    "/lv/",
-    "/sl/",
-    "/sr/",
-)
-
-NON_ENGLISH_QUERY_KEYS = {
-    "hl",
-    "lang",
-    "language",
-    "locale",
-}
-
-ENGLISH_QUERY_VALUES = {
-    "en",
-    "en-us",
-    "en-gb",
-    "en-au",
-    "en-ca",
-    "en-ie",
-    "en-in",
-    "en-my",
-    "en-nz",
-    "en-ph",
-    "en-sg",
-    "en-uk",
-    "en-za",
-    "en_us",
-    "en_gb",
-    "en_au",
-    "en_ca",
-    "en_ie",
-    "en_in",
-    "en_my",
-    "en_nz",
-    "en_ph",
-    "en_sg",
-    "en_uk",
-    "en_za",
-    "english",
-}
-
-NORMALIZED_ENGLISH_QUERY_VALUES = {
-    value.replace("_", "-") for value in ENGLISH_QUERY_VALUES
-}
 
 
 def english_candidates_from_sitemap_url_node(
@@ -187,7 +106,7 @@ def query_declares_non_english(query: str) -> bool:
     parsed_query = parse_qs(query)
 
     for key, values in parsed_query.items():
-        if key.lower() not in NON_ENGLISH_QUERY_KEYS:
+        if key.lower() not in LANGUAGE_QUERY_KEYS:
             continue
 
         if values_declare_non_english(values):

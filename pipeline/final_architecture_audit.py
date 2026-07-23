@@ -144,15 +144,12 @@ def find_direct_sql_violations(
             detail=ast.unparse(node),
         )
         for node in ast.walk(module.tree)
-        if is_direct_sql_call(node)
+        if isinstance(node, ast.Call) and is_direct_sql_call(node)
     )
 
 
-def is_direct_sql_call(node: ast.AST) -> bool:
-    """Return whether an AST node is a likely direct SQLite operation."""
-
-    if not isinstance(node, ast.Call):
-        return False
+def is_direct_sql_call(node: ast.Call) -> bool:
+    """Return whether a call is a likely direct SQLite operation."""
 
     if not isinstance(node.func, ast.Attribute):
         return False
@@ -332,3 +329,7 @@ def print_report(
 
     print()
     print("RESULT: VIOLATIONS FOUND")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

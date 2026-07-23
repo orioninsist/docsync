@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, cast
 
 SqlParameter: TypeAlias = str | bytes | int | float | None
 PositionalParameters: TypeAlias = Sequence[SqlParameter]
@@ -54,7 +54,7 @@ def fetch_one(
     parameters: SqlParameters = EMPTY_PARAMETERS,
 ) -> sqlite3.Row | None:
     cursor = execute_statement(connection, statement, parameters)
-    return cursor.fetchone()
+    return cast(sqlite3.Row | None, cursor.fetchone())
 
 
 def fetch_all(

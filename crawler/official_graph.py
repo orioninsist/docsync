@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from crawler.discovery import (
+from crawler.discovery_url_rules import (
     HIGH_VALUE_PATH_HINTS,
     is_bad_url,
     is_blocked_machine_file,
@@ -235,19 +235,14 @@ class OfficialHostGraph:
             return HostDecision(False, host, 0, scope_block_reason)
 
         known = self.known_hosts()
+        item = score_url(clean, seed=self.seed_url)[0]
 
         if host in known:
-            bucket, item = score_url(clean, seed=self.seed_url)
-            confidence = max(75, item.score if bucket != "blocked" else 75)
+            confidence = max(75, item.score)
             return HostDecision(True, host, confidence, "known_official_host")
 
         if not looks_like_official_host(self.seed_url, clean):
             return HostDecision(False, host, 0, "not_official_like")
-
-        bucket, item = score_url(clean, seed=self.seed_url)
-
-        if bucket == "blocked":
-            return HostDecision(False, host, item.score, item.reason)
 
         parts = set(path_parts(clean))
         high_value_hits = parts.intersection(HIGH_VALUE_PATH_HINTS)
@@ -290,11 +285,13 @@ class OfficialHostGraph:
 
         if depth > 2:
             return "cross_host_depth_limited"
+
         if self._is_google_product_seed():
             return self._google_product_scope_block_reason(url=url)
 
         return self._generic_cross_host_scope_block_reason(
-            url=url, parent_url=parent_url
+            url=url,
+            parent_url=parent_url,
         )
 
     def _is_google_product_seed(self) -> bool:

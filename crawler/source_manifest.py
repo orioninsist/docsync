@@ -22,7 +22,7 @@ class SourceManifest:
         allow_file         -> openai/openai.allow.txt
         block_file         -> openai/openai.block.txt
         discovery_report   -> openai/openai.discovery.md
-        output_dir         -> openai/output/
+        output_dir         -> openai/
     """
 
     project_name: str
@@ -35,7 +35,10 @@ class SourceManifest:
 
     @classmethod
     def from_project_name(
-        cls, project_name: str, *, root_dir: Path | str = "."
+        cls,
+        project_name: str,
+        *,
+        root_dir: Path | str = ".",
     ) -> SourceManifest:
         """Build all manifest paths for a project-local workspace.
 
@@ -58,14 +61,13 @@ class SourceManifest:
             allow_file=workspace_dir / f"{normalized_name}.allow.txt",
             block_file=workspace_dir / f"{normalized_name}.block.txt",
             discovery_report=workspace_dir / f"{normalized_name}.discovery.md",
-            output_dir=workspace_dir / "output",
+            output_dir=workspace_dir,
         )
 
     def ensure_workspace(self) -> None:
-        """Create manifest-owned directories without failing on repeated runs."""
+        """Create the project workspace without creating nested output folders."""
 
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
 
 def normalize_project_name(project_name: str) -> str:

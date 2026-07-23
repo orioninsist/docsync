@@ -9,65 +9,24 @@ from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-ALLOWED_CONTENT_TYPES = ("text/html", "application/xhtml+xml", "text/plain")
-BLOCKED_CONTENT_TYPE_MARKERS = (
-    "application/pdf",
-    "application/zip",
-    "application/x-zip-compressed",
-    "application/x-rar",
-    "application/x-7z-compressed",
-    "application/x-tar",
-    "application/gzip",
-    "application/octet-stream",
-    "image/",
-    "video/",
-    "audio/",
-    "font/",
+from crawler.shared.url_normalizer import normalize_url as shared_normalize_url
+from crawler.shared.url_policy import (
+    MEDIA_SOCIAL_HOSTS as MEDIA_SOCIAL_HOSTS,
+    host_is_media_or_social,
+    is_allowed_text_content_type,
+    is_blocked_content_type as shared_is_blocked_content_type,
+    path_has_blocked_extension,
 )
-BLOCKED_FILE_EXTENSIONS = (
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".webp",
-    ".svg",
-    ".ico",
-    ".pdf",
-    ".doc",
-    ".docx",
-    ".xls",
-    ".xlsx",
-    ".ppt",
-    ".pptx",
-    ".zip",
-    ".rar",
-    ".7z",
-    ".tar",
-    ".gz",
-    ".mp4",
-    ".webm",
-    ".mov",
-    ".avi",
-    ".mp3",
-    ".wav",
-    ".css",
-    ".js",
-    ".mjs",
-    ".json",
-    ".xml",
-    ".rss",
-    ".atom",
-    ".woff",
-    ".woff2",
-    ".ttf",
-    ".eot",
-)
-MEDIA_SOCIAL_HOSTS = frozenset(
-    """
-    instagram.com tiktok.com facebook.com twitter.com x.com threads.net youtube.com
-    youtu.be vimeo.com dailymotion.com twitch.tv snapchat.com pinterest.com reddit.com
-    linkedin.com linktr.ee beacons.ai bio.site campsite.bio about.me
-    """.split()
+
+DISCOVERY_EXTRA_MEDIA_SOCIAL_HOSTS = frozenset(
+    {
+        "about.me",
+        "beacons.ai",
+        "bio.site",
+        "campsite.bio",
+        "linkedin.com",
+        "linktr.ee",
+    }
 )
 SOCIAL_PROFILE_PATH_MARKERS = (
     "/@",
@@ -179,16 +138,13 @@ def is_html(content_type: str) -> bool:
     """Return True when a response content type can be converted to markdown."""
 
     normalized = content_type.lower().strip()
-    return not normalized or any(
-        marker in normalized for marker in ALLOWED_CONTENT_TYPES
-    )
+    return not normalized or is_allowed_text_content_type(normalized)
 
 
 def is_blocked_content_type(content_type: str) -> bool:
     """Return True when a response content type is binary/media/archive."""
 
-    normalized = content_type.lower().strip()
-    return any(marker in normalized for marker in BLOCKED_CONTENT_TYPE_MARKERS)
+    return shared_is_blocked_content_type(content_type)
 
 
 def is_english(value: str) -> bool:
@@ -295,14 +251,15 @@ def is_blocked_url_before_network(url: str, *, require_english: bool) -> bool:
     host = parsed.netloc.lower().removeprefix("www.")
     path_lower = parsed.path.lower()
 
-    blocked_host = any(
-        host == item or host.endswith(f".{item}") for item in MEDIA_SOCIAL_HOSTS
+    blocked_host = host_is_media_or_social(host) or any(
+        host == item or host.endswith(f".{item}")
+        for item in DISCOVERY_EXTRA_MEDIA_SOCIAL_HOSTS
     )
     blocked_social_path = any(
         marker in path_lower for marker in SOCIAL_PROFILE_PATH_MARKERS
     )
     blocked_region = require_english and url_has_definite_non_english_region(url)
-    blocked_extension = path_lower.endswith(BLOCKED_FILE_EXTENSIONS)
+    blocked_extension = path_has_blocked_extension(path_lower)
 
     return blocked_host or blocked_social_path or blocked_region or blocked_extension
 
@@ -497,20 +454,14 @@ def same_scope(candidate_url: str, start_url: str) -> bool:
 
 
 def normalize_candidate_url(url: str) -> str:
-    """Normalize candidate URL for discovery ranking and deduplication."""
+    """Normalize a discovery URL through the shared canonical URL layer."""
 
-    parsed = urlparse(url.strip())
-    scheme = parsed.scheme.lower() or "https"
-    netloc = parsed.netloc.lower()
-    path = parsed.path or "/"
+    normalized = shared_normalize_url(url)
 
-    normalized = parsed._replace(
-        scheme=scheme,
-        netloc=netloc,
-        path=path,
-        fragment="",
-    )
-    return normalized.geturl().rstrip("/")
+    if normalized is not None:
+        return normalized
+
+    return url.strip()
 
 
 def is_non_english_query(query: str) -> bool:
@@ -525,7 +476,7 @@ def is_blocked_machine_file(url: str) -> bool:
     parsed = urlparse(url)
     path_lower = parsed.path.lower()
 
-    return path_lower.endswith(BLOCKED_FILE_EXTENSIONS)
+    return path_has_blocked_extension(path_lower)
 
 
 def is_bad_url(url: str, *, require_english: bool = True) -> bool:

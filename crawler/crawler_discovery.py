@@ -22,6 +22,7 @@ from crawler.observability import CrawlerObservability
 from crawler.official_graph import OfficialHostGraph
 from crawler.policy_engine import SmartScopePolicy
 from crawler.robots import RobotsManager
+from crawler.shared.url_ownership import claim_url_ownership
 from crawler.shared.url_normalizer import (
     normalize_joined_url,
     normalize_url,
@@ -119,11 +120,22 @@ class CrawlerDiscoveryService:
                 )
                 break
 
-            await self._evaluate_and_enqueue_link(
-                raw_link=raw_link,
-                parent_url=final_url,
-                depth=next_depth,
-            )
+            try:
+                await self._evaluate_and_enqueue_link(
+                    raw_link=raw_link,
+                    parent_url=final_url,
+                    depth=next_depth,
+                )
+            except Exception:
+                self.logger.exception(
+                    (
+                        "Unexpected discovered-link evaluation failure; "
+                        "continuing crawl: raw_link=%s parent_url=%s depth=%s"
+                    ),
+                    raw_link,
+                    final_url,
+                    next_depth,
+                )
 
     async def _evaluate_and_enqueue_link(
         self,
@@ -161,7 +173,8 @@ class CrawlerDiscoveryService:
 
         if not intent.allowed:
             self.logger.info(
-                ("Smart Router skipped discovered URL before queue: url=%s reason=%s"),
+                "Smart Router skipped discovered URL before queue: "
+                "url=%s reason=%s",
                 link,
                 intent.reason,
             )
@@ -171,7 +184,37 @@ class CrawlerDiscoveryService:
             )
             return
 
-        if not self.robots.can_fetch(link):
+        try:
+            robots_allowed = self.robots.can_fetch(link)
+        except Exception:
+            self.logger.exception(
+                (
+                    "Robots.txt evaluation failed; discovered URL will not be "
+                    "enqueued: url=%s parent_url=%s"
+                ),
+                link,
+                parent_url,
+            )
+            self.observability.record_official_rejected(
+                url=link,
+                reason="robots_txt_evaluation_error_before_enqueue",
+            )
+            return
+
+        if not robots_allowed:
+            self.logger.warning(
+                (
+                    "Robots.txt blocked discovered URL before enqueue: "
+                    "url=%s parent_url=%s depth=%s"
+                ),
+                link,
+                parent_url,
+                depth,
+            )
+            self.observability.record_official_rejected(
+                url=link,
+                reason="robots_txt_blocked_before_enqueue",
+            )
             return
 
         if not self._claim_url_ownership(link):
@@ -183,6 +226,17 @@ class CrawlerDiscoveryService:
             depth=depth,
             discovered_from=parent_url,
             priority=intent.priority,
+        )
+
+        self.logger.debug(
+            (
+                "Discovered URL enqueued: url=%s parent_url=%s "
+                "depth=%s priority=%s"
+            ),
+            link,
+            parent_url,
+            depth,
+            intent.priority,
         )
 
     async def resolve_phase2_redirect_final_link(
@@ -346,27 +400,13 @@ class CrawlerDiscoveryService:
         return False
 
     def _claim_url_ownership(self, url: str) -> bool:
-        result = self.global_url_registry.claim_or_check(
-            raw_url=url,
+        return claim_url_ownership(
+            url=url,
+            registry=self.global_url_registry,
             owner_project=self.owner_project,
             owner_project_dir=self.config.output_dir,
+            logger=self.logger,
         )
-
-        if result.allowed:
-            return True
-
-        self.logger.warning(
-            (
-                "Blocked URL owned by another project: "
-                "url=%s normalized_url=%s owner_project=%s status=%s"
-            ),
-            url,
-            result.normalized_url,
-            result.owner_project,
-            result.status,
-        )
-        print(result.message, flush=True)
-        return False
 
     def _normalize_joined_candidate_url(
         self,

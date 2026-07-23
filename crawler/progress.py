@@ -1,16 +1,18 @@
+"""Crawler dashboard state and Rich rendering."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.progress_bar import ProgressBar
 from rich.table import Table
 
 
 class RichDashboard:
+    """Store crawler progress state and render it as a Rich panel."""
+
     def __init__(self, total_pages: int) -> None:
-        self.console = Console(force_terminal=True)
         self.total_pages = max(total_pages, 1)
         self.start_time = datetime.now()
         self.current_url = ""
@@ -75,15 +77,29 @@ class RichDashboard:
 
     @property
     def processed(self) -> int:
-        return self.downloaded + self.skipped + self.duplicates + self.errors
+        return (
+            self.downloaded
+            + self.skipped
+            + self.duplicates
+            + self.errors
+        )
 
     def _stats(self) -> tuple[float, int, float, datetime]:
-        elapsed = max((datetime.now() - self.start_time).total_seconds(), 1)
+        elapsed = max(
+            (datetime.now() - self.start_time).total_seconds(),
+            1,
+        )
         speed = self.processed / elapsed
         remaining = max(self.total_pages - self.processed, 0)
         eta_seconds = int(remaining / speed) if speed > 0 else 0
-        percent = (self.processed / self.total_pages) * 100
-        estimated_end = datetime.now() + timedelta(seconds=eta_seconds)
+        percent = min(
+            (self.processed / self.total_pages) * 100,
+            100.0,
+        )
+        estimated_end = datetime.now() + timedelta(
+            seconds=eta_seconds
+        )
+
         return speed, eta_seconds, percent, estimated_end
 
     def terminal_line(
@@ -94,13 +110,21 @@ class RichDashboard:
         pending: int,
         queued: int,
     ) -> str:
-        self.update_queue_context(pending=pending, queued=queued)
+        """Build a file-log progress record without printing it."""
+
+        self.update_queue_context(
+            pending=pending,
+            queued=queued,
+        )
         speed, eta_seconds, percent, _ = self._stats()
 
         batch_text = ""
+
         if self.batch_current:
             if self.batch_total:
-                batch_text = f" batch={self.batch_current}/{self.batch_total}"
+                batch_text = (
+                    f" batch={self.batch_current}/{self.batch_total}"
+                )
             else:
                 batch_text = f" batch={self.batch_current}"
 
@@ -124,40 +148,100 @@ class RichDashboard:
         )
 
     def render(self) -> Panel:
+        """Render the complete dashboard without writing to the console."""
+
         speed, eta_seconds, percent, estimated_end = self._stats()
 
-        table = Table(title="Docs Markdown Crawler Progress")
+        table = Table(
+            title="Docs Markdown Crawler Progress"
+        )
         table.add_column("Metric")
         table.add_column("Value")
 
         table.add_row(
-            "Step", f"{self.step_current}/{self.step_total} - {self.step_name}"
+            "Step",
+            (
+                f"{self.step_current}/{self.step_total} "
+                f"- {self.step_name}"
+            ),
         )
 
         if self.batch_current:
             if self.batch_total:
-                table.add_row("Batch", f"{self.batch_current}/{self.batch_total}")
+                table.add_row(
+                    "Batch",
+                    f"{self.batch_current}/{self.batch_total}",
+                )
             else:
-                table.add_row("Batch", str(self.batch_current))
+                table.add_row(
+                    "Batch",
+                    str(self.batch_current),
+                )
 
-        table.add_row("Batch Progress", f"{self.processed} / {self.total_pages}")
-        table.add_row("Batch Bar", ProgressBar(total=100, completed=percent))
-        table.add_row("Batch Percentage", f"{percent:.2f}%")
-
-        table.add_row("Database Queued Total", str(self.queued))
-        table.add_row("Database Pending", str(self.pending))
-        table.add_row("Estimated Remaining Batches", f"≈{self.remaining_batches}")
-
-        table.add_row("Downloaded / Updated", str(self.downloaded))
-        table.add_row("Skipped", str(self.skipped))
-        table.add_row("Duplicates", str(self.duplicates))
-        table.add_row("Errors", str(self.errors))
-
-        table.add_row("Speed", f"{speed:.2f} pages/sec")
-        table.add_row("Batch ETA", str(timedelta(seconds=eta_seconds)))
         table.add_row(
-            "Estimated Batch End", estimated_end.strftime("%Y-%m-%d %H:%M:%S")
+            "Batch Progress",
+            f"{self.processed} / {self.total_pages}",
         )
-        table.add_row("Current URL", self.current_url or "-")
+        table.add_row(
+            "Batch Bar",
+            ProgressBar(
+                total=100,
+                completed=percent,
+            ),
+        )
+        table.add_row(
+            "Batch Percentage",
+            f"{percent:.2f}%",
+        )
+
+        table.add_row(
+            "Database Queued Total",
+            str(self.queued),
+        )
+        table.add_row(
+            "Database Pending",
+            str(self.pending),
+        )
+        table.add_row(
+            "Estimated Remaining Batches",
+            f"≈{self.remaining_batches}",
+        )
+
+        table.add_row(
+            "Downloaded / Updated",
+            str(self.downloaded),
+        )
+        table.add_row(
+            "Skipped",
+            str(self.skipped),
+        )
+        table.add_row(
+            "Duplicates",
+            str(self.duplicates),
+        )
+        table.add_row(
+            "Errors",
+            str(self.errors),
+        )
+
+        table.add_row(
+            "Speed",
+            f"{speed:.2f} pages/sec",
+        )
+        table.add_row(
+            "Batch ETA",
+            str(timedelta(seconds=eta_seconds)),
+        )
+        table.add_row(
+            "Estimated Batch End",
+            estimated_end.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        table.add_row(
+            "Current URL",
+            self.current_url or "-",
+        )
 
         return Panel(table)
+
+
+__all__ = ["RichDashboard"]

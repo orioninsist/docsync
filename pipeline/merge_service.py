@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and persist merged Markdown outputs for one crawler output directory."""
+"""Build and persist merged Markdown outputs for one source project."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from pipeline.output_writer import (
 )
 
 UTF8 = "utf-8"
+SOURCES_DIRECTORY_NAME = "sources"
 MERGED_DIRECTORY_NAME = "_merged"
 CURRENT_DIRECTORY_NAME = "current"
 STATE_DIRECTORY_NAME = "state"
@@ -34,20 +35,20 @@ class MergeServiceError(RuntimeError):
 
 
 def parse_arguments(arguments: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse one crawler output directory from the command line."""
+    """Parse one source project directory from the command line."""
     parser = argparse.ArgumentParser(
         description="Create deterministic merged Markdown outputs."
     )
     parser.add_argument(
         "project_directory",
         type=Path,
-        help="Resolved sources/<project_name>/output directory.",
+        help="Resolved sources/<project_name> directory.",
     )
     return parser.parse_args(arguments)
 
 
 def resolve_project_directory(candidate: Path) -> Path:
-    """Resolve and validate one crawler output directory."""
+    """Resolve and validate one sources/<project_name> directory."""
     project_directory = candidate.expanduser().resolve()
 
     if not project_directory.exists():
@@ -56,14 +57,12 @@ def resolve_project_directory(candidate: Path) -> Path:
         )
 
     if not project_directory.is_dir():
-        raise MergeServiceError(
-            f"Project path is not a directory: {project_directory}"
-        )
+        raise MergeServiceError(f"Project path is not a directory: {project_directory}")
 
-    if project_directory.name != "output":
+    if project_directory.parent.name != SOURCES_DIRECTORY_NAME:
         raise MergeServiceError(
-            "Merge input must be a crawler output directory named 'output': "
-            f"{project_directory}"
+            "Merge input must be a project directory directly under "
+            f"'{SOURCES_DIRECTORY_NAME}': {project_directory}"
         )
 
     return project_directory
@@ -79,10 +78,7 @@ def discover_markdown_files(project_directory: Path) -> tuple[Path, ...]:
 
         relative_path = markdown_file.relative_to(project_directory)
 
-        if any(
-            part in IGNORED_DIRECTORY_NAMES
-            for part in relative_path.parts[:-1]
-        ):
+        if any(part in IGNORED_DIRECTORY_NAMES for part in relative_path.parts[:-1]):
             continue
 
         markdown_files.append(markdown_file)
@@ -103,9 +99,7 @@ def read_markdown(path: Path) -> str:
     try:
         return path.read_text(encoding=UTF8)
     except (OSError, UnicodeError) as error:
-        raise MergeServiceError(
-            f"Unable to read Markdown source: {path}"
-        ) from error
+        raise MergeServiceError(f"Unable to read Markdown source: {path}") from error
 
 
 def extract_document_title(content: str, fallback: str) -> str:
@@ -283,9 +277,9 @@ def synchronize_merged_outputs(
 
 
 def run_merge_service(project_directory: Path) -> OutputWriteResult:
-    """Create, render, and persist merged outputs for one project."""
+    """Create, render, and persist merged outputs for one source project."""
     markdown_files = discover_markdown_files(project_directory)
-    project_name = project_directory.parent.name
+    project_name = project_directory.name
 
     sources = build_merge_sources(
         project_directory,

@@ -6,10 +6,17 @@ import argparse
 import os
 import re
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
+from pipeline.constants import (
+    FLATTEN_DATABASE_NAME,
+    IGNORED_DIRECTORY_NAMES,
+    READ_ONLY_MODE,
+    STATE_DIRECTORY_NAME,
+    WRITE_MODE,
+)
 from pipeline.file_hash import sha256_file
 from pipeline.flattened_file_repository import (
     FlattenedFileRepository,
@@ -17,20 +24,11 @@ from pipeline.flattened_file_repository import (
 )
 from pipeline.sqlite_connection import sqlite_connection, sqlite_transaction
 
-WRITE_MODE = 0o644
-READ_ONLY_MODE = 0o444
 
-IGNORED_DIR_NAMES = frozenset(
-    {
-        "_merged",
-        "_archive",
-        "_raw",
-        ".state",
-    }
-)
+class FlattenArguments(argparse.Namespace):
+    """Typed command-line arguments for the flattening command."""
 
-STATE_DIR_NAME = ".state"
-DATABASE_NAME = "flatten.db"
+    project_dir: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,24 +50,24 @@ class FlattenResult:
     deduplicated: int
 
 
-def parse_arguments(arguments: Sequence[str] | None = None) -> argparse.Namespace:
+def parse_arguments(arguments: Sequence[str] | None = None) -> FlattenArguments:
     """Parse the project output directory argument."""
 
     parser = argparse.ArgumentParser(
         description="Flatten nested Markdown files into one output directory."
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "project_dir",
         help="Resolved sources/<project>/output directory.",
     )
-    return parser.parse_args(arguments)
+    return parser.parse_args(arguments, namespace=FlattenArguments())
 
 
 def run_flatten(project_dir: Path) -> FlattenResult:
     """Flatten one dynamically resolved crawler output directory."""
 
     plans = build_move_plans(project_dir)
-    database = project_dir / STATE_DIR_NAME / DATABASE_NAME
+    database = project_dir / STATE_DIRECTORY_NAME / FLATTEN_DATABASE_NAME
 
     with sqlite_connection(database) as connection:
         repository = FlattenedFileRepository(connection)
@@ -119,7 +117,7 @@ def ignored_path(path: Path, project_dir: Path) -> bool:
     """Return whether a path belongs to an ignored pipeline directory."""
 
     relative_path = path.relative_to(project_dir)
-    return any(part in IGNORED_DIR_NAMES for part in relative_path.parts)
+    return any(part in IGNORED_DIRECTORY_NAMES for part in relative_path.parts)
 
 
 def unique_target(path: Path, project_dir: Path, digest: str) -> Path:
@@ -147,10 +145,7 @@ def build_flat_name(path: Path, project_dir: Path) -> str:
     if len(relative_path.parts) == 1:
         return safe_name(path.name)
 
-    stem_parts = tuple(
-        safe_name(part)
-        for part in relative_path.with_suffix("").parts
-    )
+    stem_parts = tuple(safe_name(part) for part in relative_path.with_suffix("").parts)
     return "__".join(stem_parts) + ".md"
 
 
@@ -240,7 +235,7 @@ def move_source(source: Path, target: Path) -> None:
 
     target.parent.mkdir(parents=True, exist_ok=True)
     unlock(source)
-    shutil.move(str(source), str(target))
+    _ = shutil.move(str(source), str(target))
 
 
 def persist_plan(
@@ -267,11 +262,7 @@ def remove_empty_dirs(project_dir: Path) -> int:
     removed = 0
 
     directories = sorted(
-        (
-            path
-            for path in project_dir.rglob("*")
-            if path.is_dir()
-        ),
+        (path for path in project_dir.rglob("*") if path.is_dir()),
         key=lambda path: len(path.parts),
         reverse=True,
     )
@@ -342,6 +333,8 @@ def print_summary(
 ) -> None:
     """Print the deterministic flattening summary."""
 
+    database_path = project_dir / STATE_DIRECTORY_NAME / FLATTEN_DATABASE_NAME
+
     print()
     print("Flatten Docs Summary")
     print("--------------------")
@@ -351,8 +344,8 @@ def print_summary(
     print(f"Already flat / skipped: {result.skipped}")
     print(f"Duplicate nested files removed: {result.deduplicated}")
     print(f"Empty directories removed: {removed_directories}")
-    print(f"State database: {project_dir / STATE_DIR_NAME / DATABASE_NAME}")
-    print(f"Ignored directories: {', '.join(sorted(IGNORED_DIR_NAMES))}")
+    print(f"State database: {database_path}")
+    print(f"Ignored directories: {', '.join(sorted(IGNORED_DIRECTORY_NAMES))}")
 
 
 def main(arguments: Sequence[str] | None = None) -> int:

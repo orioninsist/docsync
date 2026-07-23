@@ -1,4 +1,4 @@
-"""Manage document files inside one dynamically resolved crawler output directory."""
+"""Manage document files inside one dynamically resolved source project."""
 
 from __future__ import annotations
 
@@ -7,26 +7,23 @@ import stat
 from pathlib import Path
 from typing import Iterable
 
-READ_ONLY_MODE = 0o444
-WRITE_MODE = 0o644
+from pipeline.constants import READ_ONLY_MODE, WRITE_MODE
+from pipeline.paths import SOURCES_ROOT
 
-OUTPUT_DIRECTORY_NAME = "output"
-SOURCES_DIRECTORY_NAME = "sources"
 MERGED_DIRECTORY_NAME = "_merged"
 MERGED_ALLOWED_DIRECTORY_NAMES = frozenset({"current", "history", "stale"})
 LEGACY_MERGE_DATABASE_NAME = ".merge_state.db"
 
 
 class DocumentWorkspaceError(RuntimeError):
-    """Raised when a crawler output workspace cannot be safely managed."""
+    """Raised when a source project workspace cannot be safely managed."""
 
 
 def resolve_project_directory(path: Path) -> Path:
-    """Resolve and validate one crawler output directory."""
+    """Resolve and validate one sources/<project> directory."""
     project_directory = path.expanduser().resolve()
 
     _validate_existing_directory(project_directory)
-    _validate_output_directory_name(project_directory)
     _validate_sources_directory_layout(project_directory)
 
     return project_directory
@@ -35,11 +32,7 @@ def resolve_project_directory(path: Path) -> Path:
 def find_markdown_files(project_directory: Path) -> tuple[Path, ...]:
     """Return every Markdown file beneath the project directory."""
     return tuple(
-        sorted(
-            path
-            for path in project_directory.rglob("*.md")
-            if path.is_file()
-        )
+        sorted(path for path in project_directory.rglob("*.md") if path.is_file())
     )
 
 
@@ -77,9 +70,7 @@ def find_legacy_merged_artifacts(
     project_directory: Path,
 ) -> tuple[Path, ...]:
     """Find obsolete files left by previous pipeline layouts."""
-    merged_artifacts = _find_legacy_artifacts_in_merged_directory(
-        project_directory
-    )
+    merged_artifacts = _find_legacy_artifacts_in_merged_directory(project_directory)
     database_artifacts = _find_legacy_database_artifacts(project_directory)
 
     return tuple(sorted(set((*merged_artifacts, *database_artifacts))))
@@ -106,46 +97,32 @@ def validate_markdown_readonly(project_directory: Path) -> None:
     )
 
     if writable_files:
-        raise DocumentWorkspaceError(
-            _format_readonly_validation_error(writable_files)
-        )
+        raise DocumentWorkspaceError(_format_readonly_validation_error(writable_files))
 
 
 def _validate_existing_directory(project_directory: Path) -> None:
-    """Ensure the resolved path exists and is a directory."""
+    """Ensure the resolved project path exists and is a directory."""
     if not project_directory.exists():
         raise DocumentWorkspaceError(
-            f"Project output directory does not exist: {project_directory}"
+            f"Source project directory does not exist: {project_directory}"
         )
 
     if not project_directory.is_dir():
         raise DocumentWorkspaceError(
-            f"Project output path is not a directory: {project_directory}"
+            f"Source project path is not a directory: {project_directory}"
         )
 
 
-def _validate_output_directory_name(project_directory: Path) -> None:
-    """Ensure the workspace uses the canonical output directory name."""
-    if project_directory.name == OUTPUT_DIRECTORY_NAME:
-        return
-
-    raise DocumentWorkspaceError(
-        "Project directory must be a crawler output directory named "
-        f"'{OUTPUT_DIRECTORY_NAME}': {project_directory}"
-    )
-
-
 def _validate_sources_directory_layout(project_directory: Path) -> None:
-    """Ensure the workspace follows sources/<project_name>/output."""
-    sources_directory = project_directory.parent.parent
+    """Ensure the workspace follows the sources/<project> contract."""
+    sources_root = SOURCES_ROOT.resolve()
 
-    if sources_directory.name == SOURCES_DIRECTORY_NAME:
+    if project_directory.parent == sources_root:
         return
 
     raise DocumentWorkspaceError(
-        "Project output directory must follow "
-        f"'{SOURCES_DIRECTORY_NAME}/<project_name>/{OUTPUT_DIRECTORY_NAME}': "
-        f"{project_directory}"
+        "Source project directory must be a direct child of "
+        f"{sources_root}: {project_directory}"
     )
 
 
@@ -210,19 +187,12 @@ def _find_legacy_artifacts_for_child(child: Path) -> tuple[Path, ...]:
 
 def _is_legacy_directory(path: Path) -> bool:
     """Return whether a directory belongs to an obsolete layout."""
-    return (
-        path.is_dir()
-        and path.name not in MERGED_ALLOWED_DIRECTORY_NAMES
-    )
+    return path.is_dir() and path.name not in MERGED_ALLOWED_DIRECTORY_NAMES
 
 
 def _find_files_beneath(directory: Path) -> tuple[Path, ...]:
     """Return every regular file beneath one directory."""
-    return tuple(
-        path
-        for path in directory.rglob("*")
-        if path.is_file()
-    )
+    return tuple(path for path in directory.rglob("*") if path.is_file())
 
 
 def _find_legacy_database_artifacts(
@@ -246,9 +216,7 @@ def _format_readonly_validation_error(
     writable_files: Iterable[Path],
 ) -> str:
     """Build the Markdown immutability validation message."""
-    formatted_paths = "\n".join(
-        f"- {path}" for path in writable_files
-    )
+    formatted_paths = "\n".join(f"- {path}" for path in writable_files)
 
     return (
         "Markdown immutability validation failed. "
@@ -288,11 +256,7 @@ def _remove_empty_directories_bottom_up(
 ) -> None:
     """Remove empty directories from deepest descendant to root."""
     directories = sorted(
-        (
-            path
-            for path in descendants
-            if path.is_dir()
-        ),
+        (path for path in descendants if path.is_dir()),
         key=lambda path: len(path.parts),
         reverse=True,
     )

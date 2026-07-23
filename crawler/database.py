@@ -741,7 +741,7 @@ class DatabaseManager:
     def _normalize_priority(self, priority: int) -> int:
         try:
             value = int(priority)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             value = DEFAULT_QUEUE_PRIORITY
 
         return max(0, min(value, 1000))

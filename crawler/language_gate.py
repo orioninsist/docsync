@@ -9,6 +9,11 @@ from urllib.parse import parse_qsl, urlparse
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
+from crawler.shared.language_policy import (
+    LANGUAGE_QUERY_KEYS as SHARED_LANGUAGE_QUERY_KEYS,
+    NORMALIZED_ENGLISH_QUERY_VALUES,
+)
+
 
 @dataclass(frozen=True)
 class LanguageGateResult:
@@ -21,24 +26,8 @@ class LanguageGateResult:
 class LanguageGate:
     """Validate URLs and HTML content for English-language crawling."""
 
-    LANGUAGE_QUERY_KEYS = {"hl", "lang", "language", "locale"}
-
-    ENGLISH_VALUES = {
-        "en",
-        "en-us",
-        "en-gb",
-        "en-au",
-        "en-ca",
-        "en-ie",
-        "en-in",
-        "en-my",
-        "en-nz",
-        "en-ph",
-        "en-sg",
-        "en-uk",
-        "en-za",
-        "english",
-    }
+    LANGUAGE_QUERY_KEYS = SHARED_LANGUAGE_QUERY_KEYS
+    ENGLISH_VALUES = NORMALIZED_ENGLISH_QUERY_VALUES
 
     ISO_LANGUAGE_CODES = {
         "aa",

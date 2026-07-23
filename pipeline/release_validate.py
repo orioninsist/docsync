@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate DOCSYNC source code and generated project outputs."""
+"""Validate DOCSYNC source code and generated source projects."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ import stat
 from collections.abc import Callable
 from pathlib import Path
 
+from pipeline.constants import READ_ONLY_MODE
 from pipeline.paths import (
     PROJECT_ROOT,
-    discover_project_output_directories,
+    discover_project_directories,
 )
-
-READ_ONLY_MODE = 0o444
 
 REQUIRED_FILES = (
     PROJECT_ROOT / "crawler" / "crawler_engine.py",
@@ -24,9 +23,7 @@ REQUIRED_FILES = (
     PROJECT_ROOT / "pipeline" / "merge_engine.py",
 )
 
-FORBIDDEN_PATHS = (
-    PROJECT_ROOT / "pipeline" / "incremental_state.db",
-)
+FORBIDDEN_PATHS = (PROJECT_ROOT / "pipeline" / "incremental_state.db",)
 
 CODE_ROOTS = (
     PROJECT_ROOT / "crawler",
@@ -35,21 +32,23 @@ CODE_ROOTS = (
     PROJECT_ROOT / "tools",
 )
 
+MERGED_DIRECTORY_NAME = "_merged"
+
 ValidationCheck = Callable[[], int]
 
 
 def fail(message: str) -> int:
     """Print a validation failure and return a non-zero status."""
+
     print(f"[FAIL] {message}")
     return 1
 
 
 def check_required_files() -> int:
     """Verify that all release-critical source files exist."""
+
     missing_files = [
-        required_file
-        for required_file in REQUIRED_FILES
-        if not required_file.is_file()
+        required_file for required_file in REQUIRED_FILES if not required_file.is_file()
     ]
 
     if missing_files:
@@ -64,10 +63,9 @@ def check_required_files() -> int:
 
 def check_forbidden_paths() -> int:
     """Verify that forbidden legacy pipeline paths are absent."""
+
     existing_paths = [
-        forbidden_path
-        for forbidden_path in FORBIDDEN_PATHS
-        if forbidden_path.exists()
+        forbidden_path for forbidden_path in FORBIDDEN_PATHS if forbidden_path.exists()
     ]
 
     if existing_paths:
@@ -82,6 +80,7 @@ def check_forbidden_paths() -> int:
 
 def discover_project_python_files() -> tuple[Path, ...]:
     """Return all project Python files that must pass syntax validation."""
+
     python_files = {
         python_file
         for code_root in CODE_ROOTS
@@ -99,6 +98,7 @@ def discover_project_python_files() -> tuple[Path, ...]:
 
 def validate_python_syntax(python_file: Path) -> str | None:
     """Return a syntax error description without writing bytecode files."""
+
     try:
         source = python_file.read_text(encoding="utf-8")
         compile(source, str(python_file), "exec")
@@ -110,6 +110,7 @@ def validate_python_syntax(python_file: Path) -> str | None:
 
 def check_project_python_syntax() -> int:
     """Validate project Python syntax without modifying the filesystem."""
+
     python_files = discover_project_python_files()
 
     if not python_files:
@@ -118,10 +119,7 @@ def check_project_python_syntax() -> int:
     invalid_files = [
         (python_file, error_message)
         for python_file in python_files
-        if (
-            error_message := validate_python_syntax(python_file)
-        )
-        is not None
+        if (error_message := validate_python_syntax(python_file)) is not None
     ]
 
     if invalid_files:
@@ -134,91 +132,67 @@ def check_project_python_syntax() -> int:
     return 0
 
 
-def contains_markdown_files(output_directory: Path) -> bool:
-    """Return whether an output directory contains Markdown files."""
-    return any(
-        markdown_file.is_file()
-        for markdown_file in output_directory.rglob("*.md")
-    )
-
-
-def discover_markdown_output_directories() -> tuple[Path, ...]:
-    """Return discovered crawler outputs containing Markdown files."""
-    return tuple(
-        output_directory
-        for output_directory in discover_project_output_directories()
-        if output_directory.is_dir()
-        and contains_markdown_files(output_directory)
-    )
-
-
-def required_state_paths(output_directory: Path) -> tuple[Path, Path]:
-    """Return required pipeline state databases for one output directory."""
-    state_directory = output_directory / ".state"
-
-    return (
-        state_directory / "flatten.db",
-        state_directory / "incremental.db",
-    )
-
-
-def discover_missing_state_paths(
-    output_directory: Path,
+def discover_source_markdown_files(
+    project_directory: Path,
 ) -> tuple[Path, ...]:
-    """Return missing state databases for one crawler output directory."""
+    """Return source Markdown files excluding generated merge outputs."""
+
+    merged_directory = project_directory / MERGED_DIRECTORY_NAME
+
     return tuple(
-        state_path
-        for state_path in required_state_paths(output_directory)
-        if not state_path.is_file()
+        sorted(
+            markdown_file
+            for markdown_file in project_directory.rglob("*.md")
+            if markdown_file.is_file() and merged_directory not in markdown_file.parents
+        )
     )
 
 
-def check_output_state(output_directory: Path) -> int:
-    """Verify required state databases for one crawler output directory."""
-    missing_state_paths = discover_missing_state_paths(output_directory)
+def contains_source_markdown_files(project_directory: Path) -> bool:
+    """Return whether a source project contains source Markdown files."""
 
-    if missing_state_paths:
-        for missing_state_path in missing_state_paths:
-            print(f"[MISSING STATE] {missing_state_path}")
+    return bool(discover_source_markdown_files(project_directory))
 
+
+def discover_markdown_projects() -> tuple[Path, ...]:
+    """Return discovered projects containing source Markdown files."""
+
+    return tuple(
+        project_directory
+        for project_directory in discover_project_directories()
+        if contains_source_markdown_files(project_directory)
+    )
+
+
+def check_source_projects() -> int:
+    """Verify that dynamically discovered Markdown source projects exist."""
+
+    project_directories = discover_markdown_projects()
+
+    if not project_directories:
         return fail(
-            f"Pipeline state is incomplete for: {output_directory}"
-        )
-
-    return 0
-
-
-def check_project_outputs() -> int:
-    """Verify pipeline state for every discovered crawler output."""
-    output_directories = discover_markdown_output_directories()
-
-    if not output_directories:
-        return fail(
-            "No dynamically discovered output directories containing "
+            "No dynamically discovered source projects containing "
             "Markdown files were found."
         )
 
-    for output_directory in output_directories:
-        if check_output_state(output_directory) != 0:
-            return 1
-
-    print(f"[OK] Project state verified: {len(output_directories)}")
+    print(f"[OK] Markdown source projects discovered: {len(project_directories)}")
     return 0
 
 
 def discover_writable_markdown_files() -> tuple[Path, ...]:
-    """Return crawler output Markdown files that are not read-only."""
+    """Return source Markdown files that are not strictly read-only."""
+
     return tuple(
         markdown_file
-        for output_directory in discover_markdown_output_directories()
-        for markdown_file in output_directory.rglob("*.md")
-        if markdown_file.is_file()
-        and stat.S_IMODE(markdown_file.stat().st_mode) != READ_ONLY_MODE
+        for project_directory in discover_markdown_projects()
+        for markdown_file in discover_source_markdown_files(project_directory)
+        if stat.S_IMODE(markdown_file.stat().st_mode) != READ_ONLY_MODE
     )
 
 
 def check_markdown_readonly() -> int:
-    """Verify that crawler output Markdown files are strictly read-only."""
+    """Verify that source Markdown files are strictly read-only."""
+
     writable_files = discover_writable_markdown_files()
 
     if writable_files:
@@ -231,25 +205,27 @@ def check_markdown_readonly() -> int:
         if remaining_count > 0:
             print(f"[NOT READONLY] ... and {remaining_count} more")
 
-        return fail("Some crawler Markdown files are not read-only.")
+        return fail("Some source Markdown files are not read-only.")
 
-    print("[OK] Crawler Markdown files are read-only.")
+    print("[OK] Source Markdown files are read-only.")
     return 0
 
 
 def release_checks() -> tuple[ValidationCheck, ...]:
     """Return release validation checks in execution order."""
+
     return (
         check_required_files,
         check_forbidden_paths,
         check_project_python_syntax,
-        check_project_outputs,
+        check_source_projects,
         check_markdown_readonly,
     )
 
 
 def main() -> int:
     """Run all release validation checks without modifying project files."""
+
     print()
     print("DOCSYNC RELEASE VALIDATION")
     print("==========================")

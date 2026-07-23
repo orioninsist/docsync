@@ -244,7 +244,7 @@ class AsyncFetcher:
                     source_url=url,
                     attempt=attempt,
                 )
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+        except aiohttp.ClientError, asyncio.TimeoutError, OSError:
             self.logger.exception(
                 "aiohttp fetch failed on attempt %s/%s: url=%s",
                 attempt,
@@ -349,7 +349,7 @@ class AsyncFetcher:
                     return None
 
                 return self._reject_response_metadata(source_url=url, metadata=metadata)
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+        except aiohttp.ClientError, asyncio.TimeoutError, OSError:
             self.logger.info(
                 "HEAD preflight unavailable; continuing with streamed GET: url=%s",
                 url,

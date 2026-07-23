@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gzip
 import re
-import defusedxml.ElementTree as ET
+import defusedxml.ElementTree as ET  # type: ignore[import-untyped]
 from html import unescape
 from typing import Any
 from urllib.parse import ParseResult, parse_qs, urljoin, urlparse
@@ -16,6 +16,8 @@ from crawler.config import CrawlerConfig
 from crawler.policy_engine import SmartScopePolicy
 from crawler.robots import RobotsManager
 from crawler.shared.url_normalizer import normalize_url as shared_normalize_url
+from crawler.shared.url_policy import BLOCKED_EXTENSIONS as SHARED_BLOCKED_EXTENSIONS
+from crawler.shared.url_policy import TRAP_QUERY_KEYS
 from crawler.sitemap_language import (
     english_candidates_from_sitemap_url_node,
     url_declares_non_english,
@@ -51,50 +53,21 @@ BLOCKED_PATH_PARTS = (
     "/subscriptions/",
 )
 
-BLOCKED_QUERY_KEYS = {
-    "data",
-    "query",
-    "search",
-    "search_id",
-    "results_count",
-    "rank",
-    "return_to",
-    "redirect",
-    "redirect_to",
-    "callback",
+BLOCKED_QUERY_KEYS = TRAP_QUERY_KEYS - {"q"}
+
+_SITEMAP_ALLOWED_OFFICE_EXTENSIONS = {
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
 }
 
-BLOCKED_EXTENSIONS = (
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".webp",
-    ".svg",
-    ".pdf",
-    ".zip",
-    ".rar",
-    ".7z",
-    ".tar",
-    ".gz",
-    ".mp4",
-    ".webm",
-    ".mov",
-    ".avi",
-    ".mp3",
-    ".wav",
-    ".css",
-    ".js",
-    ".mjs",
-    ".json",
-    ".xml",
-    ".rss",
-    ".atom",
-    ".ico",
-    ".woff",
-    ".woff2",
-    ".ttf",
-    ".eot",
+BLOCKED_EXTENSIONS = tuple(
+    extension
+    for extension in SHARED_BLOCKED_EXTENSIONS
+    if extension not in _SITEMAP_ALLOWED_OFFICE_EXTENSIONS
 )
 
 BLOCKED_QUERY_FRAGMENTS = (
@@ -186,7 +159,15 @@ class SitemapManager:
         for selector in ("a[href]", "link[href]"):
             for tag in soup.select(selector):
                 href = str(tag.get("href", "")).strip()
-                rel_values = {str(value).lower() for value in tag.get("rel", [])}
+                rel_attribute = tag.get("rel")
+                rel_values: set[str]
+
+                if isinstance(rel_attribute, str):
+                    rel_values = {rel_attribute.lower()}
+                elif rel_attribute is None:
+                    rel_values = set()
+                else:
+                    rel_values = {str(value).lower() for value in rel_attribute}
 
                 if not href or "canonical" in rel_values:
                     continue
@@ -215,7 +196,7 @@ class SitemapManager:
     def normalize_url(
         self,
         url: str,
-    ) -> str:
+    ) -> str | None:
         """Normalize URLs through the shared crawler normalizer."""
         return shared_normalize_url(url)
 
@@ -244,6 +225,9 @@ class SitemapManager:
     ) -> None:
         normalized = self.normalize_url(sitemap_url)
 
+        if normalized is None:
+            return
+
         if normalized in seen:
             return
 
@@ -257,6 +241,9 @@ class SitemapManager:
         depth: int = 0,
     ) -> set[str]:
         normalized_sitemap_url = self.normalize_url(sitemap_url)
+
+        if normalized_sitemap_url is None:
+            return set()
 
         if self._should_skip_sitemap(normalized_sitemap_url, depth):
             return set()
@@ -310,7 +297,7 @@ class SitemapManager:
                 final_sitemap_url = str(response.url)
 
                 return raw, content_type, final_sitemap_url
-        except (aiohttp.ClientError, TimeoutError, OSError):
+        except aiohttp.ClientError, TimeoutError, OSError:
             return None
 
     async def _parse_sitemap_text(
@@ -364,6 +351,9 @@ class SitemapManager:
 
             child_url = self.normalize_url(unescape(node.text.strip()))
 
+            if child_url is None:
+                continue
+
             if not self._is_same_site_url(child_url):
                 continue
 
@@ -398,6 +388,10 @@ class SitemapManager:
             return set()
 
         loc_url = self.normalize_url(unescape(loc_node.text.strip()))
+
+        if loc_url is None:
+            return set()
+
         candidates = english_candidates_from_sitemap_url_node(
             url_node=url_node,
             fallback_url=loc_url,
@@ -405,13 +399,18 @@ class SitemapManager:
             strip_namespace=self._strip_namespace,
         )
 
-        return {
-            normalized
-            for candidate_url in candidates
-            if self._is_allowed_document_url(
-                normalized := self.normalize_url(candidate_url),
-            )
-        }
+        urls: set[str] = set()
+
+        for candidate_url in candidates:
+            normalized = self.normalize_url(candidate_url)
+
+            if normalized is None:
+                continue
+
+            if self._is_allowed_document_url(normalized):
+                urls.add(normalized)
+
+        return urls
 
     def _parse_xml_safely(self, text: str) -> Any | None:
         try:
@@ -473,6 +472,9 @@ class SitemapManager:
         for match in URL_PATTERN.finditer(text):
             normalized = self.normalize_url(unescape(match.group(0).strip()))
 
+            if normalized is None:
+                continue
+
             if self._is_allowed_document_url(normalized):
                 urls.add(normalized)
 
@@ -493,7 +495,7 @@ class SitemapManager:
             )
             return payload.decode("utf-8", errors="replace")
 
-        except (gzip.BadGzipFile, OSError, UnicodeError):
+        except gzip.BadGzipFile, OSError, UnicodeError:
             return None
 
     def _should_decompress(

@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup, Tag
 
 from crawler.shared.url_normalizer import normalize_url
+from crawler.shared.url_policy import BLOCKED_LINK_PREFIXES
 from markdownify import markdownify as md
 
 
@@ -62,16 +63,6 @@ class ContentParser:
         ".article-content",
         ".post-content",
         ".entry-content",
-    )
-
-    BLOCKED_LINK_PREFIXES = (
-        "#",
-        "mailto:",
-        "tel:",
-        "javascript:",
-        "data:",
-        "blob:",
-        "file:",
     )
 
     def parse(self, html: str, url: str) -> ParsedPage:
@@ -176,7 +167,7 @@ class ContentParser:
 
     def _is_blocked_link_value(self, value: str) -> bool:
         value_lower = value.strip().lower()
-        return value_lower.startswith(self.BLOCKED_LINK_PREFIXES)
+        return value_lower.startswith(BLOCKED_LINK_PREFIXES)
 
     def _remove_unwanted_elements(self, soup: BeautifulSoup) -> None:
         for selector in self.REMOVE_SELECTORS:

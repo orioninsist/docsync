@@ -1,135 +1,60 @@
-"""Typed discovery filter constants and helpers."""
+"""Discovery filtering helpers."""
 
 from __future__ import annotations
 
 from urllib.parse import parse_qsl, urlparse
 
-DISCOVERY_BLOCKED_FILE_EXTENSIONS: tuple[str, ...] = (
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".webp",
-    ".svg",
-    ".ico",
-    ".pdf",
-    ".doc",
-    ".docx",
-    ".xls",
-    ".xlsx",
-    ".ppt",
-    ".pptx",
-    ".zip",
-    ".rar",
-    ".7z",
-    ".tar",
-    ".gz",
-    ".mp4",
-    ".webm",
-    ".mov",
-    ".avi",
-    ".mp3",
-    ".wav",
-    ".css",
-    ".js",
-    ".mjs",
-    ".json",
-    ".rss",
-    ".atom",
-    ".woff",
-    ".woff2",
-    ".ttf",
-    ".eot",
+from crawler.shared.url_policy import BLOCKED_EXTENSIONS, BLOCKED_SCHEMES
+
+DISCOVERY_BLOCKED_FILE_EXTENSIONS: tuple[str, ...] = tuple(
+    extension for extension in BLOCKED_EXTENSIONS if extension != ".xml"
 )
 
-DISCOVERY_BLOCKED_SCHEMES: tuple[str, ...] = (
-    "mailto:",
-    "tel:",
-    "javascript:",
-    "data:",
-    "blob:",
-    "file:",
-    "ftp:",
+DISCOVERY_BLOCKED_SCHEMES: tuple[str, ...] = tuple(
+    f"{scheme}:" for scheme in BLOCKED_SCHEMES
 )
 
 DISCOVERY_UTILITY_PATH_PARTS: frozenset[str] = frozenset(
     {
-        "_",
-        "url",
-        "setprefdomain",
-        "preferences",
-        "setprefs",
-        "sorry",
-        "search",
-        "advanced_search",
-        "imghp",
-        "maps",
-        "mail",
-        "calendar",
-        "drive",
-        "forms",
-        "photos",
-        "shopping",
-        "finance",
-        "travel",
-        "flights",
-        "accounts",
-        "signin",
         "login",
-        "servicelogin",
-        "oauth",
-        "auth",
+        "signin",
+        "signup",
+        "register",
+        "account",
+        "cart",
+        "checkout",
+        "search",
     }
 )
 
 DISCOVERY_UTILITY_HOSTS: frozenset[str] = frozenset(
     {
-        "mail.google.com",
-        "accounts.google.com",
-        "calendar.google.com",
-        "drive.google.com",
-        "forms.google.com",
-        "photos.google.com",
-        "shopping.google.com",
-        "payments.google.com",
-        "myaccount.google.com",
-        "myactivity.google.com",
+        "login",
+        "auth",
+        "accounts",
     }
 )
 
 BAD_QUERY_KEYS: frozenset[str] = frozenset(
     {
-        "continue",
-        "url",
-        "q",
-        "source",
-        "ved",
-        "usg",
         "utm_source",
         "utm_medium",
         "utm_campaign",
         "utm_term",
         "utm_content",
-        "fbclid",
-        "gclid",
     }
 )
 
 
-def has_bad_query(url: str) -> str | None:
-    """Return a stable block reason when a URL has redirect/tracking query keys."""
+def has_bad_query(url: str) -> bool:
+    """Return whether URL contains tracking query parameters."""
     parsed = urlparse(url)
-    if not parsed.query:
-        return None
 
-    keys = {
-        key.lower() for key, _value in parse_qsl(parsed.query, keep_blank_values=True)
-    }
-    matched = sorted(keys.intersection(BAD_QUERY_KEYS))
-    if not matched:
-        return None
+    for key, _ in parse_qsl(parsed.query, keep_blank_values=False):
+        if key.lower() in BAD_QUERY_KEYS:
+            return True
 
-    return f"bad_query:{matched[0]}"
+    return False
 
 
 __all__ = [

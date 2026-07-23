@@ -1,8 +1,9 @@
-"""Crawler engine status and terminal output helpers.
+"""Crawler engine status helpers.
 
-This module owns small presentation/status utilities that do not require
-crawler orchestration state. Keeping them here prevents `crawler_engine.py`
-from becoming the owner of unrelated formatting and dashboard merge logic.
+This module owns status utilities that do not require crawler orchestration
+state. Terminal rendering belongs exclusively to ``TerminalUI`` so automatic
+crawl batches cannot create additional output below the persistent Rich Live
+dashboard.
 """
 
 from __future__ import annotations
@@ -37,12 +38,20 @@ def print_batch_banner(
     batch_page_limit: int,
     estimated_total_batches: int,
 ) -> None:
-    """Print a terminal banner for an automatic crawl batch."""
+    """Preserve the legacy call boundary without emitting terminal output.
 
-    print()
-    print(f"Auto Batch {batch_number}")
-    print("----------------")
-    print(f"Pending before batch: {pending_before_batch}")
-    print(f"Batch page limit: {batch_page_limit}")
-    print(f"Estimated batches remaining now: {estimated_total_batches}")
-    print()
+    Runtime presentation is owned exclusively by ``TerminalUI`` and the
+    persistent Rich Live dashboard. Printing a separate banner for every
+    automatic batch would force the terminal to scroll and create multiple
+    visual progress sections.
+
+    The parameters remain explicit so existing crawler orchestration calls
+    stay backward compatible until the legacy boundary is removed separately.
+    """
+
+    del (
+        batch_number,
+        pending_before_batch,
+        batch_page_limit,
+        estimated_total_batches,
+    )

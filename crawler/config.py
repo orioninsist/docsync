@@ -56,7 +56,7 @@ class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
     MIN_SITEMAP_TIMEOUT_SECONDS: ClassVar[int] = 1
 
     start_url: str
-    output_dir: Path = Path("output")
+    output_dir: Path
     db_path: Path = Path("state.db")
     logs_dir: Path = Path("logs")
 

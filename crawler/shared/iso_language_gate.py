@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from urllib.parse import parse_qsl, urlparse
 
+from crawler.shared.language_policy import (
+    LANGUAGE_QUERY_KEYS,
+    is_english_language_value,
+)
+
 ISO_3166_ALPHA2 = {
     "ad",
     "ae",
@@ -264,25 +269,6 @@ REGION_ALIASES = {
     "united-kingdom",
 }
 
-LANGUAGE_QUERY_KEYS = {"hl", "lang", "language", "locale"}
-
-ENGLISH_VALUES = {
-    "en",
-    "en-us",
-    "en-gb",
-    "en-au",
-    "en-ca",
-    "en-ie",
-    "en-in",
-    "en-my",
-    "en-nz",
-    "en-ph",
-    "en-sg",
-    "en-uk",
-    "en-za",
-    "english",
-}
-
 SAFE_HOST_PREFIXES = {
     "www",
     "docs",
@@ -306,12 +292,7 @@ def normalize_lang_value(value: str) -> str:
 
 
 def is_english_value(value: str) -> bool:
-    normalized = normalize_lang_value(value)
-    return (
-        normalized == "en"
-        or normalized.startswith("en-")
-        or normalized in ENGLISH_VALUES
-    )
+    return is_english_language_value(value)
 
 
 def segment_declares_region(value: str) -> bool:
@@ -383,3 +364,14 @@ def url_declares_non_english_or_region(url: str) -> str | None:
 
 def url_is_english_or_neutral(url: str) -> bool:
     return url_declares_non_english_or_region(url) is None
+
+
+__all__ = [
+    "LANGUAGE_QUERY_KEYS",
+    "SAFE_HOST_PREFIXES",
+    "is_english_value",
+    "normalize_lang_value",
+    "segment_declares_region",
+    "url_declares_non_english_or_region",
+    "url_is_english_or_neutral",
+]

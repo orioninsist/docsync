@@ -7,6 +7,7 @@ requires-python = ">=3.14"
 dependencies = [
     "aiohttp==3.13.3",
     "beautifulsoup4==4.14.3",
+    "defusedxml",
     "markdownify==1.2.2",
     "playwright==1.61.0",
     "requests==2.32.5",
@@ -16,40 +17,96 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "bandit",
-    "coverage",
-    "debugpy",
+    "bandit>=1.9.4",
+    "basedpyright>=1.39.9",
+    "coverage>=7.15.2",
     "deptry>=0.25.1",
-    "hypothesis>=6.156.6",
+    "import-linter>=2.13",
+    "interrogate>=1.7.0",
     "mypy",
-    "pip-audit",
-    "pre-commit>=4.6.0",
-    "pydeps",
-    "pylint",
-    "pyright>=1.1.411",
+    "pipdeptree>=3.1.1",
+    "pyan3>=2.6.2",
+    "pydeps>=3.0.6",
+    "pyinstrument>=5.1.2",
+    "pylint>=4.0.6",
     "pytest",
-    "pytest-cov",
-    "pytest-mock>=3.15.1",
-    "radon",
+    "pytest-cov>=7.1.0",
+    "radon>=6.0.1",
     "ruff",
-    "semgrep",
-    "vulture",
+    "snakeviz>=2.2.2",
+    "vulture>=2.16",
+    "xenon>=0.9.3",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+package = false
+
 [tool.ruff]
 line-length = 88
 target-version = "py314"
+extend-exclude = [
+    ".venv",
+    ".venv-*",
+    ".git",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "build",
+    "dist",
+]
 
 [tool.mypy]
 python_version = "3.14"
 strict = true
+exclude = [
+    "^\\.venv/",
+    "^\\.venv-.*/",
+    "^build/",
+    "^dist/",
+]
+
+[tool.basedpyright]
+pythonVersion = "3.14"
+exclude = [
+    ".venv",
+    ".venv-*",
+    ".git",
+    "build",
+    "dist",
+    "**/__pycache__",
+]
+
+[tool.bandit]
+exclude_dirs = [
+    ".venv",
+    ".venv-*",
+    ".git",
+    "build",
+    "dist",
+    "tests",
+]
+
+[tool.vulture]
+exclude = [
+    ".venv/",
+    ".venv-*/",
+    "build/",
+    "dist/",
+]
+min_confidence = 80
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.uv]
-package = false
+pythonpath = ["."]
+norecursedirs = [
+    ".venv",
+    ".venv-*",
+    ".git",
+    "build",
+    "dist",
+]

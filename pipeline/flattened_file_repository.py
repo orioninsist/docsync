@@ -35,8 +35,8 @@ class SqlExecutor(Protocol):
         self,
         sql: str,
         parameters: tuple[object, ...] = (),
-    ) -> object:
-        ...
+        /,
+    ) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -48,14 +48,16 @@ class FlattenedFileRecord:
 
 
 class FlattenedFileRepository:
+    _connection: SqlExecutor
+
     def __init__(self, connection: SqlExecutor) -> None:
         self._connection = connection
 
     def initialize(self) -> None:
-        self._connection.execute(CREATE_FLATTENED_FILES_TABLE_SQL)
+        _ = self._connection.execute(CREATE_FLATTENED_FILES_TABLE_SQL)
 
     def save(self, record: FlattenedFileRecord) -> None:
-        self._connection.execute(
+        _ = self._connection.execute(
             UPSERT_FLATTENED_FILE_SQL,
             (
                 record.target_path,

@@ -143,7 +143,8 @@ def find_repository_instantiations(
         sorted(
             node.lineno
             for node in ast.walk(tree)
-            if is_repository_instantiation(
+            if isinstance(node, ast.Call)
+            and is_repository_instantiation(
                 node=node,
                 repository_name=repository_name,
             )
@@ -153,13 +154,10 @@ def find_repository_instantiations(
 
 def is_repository_instantiation(
     *,
-    node: ast.AST,
+    node: ast.Call,
     repository_name: str,
 ) -> bool:
-    """Return whether one node constructs the required repository."""
-
-    if not isinstance(node, ast.Call):
-        return False
+    """Return whether one call constructs the required repository."""
 
     if isinstance(node.func, ast.Name):
         return node.func.id == repository_name
@@ -182,9 +180,7 @@ def print_report(
         print_integration(integration)
 
     missing = tuple(
-        integration
-        for integration in integrations
-        if not integration.is_integrated
+        integration for integration in integrations if not integration.is_integrated
     )
 
     if not missing:

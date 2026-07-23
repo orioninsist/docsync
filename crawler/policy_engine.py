@@ -6,6 +6,14 @@ from dataclasses import dataclass
 from enum import Enum
 from urllib.parse import ParseResult, parse_qs, urlparse
 
+from crawler.shared.url_policy import (
+    BLOCKED_EXTENSIONS,
+    BLOCKED_SCHEMES,
+    MEDIA_SOCIAL_HOSTS as SHARED_MEDIA_SOCIAL_HOSTS,
+    TRAP_PATH_PARTS,
+    TRAP_QUERY_KEYS,
+)
+
 
 class PolicyDecision(str, Enum):
     """Supported crawler policy decisions."""
@@ -32,119 +40,23 @@ class PolicyResult:
 class SmartScopePolicy:
     """Smart crawler scope policy for URL and content filtering."""
 
-    GLOBAL_BLOCKED_SCHEMES = {
-        "mailto",
-        "tel",
-        "javascript",
-        "data",
-        "blob",
-        "file",
-        "ftp",
-    }
+    GLOBAL_BLOCKED_SCHEMES = BLOCKED_SCHEMES
 
-    GLOBAL_BLOCKED_EXTENSIONS = (
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".gif",
-        ".webp",
-        ".svg",
-        ".pdf",
-        ".zip",
-        ".rar",
-        ".7z",
-        ".tar",
-        ".gz",
-        ".mp4",
-        ".webm",
-        ".mov",
-        ".avi",
-        ".mp3",
-        ".wav",
-        ".css",
-        ".js",
-        ".mjs",
-        ".json",
-        ".xml",
-        ".rss",
-        ".atom",
-        ".ico",
-        ".woff",
-        ".woff2",
-        ".ttf",
-        ".eot",
+    GLOBAL_BLOCKED_EXTENSIONS = tuple(
+        extension
+        for extension in BLOCKED_EXTENSIONS
+        if extension
+        not in {
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
+            ".ppt",
+            ".pptx",
+        }
     )
 
-    GLOBAL_BLOCKED_PATH_PARTS = {
-        "login",
-        "logout",
-        "signin",
-        "sign-in",
-        "sign_in",
-        "auth",
-        "auth0",
-        "oauth",
-        "account",
-        "accounts",
-        "profile",
-        "profiles",
-        "user",
-        "users",
-        "client",
-        "clients",
-        "log",
-        "logs",
-        "subscription",
-        "subscriptions",
-        "checkout",
-        "cart",
-        "basket",
-        "search",
-        "requests",
-        "request",
-        "comment",
-        "comments",
-        "reply",
-        "replies",
-        "forum",
-        "forums",
-        "community",
-        "thread",
-        "threads",
-        "discussion",
-        "discussions",
-    }
-
-    GLOBAL_BLOCKED_QUERY_KEYS = {
-        "search",
-        "query",
-        "q",
-        "return_to",
-        "redirect",
-        "redirect_to",
-        "callback",
-        "data",
-        "rank",
-        "results_count",
-        "search_id",
-    }
-
-    MEDIA_SOCIAL_HOSTS = {
-        "instagram.com",
-        "tiktok.com",
-        "youtube.com",
-        "youtu.be",
-        "facebook.com",
-        "x.com",
-        "twitter.com",
-        "threads.net",
-        "snapchat.com",
-        "pinterest.com",
-        "reddit.com",
-        "vimeo.com",
-        "dailymotion.com",
-        "twitch.tv",
-    }
+    MEDIA_SOCIAL_HOSTS = SHARED_MEDIA_SOCIAL_HOSTS
 
     DOCS_POSITIVE_HINTS = {
         "docs",
@@ -429,7 +341,7 @@ class SmartScopePolicy:
 
     def _global_path_guard_result(self, path_parts: set[str]) -> PolicyResult | None:
         """Return block result when path contains globally blocked tokens."""
-        blocked = self.GLOBAL_BLOCKED_PATH_PARTS.intersection(path_parts)
+        blocked = TRAP_PATH_PARTS.intersection(path_parts)
         if blocked:
             return PolicyResult(
                 PolicyDecision.BLOCK,
@@ -533,7 +445,7 @@ class SmartScopePolicy:
             if not key_lower:
                 continue
 
-            if key_lower in self.GLOBAL_BLOCKED_QUERY_KEYS:
+            if key_lower in TRAP_QUERY_KEYS:
                 return f"blocked_query:{key_lower}"
 
         return None

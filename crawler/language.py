@@ -8,6 +8,13 @@ from urllib.parse import parse_qs, urlparse
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
+from crawler.shared.language_policy import (
+    ENGLISH_PATH_HINTS,
+    LANGUAGE_QUERY_KEYS,
+    NON_ENGLISH_PATH_HINTS,
+    is_english_language_value,
+)
+
 
 class LanguageDetector:  # pylint: disable=too-few-public-methods
     """Rule-based English language detector for crawler pre-filtering."""
@@ -211,92 +218,11 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
         "õ",
     }
 
-    NON_ENGLISH_PATH_HINTS = {
-        "/tr/",
-        "/de/",
-        "/fr/",
-        "/es/",
-        "/it/",
-        "/pt/",
-        "/pt-br/",
-        "/ru/",
-        "/ja/",
-        "/ko/",
-        "/zh/",
-        "/zh-cn/",
-        "/zh-tw/",
-        "/ar/",
-        "/hi/",
-        "/id/",
-        "/nl/",
-        "/pl/",
-        "/uk/",
-        "/vi/",
-        "/th/",
-        "/cs/",
-        "/da/",
-        "/el/",
-        "/fi/",
-        "/he/",
-        "/hu/",
-        "/ms/",
-        "/no/",
-        "/ro/",
-        "/sk/",
-        "/sv/",
-        "/bg/",
-        "/hr/",
-        "/lt/",
-        "/lv/",
-        "/sl/",
-        "/sr/",
-    }
-
     META_LANGUAGE_SELECTORS = (
         'meta[property="og:locale"]',
         'meta[name="locale"]',
         'meta[http-equiv="content-language"]',
         'meta[name="language"]',
-    )
-
-    ENGLISH_QUERY_KEYS = {
-        "hl",
-        "lang",
-        "language",
-        "locale",
-    }
-
-    ENGLISH_QUERY_VALUES = {
-        "en",
-        "en-us",
-        "en-gb",
-        "en-au",
-        "en-ca",
-        "en-ie",
-        "en-in",
-        "en-my",
-        "en-nz",
-        "en-ph",
-        "en-sg",
-        "en-uk",
-        "en-za",
-        "en_us",
-        "en_gb",
-        "en_au",
-        "en_ca",
-        "en_ie",
-        "en_in",
-        "en_my",
-        "en_nz",
-        "en_ph",
-        "en_sg",
-        "en_uk",
-        "en_za",
-        "english",
-    }
-
-    NORMALIZED_ENGLISH_QUERY_VALUES = frozenset(
-        value.replace("_", "-") for value in ENGLISH_QUERY_VALUES
     )
 
     MIN_TEXT_LENGTH = 80
@@ -336,47 +262,32 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
         query = parse_qs(parsed.query)
 
         for key, values in query.items():
-            key_lower = key.lower()
-
-            if key_lower not in self.ENGLISH_QUERY_KEYS:
+            if key.lower() not in LANGUAGE_QUERY_KEYS:
                 continue
 
             for value in values:
-                if self._is_english_value(value):
+                if is_english_language_value(value):
                     return True
 
         path_lower = parsed.path.lower()
-
-        english_path_hints = (
-            "/en/",
-            "/en-us/",
-            "/en-gb/",
-            "/en-au/",
-            "/en-ca/",
-            "/english/",
-            "/intl/en/",
-        )
-
-        return any(hint in path_lower for hint in english_path_hints)
+        return any(hint in path_lower for hint in ENGLISH_PATH_HINTS)
 
     def _url_declares_non_english(self, url: str) -> bool:
         """Return True when URL path or query explicitly declares non-English."""
         parsed = urlparse(url)
         path_lower = parsed.path.lower()
 
-        if any(hint in path_lower for hint in self.NON_ENGLISH_PATH_HINTS):
+        if any(hint in path_lower for hint in NON_ENGLISH_PATH_HINTS):
             return True
 
         query = parse_qs(parsed.query)
 
         for key, values in query.items():
-            key_lower = key.lower()
-
-            if key_lower not in self.ENGLISH_QUERY_KEYS:
+            if key.lower() not in LANGUAGE_QUERY_KEYS:
                 continue
 
             for value in values:
-                if value.strip() and not self._is_english_value(value):
+                if value.strip() and not is_english_language_value(value):
                     return True
 
         return False
@@ -429,11 +340,6 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
                 return True
 
         return False
-
-    def _is_english_value(self, value: str) -> bool:
-        """Return True when a locale query value is an English locale."""
-        normalized = value.strip().lower().replace("_", "-")
-        return normalized in self.NORMALIZED_ENGLISH_QUERY_VALUES
 
     def _looks_english(self, text: str) -> bool:
         """Return True when text passes baseline English heuristics."""
