@@ -460,16 +460,27 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
             )
         )
 
-    def mark_status(self, url: str, status: str, reason: str) -> None:
-        """Update persisted status for a discovered URL."""
+    def mark_status(self, url: str, status: str, reason: str) -> bool:
+        """Update discovery status without terminating the crawl on DB failure."""
 
-        discovery_update_seen_status(
-            self.connection,
-            seed_key=self.seed_key,
-            url=url,
-            status=status,
-            reason=reason,
-        )
+        try:
+            discovery_update_seen_status(
+                self.connection,
+                seed_key=self.seed_key,
+                url=url,
+                status=status,
+                reason=reason,
+            )
+            return True
+        except sqlite3.Error as exc:
+            log(
+                "       DISCOVERY STATE WRITE ERROR "
+                f"type={type(exc).__name__} "
+                f"status={status} "
+                f"url={url} "
+                f"detail={exc}"
+            )
+            return False
 
     def record_discovered(self, url: str) -> None:
         """Record one successfully fetched discovery URL."""
@@ -1067,7 +1078,7 @@ async def recursive_bfs_discovery_candidates(
 ) -> tuple[list[str], list[DiscoveryResult]]:
     """Discover real crawler candidates through recursive traversal."""
 
-    connection = open_discovery_db()
+    connection = open_discovery_db(base_url)
     state = DiscoveryRunState(
         base_url=base_url,
         limit=limit,

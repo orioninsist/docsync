@@ -13,11 +13,14 @@ from crawler.crawler_engine_run_summary import (
     RunSummaryPaths,
     build_run_summary_queue_counts,
 )
+from crawler.crawler_runtime_builder import (
+    CrawlerRunRuntime,
+    CrawlerRuntimeBuilder,
+)
 import asyncio
 import logging
 import math
 from dataclasses import dataclass
-from typing import TypedDict
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -42,6 +45,7 @@ from crawler.page_quality import PageQualityAnalyzer
 from crawler.parser import ContentParser, ParsedPage
 from crawler.policy_engine import PolicyDecision, SmartScopePolicy
 from crawler.progress import RichDashboard
+from crawler.queue_runner import QueueRunner
 from crawler.robots import RobotsManager
 from crawler.shared.url_normalizer import (
     normalize_optional_url,
@@ -83,16 +87,6 @@ class SkippedPageStatusUpdate:  # pylint: disable=too-many-instance-attributes,t
     last_modified: str | None = None
     queue_status: str = "done"
     dashboard_status: str = "skipped"
-
-
-class CrawlerRunRuntime(TypedDict):
-    """Strongly typed values prepared before crawl execution."""
-
-    interrupted_count: int
-    repaired_missing_outputs: int
-    sitemap: SitemapManager
-    sitemap_urls: list[str]
-    seed_urls: list[str]
 
 
 class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
@@ -149,6 +143,27 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             owner_project=self.owner_project,
             logger=self.logger,
         )
+        self.runtime_builder = CrawlerRuntimeBuilder(
+            config=self.config,
+            database=self.database,
+            robots=self.robots,
+            dedup=self.dedup,
+            observability=self.observability,
+            claim_url_ownership=self._claim_url_ownership,
+            normalize_english_candidate_url=(
+                self._normalize_english_candidate_url
+            ),
+            logger=self.logger,
+        )
+        self.queue_runner = QueueRunner(
+            config=self.config,
+            database=self.database,
+            terminal_ui=self.terminal_ui,
+            run_database_queue_batch=(
+                self._run_database_queue_batch
+            ),
+            logger=self.logger,
+        )
         self.url_processor = UrlProcessor(self)
 
     def _owner_project_name(self) -> str:
@@ -191,7 +206,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         try:
             self.logger.info("Crawler started: %s", self.config.start_url)
 
-            runtime = await self._prepare_run_runtime()
+            runtime = await self.runtime_builder.build()
             self._print_preliminary_run_summary(runtime)
 
             has_crawl_work = (
@@ -233,114 +248,8 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self.global_url_registry.close()
             self.database.close()
 
-    async def _prepare_run_runtime(self) -> CrawlerRunRuntime:
-        interrupted_count = self.database.reset_interrupted_processing()
-        repaired_missing_outputs = self._repair_missing_markdown_outputs()
 
-        await self.robots.load()
-        self._apply_robots_delay()
 
-        sitemap = SitemapManager(self.config, self.robots)
-        sitemap_urls = await self._discover_sitemap_urls(sitemap)
-        seed_urls = self._prepare_seed_urls(sitemap, sitemap_urls)
-
-        return {
-            "interrupted_count": interrupted_count,
-            "repaired_missing_outputs": repaired_missing_outputs,
-            "sitemap": sitemap,
-            "sitemap_urls": sitemap_urls,
-            "seed_urls": seed_urls,
-        }
-
-    async def _discover_sitemap_urls(
-        self,
-        sitemap: SitemapManager,
-    ) -> list[str]:
-        sitemap_urls: list[str] = []
-
-        if not self.config.use_sitemap_discovery:
-            return sitemap_urls
-
-        self.logger.info(
-            "Starting sitemap discovery with timeout=%ss",
-            self.config.sitemap_discovery_timeout_seconds,
-        )
-        print(
-            (
-                "Sitemap discovery started. Timeout: "
-                f"{self.config.sitemap_discovery_timeout_seconds}s"
-            ),
-            flush=True,
-        )
-
-        try:
-            sitemap_urls = await asyncio.wait_for(
-                sitemap.discover_urls(),
-                timeout=self.config.sitemap_discovery_timeout_seconds,
-            )
-            self.logger.info(
-                "Sitemap discovery finished. URLs=%s",
-                len(sitemap_urls),
-            )
-            print(
-                f"Sitemap discovery finished. URLs found: {len(sitemap_urls)}",
-                flush=True,
-            )
-
-        except asyncio.TimeoutError:
-            self.logger.warning(
-                "Sitemap discovery timed out after %ss. Falling back to exact start URL.",
-                self.config.sitemap_discovery_timeout_seconds,
-            )
-            print(
-                "Sitemap discovery timed out. Falling back to exact start URL.",
-                flush=True,
-            )
-
-        return sitemap_urls
-
-    def _prepare_seed_urls(
-        self,
-        sitemap: SitemapManager,
-        sitemap_urls: list[str],
-    ) -> list[str]:
-        seed_urls = list(sitemap_urls)
-
-        start_url = sitemap.normalize_url(self.config.start_url)
-
-        if start_url is None:
-            return seed_urls
-
-        if start_url not in seed_urls:
-            seed_urls.insert(0, start_url)
-
-        robots_allowed_seed_urls: list[str] = []
-
-        for seed_url in seed_urls:
-            if self.robots.can_fetch(seed_url):
-                robots_allowed_seed_urls.append(seed_url)
-                continue
-
-            message = (
-                "Seed URL blocked by robots.txt; it will not be queued: "
-                f"url={seed_url}"
-            )
-            print(message, flush=True)
-            self.logger.warning(message)
-
-        seed_urls = robots_allowed_seed_urls
-
-        if not seed_urls:
-            message = (
-                "No crawlable seed URLs remain after robots.txt filtering. "
-                "The crawler will finish without downloading pages."
-            )
-            print(message, flush=True)
-            self.logger.warning(message)
-        seed_urls = self._limit_seed_urls(seed_urls)
-        self._enqueue_seed_urls(seed_urls)
-
-        return seed_urls
 
     def _print_preliminary_run_summary(
         self,
@@ -396,6 +305,31 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             proceed_message=proceed_message,
         )
 
+    def _claim_url_ownership(self, url: str) -> bool:
+        """Claim cross-project ownership for a normalized URL."""
+
+        return claim_url_ownership(
+            url=url,
+            registry=self.global_url_registry,
+            owner_project=self.owner_project,
+            owner_project_dir=self.config.output_dir,
+            logger=self.logger,
+        )
+
+    def _normalize_english_candidate_url(
+        self,
+        url: str,
+    ) -> str | None:
+        """Normalize a URL and enforce the configured language policy."""
+
+        try:
+            if self.config.require_english:
+                return normalize_optional_url(url)
+
+            return normalize_url(url)
+        except ValueError:
+            return None
+
     async def _execute_crawl(
         self,
         sitemap: SitemapManager,
@@ -413,115 +347,11 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._print_final_run_summary(dashboard)
         self._write_observability_report()
 
-    def _repair_missing_markdown_outputs(self) -> int:
-        existing_hashes: set[str] = set()
 
-        if self.config.output_dir.exists():
-            for path in self.config.output_dir.glob("*.md"):
-                if not path.is_file():
-                    continue
 
-                stem = path.stem
-                if "__" not in stem:
-                    continue
 
-                short_hash = stem.rsplit("__", 1)[-1].strip()
-                if short_hash:
-                    existing_hashes.add(short_hash)
 
-        full_hashes = {
-            url_hash
-            for url_hash in self.database.all_queue_url_hashes()
-            if url_hash[:12] in existing_hashes
-        }
 
-        repaired = self.database.repair_missing_markdown_outputs(full_hashes)
-
-        if repaired:
-            self.logger.info(
-                "Repaired missing Markdown outputs by requeueing URLs: count=%s output_dir=%s",
-                repaired,
-                self.config.output_dir,
-            )
-
-        return repaired
-
-    def _apply_robots_delay(self) -> None:
-        effective_min = self.robots.effective_min_delay()
-        effective_max = self.robots.effective_max_delay()
-
-        object.__setattr__(self.config, "min_delay", effective_min)
-        object.__setattr__(self.config, "max_delay", effective_max)
-
-    def _limit_seed_urls(self, urls: list[str]) -> list[str]:
-        hard_limit = self.config.max_queue_size
-
-        if len(urls) <= hard_limit:
-            return urls
-
-        self.logger.warning(
-            "Seed URL list was capped by max_queue_size: original=%s capped=%s max_queue_size=%s",
-            len(urls),
-            hard_limit,
-            self.config.max_queue_size,
-        )
-
-        return urls[:hard_limit]
-
-    def _claim_url_ownership(self, url: str) -> bool:
-        return claim_url_ownership(
-            url=url,
-            registry=self.global_url_registry,
-            owner_project=self.owner_project,
-            owner_project_dir=self.config.output_dir,
-            logger=self.logger,
-        )
-
-    def _normalize_english_candidate_url(self, url: str) -> str | None:
-        try:
-            if self.config.require_english:
-                return normalize_optional_url(url)
-
-            return normalize_url(url)
-        except ValueError:
-            return None
-
-    def _enqueue_seed_urls(self, urls: list[str]) -> None:
-        for raw_url in urls:
-            url = self._normalize_english_candidate_url(raw_url)
-
-            if url is None:
-                self.observability.record_official_rejected(
-                    url=raw_url,
-                    reason="non_english_or_invalid_seed_url_before_enqueue",
-                )
-                continue
-            if self.database.queued_count() >= self.config.max_queue_size:
-                self.logger.warning(
-                    "Max queue size reached while enqueueing seed URLs: max_queue_size=%s",
-                    self.config.max_queue_size,
-                )
-                break
-
-            if not self._claim_url_ownership(url):
-                continue
-
-            url_hash = self.dedup.url_hash(url)
-
-            queued = self.database.enqueue_url(
-                url=url,
-                url_hash=url_hash,
-                depth=0,
-                discovered_from=None,
-            )
-
-            if not queued:
-                self.database.requeue_url(
-                    url=url,
-                    url_hash=url_hash,
-                    depth=0,
-                    discovered_from=None,
-                )
 
     async def _run_static(
         self,
@@ -565,161 +395,10 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self,
         sitemap: SitemapManager,
     ) -> RichDashboard:
-        """Process the complete database queue inside one persistent Live display."""
+        """Delegate persistent recursive queue execution."""
 
-        initial_pending = self.database.pending_queue_count()
-        dashboard = RichDashboard(total_pages=max(initial_pending, 1))
-        dashboard.set_pipeline_context(
-            step_current=6,
-            step_total=14,
-            step_name="Preparing crawl queue",
-            batch_current=0,
-            batch_total=0,
-        )
-        dashboard.update_queue_context(
-            pending=initial_pending,
-            queued=self.database.queued_count(),
-                    )
+        return await self.queue_runner.run(sitemap)
 
-        batch_number = 0
-
-        with self.terminal_ui.open(
-            dashboard,
-            refresh_per_second=4,
-        ) as live:
-            while True:
-                pending_before_batch = self.database.pending_queue_count()
-
-                dashboard.total_pages = max(
-                    dashboard.total_pages,
-                    dashboard.processed + pending_before_batch,
-                    1,
-                )
-                dashboard.update_queue_context(
-                    pending=pending_before_batch,
-                    queued=self.database.queued_count(),
-                                    )
-                live.update(dashboard.render(), refresh=True)
-
-                if pending_before_batch <= 0:
-                    break
-
-                if (
-                    self.config.max_auto_batches > 0
-                    and batch_number >= self.config.max_auto_batches
-                ):
-                    self.logger.warning(
-                        (
-                            "Max auto batches reached, stopping command: "
-                            "batches=%s pending=%s max_auto_batches=%s"
-                        ),
-                        batch_number,
-                        pending_before_batch,
-                        self.config.max_auto_batches,
-                    )
-                    break
-
-                batch_number += 1
-                estimated_total_batches = batch_number + max(
-                    math.ceil(
-                        pending_before_batch
-                        / max(self.config.max_pages, 1)
-                    )
-                    - 1,
-                    0,
-                )
-
-                dashboard.set_pipeline_context(
-                    step_current=6,
-                    step_total=14,
-                    step_name="Crawling queued URLs",
-                    batch_current=batch_number,
-                    batch_total=estimated_total_batches,
-                )
-                live.update(dashboard.render(), refresh=True)
-
-                processed_before_batch = dashboard.processed
-
-                await self._run_database_queue_batch(
-                    sitemap=sitemap,
-                    batch_number=batch_number,
-                    dashboard=dashboard,
-                    live=live,
-                )
-
-                pending_after_batch = self.database.pending_queue_count()
-                processed_in_batch = (
-                    dashboard.processed - processed_before_batch
-                )
-
-                dashboard.total_pages = max(
-                    dashboard.total_pages,
-                    dashboard.processed + pending_after_batch,
-                    1,
-                )
-                dashboard.update_queue_context(
-                    pending=pending_after_batch,
-                    queued=self.database.queued_count(),
-                                    )
-                live.update(dashboard.render(), refresh=True)
-
-                if pending_after_batch <= 0:
-                    break
-
-                if not self.config.auto_continue_until_complete:
-                    break
-
-                if processed_in_batch <= 0:
-                    message = (
-                        "Crawler queue stalled while pending URLs remain: "
-                        f"batch={batch_number} "
-                        f"processed={processed_in_batch} "
-                        f"pending_before={pending_before_batch} "
-                        f"pending_after={pending_after_batch}"
-                    )
-                    self.logger.critical(message)
-                    raise RuntimeError(message)
-
-                if self.config.batch_pause_seconds > 0:
-                    dashboard.set_pipeline_context(
-                        step_current=6,
-                        step_total=14,
-                        step_name=(
-                            "Waiting before next automatic batch "
-                            f"({self.config.batch_pause_seconds}s)"
-                        ),
-                        batch_current=batch_number,
-                        batch_total=estimated_total_batches,
-                    )
-                    live.update(dashboard.render(), refresh=True)
-                    await asyncio.sleep(self.config.batch_pause_seconds)
-
-            final_pending = self.database.pending_queue_count()
-            final_step_name = (
-                "Finished"
-                if final_pending <= 0
-                else "Stopped with pending queue items"
-            )
-
-            dashboard.total_pages = max(
-                dashboard.total_pages,
-                dashboard.processed,
-                1,
-            )
-            dashboard.update_queue_context(
-                pending=final_pending,
-                queued=self.database.queued_count(),
-                            )
-            dashboard.set_pipeline_context(
-                step_current=14,
-                step_total=14,
-                step_name=final_step_name,
-                batch_current=batch_number,
-                batch_total=max(batch_number, 1),
-            )
-            live.update(dashboard.render(), refresh=True)
-
-        return dashboard
 
 
     async def _run_database_queue_batch(
