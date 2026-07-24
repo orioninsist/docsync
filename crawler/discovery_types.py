@@ -1,12 +1,19 @@
-"""Backward-compatible discovery type exports.
-
-This module is intentionally kept as a thin compatibility shim while older
-call sites are migrated to crawler.discovery_result. The canonical
-DiscoveryResult implementation lives in crawler.discovery_result.
-"""
+"""Shared immutable value types used by recursive discovery."""
 
 from __future__ import annotations
 
-from crawler.discovery_result import DiscoveryResult
+from typing import NamedTuple
 
-__all__ = ["DiscoveryResult"]
+
+class DiscoveryQueueItem(NamedTuple):
+    """Queued URL plus traversal metadata."""
+
+    url: str
+    depth: int
+    discovered_from: str | None
+
+
+class DiscoveryScore(NamedTuple):
+    """Simple quality score for a discovered URL."""
+
+    score: int

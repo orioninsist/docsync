@@ -22,6 +22,10 @@ if TYPE_CHECKING:
     from crawler.sitemap import SitemapManager
 
 
+FetchLifecycle = tuple[Any, str, str | None]
+DedupLifecycle = tuple[str, Any]
+
+
 class UrlProcessorHost(Protocol):
     """Operations and collaborators required to process one URL."""
 
@@ -33,6 +37,7 @@ class UrlProcessorHost(Protocol):
     observability: Any
     policy: Any
     discovery: Any
+    fetch_pipeline: Any
 
     def _normalize_english_candidate_url(self, url: str) -> str | None:
         """Normalize a URL or reject it when invalid for this crawl."""
@@ -71,95 +76,6 @@ class UrlProcessorHost(Protocol):
         """Record that processing has started for a URL."""
         ...
 
-    async def _fetch_page(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        cache_headers: dict[str, str],
-        dashboard: RichDashboard,
-        live: Live,
-    ) -> tuple[Any, str, str | None] | None:
-        """Fetch a URL and return its response lifecycle values."""
-        ...
-
-    def _validate_fetch_response(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: Any,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        dashboard: RichDashboard,
-        live: Live,
-    ) -> bool:
-        """Validate a fetched response and finish rejected responses."""
-        ...
-
-    def _parse_validated_content(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: Any,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        dashboard: RichDashboard,
-        live: Live,
-    ) -> Any | None:
-        """Parse a validated response or finish a rejected page."""
-        ...
-
-    def _handle_content_policy(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: Any,
-        parsed: Any,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        dashboard: RichDashboard,
-        live: Live,
-    ) -> bool:
-        """Evaluate parsed content and finish policy rejections."""
-        ...
-
-    def _handle_dedup_result(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: Any,
-        parsed: Any,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        content_hash: str,
-        dedup_result: Any,
-        dashboard: RichDashboard,
-        live: Live,
-    ) -> bool:
-        """Handle duplicate or unchanged content outcomes."""
-        ...
-
-    def _persist_processed_page(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: Any,
-        parsed: Any,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        content_hash: str,
-        dedup_result: Any,
-        dashboard: RichDashboard,
-        live: Live,
-    ) -> None:
-        """Persist a successfully processed page."""
-        ...
-
 
 class UrlProcessor:
     """Orchestrate the complete lifecycle of one crawl URL."""
@@ -179,23 +95,164 @@ class UrlProcessor:
     ) -> None:
         """Process one URL without managing crawler-wide lifecycle state."""
 
-        host = self._host
-        normalized_url = host._normalize_english_candidate_url(url)
-
+        normalized_url = self._normalize_candidate_or_finish(
+            url=url,
+            dashboard=dashboard,
+            live=live,
+        )
         if normalized_url is None:
-            host._finish_non_english_or_invalid_before_fetch_skip(
-                url=url,
-                dashboard=dashboard,
-                live=live,
-            )
             return
 
         url = normalized_url
-        url_hash = host.dedup.url_hash(url)
-        cache_headers = host.runtime_context.database.get_cache_headers_by_url_hash(
-            url_hash
+        url_hash, cache_headers = self._prepare_request_context(url)
+
+        if self._run_pre_fetch_checks(
+            url=url,
+            url_hash=url_hash,
+            dashboard=dashboard,
+            live=live,
+        ):
+            return
+
+        try:
+            fetch_lifecycle = await self._fetch_and_validate(
+                url=url,
+                url_hash=url_hash,
+                cache_headers=cache_headers,
+                depth=depth,
+                dashboard=dashboard,
+                live=live,
+            )
+            if fetch_lifecycle is None:
+                return
+
+            await self._process_fetched_page(
+                url=url,
+                url_hash=url_hash,
+                depth=depth,
+                fetch_lifecycle=fetch_lifecycle,
+                dashboard=dashboard,
+                live=live,
+                sitemap=sitemap,
+                use_recursive_discovery=use_recursive_discovery,
+            )
+        except (OSError, RuntimeError, ValueError):
+            self._finish_processing_error(
+                url=url,
+                url_hash=url_hash,
+                depth=depth,
+                dashboard=dashboard,
+                live=live,
+            )
+
+    async def _process_fetched_page(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        depth: int,
+        fetch_lifecycle: FetchLifecycle,
+        dashboard: RichDashboard,
+        live: Live,
+        sitemap: SitemapManager,
+        use_recursive_discovery: bool,
+    ) -> None:
+        result, final_url_hash, redirect_target_hash = fetch_lifecycle
+
+        await self._run_recursive_discovery(
+            result=result,
+            depth=depth,
+            sitemap=sitemap,
+            use_recursive_discovery=use_recursive_discovery,
         )
 
+        parsed = self._parse_and_filter_content(
+            url=url,
+            url_hash=url_hash,
+            result=result,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            dashboard=dashboard,
+            live=live,
+        )
+        if parsed is None:
+            return
+
+        content_hash, dedup_result = self._deduplicate_content(
+            url_hash=url_hash,
+            parsed=parsed,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+        )
+
+        if self._finish_duplicate_if_needed(
+            url=url,
+            url_hash=url_hash,
+            result=result,
+            parsed=parsed,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            content_hash=content_hash,
+            dedup_result=dedup_result,
+            dashboard=dashboard,
+            live=live,
+        ):
+            return
+
+        self._persist_page(
+            url=url,
+            url_hash=url_hash,
+            result=result,
+            parsed=parsed,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            content_hash=content_hash,
+            dedup_result=dedup_result,
+            dashboard=dashboard,
+            live=live,
+        )
+
+    def _normalize_candidate_or_finish(
+        self,
+        *,
+        url: str,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> str | None:
+        host = self._host
+        normalized_url = host._normalize_english_candidate_url(url)
+
+        if normalized_url is not None:
+            return normalized_url
+
+        host.fetch_pipeline.finish_non_english_or_invalid_before_fetch_skip(
+            url=url,
+            dashboard=dashboard,
+            live=live,
+        )
+        return None
+
+    def _prepare_request_context(
+        self,
+        url: str,
+    ) -> tuple[str, Any]:
+        host = self._host
+        url_hash = host.dedup.url_hash(url)
+        cache_headers = (
+            host.runtime_context.database.get_cache_headers_by_url_hash(
+                url_hash
+            )
+        )
+        return url_hash, cache_headers
+
+    def _run_pre_fetch_checks(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> bool:
         if is_hard_blacklisted_url(url):
             self._finish_hard_blacklist_skip(
                 url=url,
@@ -203,7 +260,7 @@ class UrlProcessor:
                 dashboard=dashboard,
                 live=live,
             )
-            return
+            return True
 
         if self._url_policy_blocks(url):
             self._finish_url_policy_skip(
@@ -212,111 +269,181 @@ class UrlProcessor:
                 dashboard=dashboard,
                 live=live,
             )
+            return True
+
+        return False
+
+    async def _fetch_and_validate(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        cache_headers: Any,
+        depth: int,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> FetchLifecycle | None:
+        host = self._host
+
+        host.logger.info("Processing URL: %s", url)
+        host._start_url(dashboard, live, url, depth)
+
+        fetch_lifecycle = await host.fetch_pipeline.fetch_page(
+            url=url,
+            url_hash=url_hash,
+            cache_headers=cache_headers,
+            dashboard=dashboard,
+            live=live,
+        )
+        if fetch_lifecycle is None:
+            return None
+
+        result, final_url_hash, redirect_target_hash = fetch_lifecycle
+
+        should_finish = host.fetch_pipeline.validate_fetch_response(
+            url=url,
+            url_hash=url_hash,
+            result=result,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            dashboard=dashboard,
+            live=live,
+        )
+        if should_finish:
+            return None
+
+        return result, final_url_hash, redirect_target_hash
+
+    async def _run_recursive_discovery(
+        self,
+        *,
+        result: Any,
+        depth: int,
+        sitemap: SitemapManager,
+        use_recursive_discovery: bool,
+    ) -> None:
+        if not use_recursive_discovery:
             return
 
-        try:
-            host.logger.info("Processing URL: %s", url)
-            host._start_url(dashboard, live, url, depth)
+        await self._host.discovery.discover_and_enqueue_links(
+            html=result.html,
+            final_url=result.final_url,
+            depth=depth,
+            sitemap=sitemap,
+        )
 
-            fetch_lifecycle = await host._fetch_page(
-                url=url,
-                url_hash=url_hash,
-                cache_headers=cache_headers,
-                dashboard=dashboard,
-                live=live,
-            )
-            if fetch_lifecycle is None:
-                return
+    def _parse_and_filter_content(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        result: Any,
+        final_url_hash: str,
+        redirect_target_hash: str | None,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> Any | None:
+        host = self._host
 
-            result, final_url_hash, redirect_target_hash = fetch_lifecycle
+        parsed = host.fetch_pipeline.parse_validated_content(
+            url=url,
+            url_hash=url_hash,
+            result=result,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            dashboard=dashboard,
+            live=live,
+        )
+        if parsed is None:
+            return None
 
-            if host._validate_fetch_response(
-                url=url,
-                url_hash=url_hash,
-                result=result,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                dashboard=dashboard,
-                live=live,
-            ):
-                return
+        should_finish = host.fetch_pipeline.handle_content_policy(
+            url=url,
+            url_hash=url_hash,
+            result=result,
+            parsed=parsed,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            dashboard=dashboard,
+            live=live,
+        )
+        if should_finish:
+            return None
 
-            if use_recursive_discovery:
-                await host.discovery.discover_and_enqueue_links(
-                    html=result.html,
-                    final_url=result.final_url,
-                    depth=depth,
-                    sitemap=sitemap,
-                )
+        return parsed
 
-            parsed = host._parse_validated_content(
-                url=url,
-                url_hash=url_hash,
-                result=result,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                dashboard=dashboard,
-                live=live,
-            )
-            if parsed is None:
-                return
+    def _deduplicate_content(
+        self,
+        *,
+        url_hash: str,
+        parsed: Any,
+        final_url_hash: str,
+        redirect_target_hash: str | None,
+    ) -> DedupLifecycle:
+        host = self._host
+        content_hash = host.dedup.content_hash(parsed.text_content)
+        dedup_result = host.dedup.check(
+            url_hash=url_hash,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            canonical_url=parsed.canonical_url,
+            content_hash=content_hash,
+        )
+        return content_hash, dedup_result
 
-            if host._handle_content_policy(
-                url=url,
-                url_hash=url_hash,
-                result=result,
-                parsed=parsed,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                dashboard=dashboard,
-                live=live,
-            ):
-                return
+    def _finish_duplicate_if_needed(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        result: Any,
+        parsed: Any,
+        final_url_hash: str,
+        redirect_target_hash: str | None,
+        content_hash: str,
+        dedup_result: Any,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> bool:
+        return self._host.fetch_pipeline.handle_dedup_result(
+            url=url,
+            url_hash=url_hash,
+            result=result,
+            parsed=parsed,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            content_hash=content_hash,
+            dedup_result=dedup_result,
+            dashboard=dashboard,
+            live=live,
+        )
 
-            content_hash = host.dedup.content_hash(parsed.text_content)
-            dedup_result = host.dedup.check(
-                url_hash=url_hash,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                canonical_url=parsed.canonical_url,
-                content_hash=content_hash,
-            )
-
-            if host._handle_dedup_result(
-                url=url,
-                url_hash=url_hash,
-                result=result,
-                parsed=parsed,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                content_hash=content_hash,
-                dedup_result=dedup_result,
-                dashboard=dashboard,
-                live=live,
-            ):
-                return
-
-            host._persist_processed_page(
-                url=url,
-                url_hash=url_hash,
-                result=result,
-                parsed=parsed,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                content_hash=content_hash,
-                dedup_result=dedup_result,
-                dashboard=dashboard,
-                live=live,
-            )
-
-        except OSError, RuntimeError, ValueError:
-            self._finish_processing_error(
-                url=url,
-                url_hash=url_hash,
-                depth=depth,
-                dashboard=dashboard,
-                live=live,
-            )
+    def _persist_page(
+        self,
+        *,
+        url: str,
+        url_hash: str,
+        result: Any,
+        parsed: Any,
+        final_url_hash: str,
+        redirect_target_hash: str | None,
+        content_hash: str,
+        dedup_result: Any,
+        dashboard: RichDashboard,
+        live: Live,
+    ) -> None:
+        self._host.fetch_pipeline.persist_processed_page(
+            url=url,
+            url_hash=url_hash,
+            result=result,
+            parsed=parsed,
+            final_url_hash=final_url_hash,
+            redirect_target_hash=redirect_target_hash,
+            content_hash=content_hash,
+            dedup_result=dedup_result,
+            dashboard=dashboard,
+            live=live,
+        )
 
     def _finish_hard_blacklist_skip(
         self,

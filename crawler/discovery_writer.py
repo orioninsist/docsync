@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
-from crawler.discovery_types import DiscoveryResult
+from crawler.discovery_result import DiscoveryResult
 from crawler.queue_file import read_urls_from_txt as read_urls_from_txt
 from crawler.queue_file import smart_group_key as smart_group_key
 from crawler.queue_file import smart_sort_key as smart_sort_key
@@ -16,11 +16,244 @@ def host_of(url: str) -> str:
 
 def path_depth(url: str) -> int:
     parsed = urlparse(url)
-    return len([part for part in parsed.path.strip("/").split("/") if part])
+    return len(
+        [
+            part
+            for part in parsed.path.strip("/").split("/")
+            if part
+        ]
+    )
 
 
 def smart_group_title(host: str, group: str) -> str:
     return f"{host} / {group}"
+
+
+def _build_report_path(seed: str) -> Path:
+    report_dir = Path("state/global")
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    seed_key = (
+        host_of(seed)
+        .replace("/", "-")
+        .replace(":", "-")
+        or "site"
+    )
+
+    return report_dir / f"discovery_coverage_{seed_key}.md"
+
+
+def _result_hosts(
+    results: list[DiscoveryResult],
+) -> set[str]:
+    return {
+        host_of(item.url)
+        for item in results
+        if item.url.startswith(("http://", "https://"))
+    }
+
+
+def _raw_hosts(raw_candidates: list[str]) -> set[str]:
+    return {
+        host_of(url)
+        for url in raw_candidates
+        if url.startswith(("http://", "https://"))
+    }
+
+
+def _count_block_reasons(
+    blocked: list[DiscoveryResult],
+    raw_blocked: list[DiscoveryResult],
+) -> dict[str, int]:
+    reason_counts: dict[str, int] = {}
+
+    for item in [*blocked, *raw_blocked]:
+        reason_counts[item.reason] = (
+            reason_counts.get(item.reason, 0) + 1
+        )
+
+    return reason_counts
+
+
+def _format_result(item: DiscoveryResult) -> str:
+    return (
+        f"- `{item.url}` "
+        f"score={item.score} "
+        f"reason={item.reason}"
+    )
+
+
+def _build_summary_section(
+    *,
+    seed: str,
+    elapsed: float,
+    raw_candidates: list[str],
+    accepted: list[DiscoveryResult],
+    review: list[DiscoveryResult],
+    blocked: list[DiscoveryResult],
+    raw_blocked: list[DiscoveryResult],
+    accepted_hosts: set[str],
+    review_hosts: set[str],
+    blocked_hosts: set[str],
+    observed_not_promoted: list[str],
+) -> list[str]:
+    return [
+        "# Discovery Coverage Report",
+        "",
+        f"Seed: `{seed}`",
+        f"Elapsed seconds: `{elapsed:.1f}`",
+        "",
+        "## Summary",
+        "",
+        (
+            "- Raw candidates discovered: "
+            f"`{len(raw_candidates)}`"
+        ),
+        f"- Accepted roots: `{len(accepted)}`",
+        f"- Review roots: `{len(review)}`",
+        f"- Blocked candidates: `{len(blocked)}`",
+        (
+            "- Raw blocked candidates: "
+            f"`{len(raw_blocked)}`"
+        ),
+        f"- Accepted hosts: `{len(accepted_hosts)}`",
+        f"- Review hosts: `{len(review_hosts)}`",
+        f"- Blocked hosts: `{len(blocked_hosts)}`",
+        (
+            "- Observed hosts not promoted: "
+            f"`{len(observed_not_promoted)}`"
+        ),
+    ]
+
+
+def _build_result_section(
+    title: str,
+    results: list[DiscoveryResult],
+) -> list[str]:
+    lines = [
+        "",
+        f"## {title}",
+        "",
+    ]
+    lines.extend(_format_result(item) for item in results)
+    return lines
+
+
+def _build_reason_counts_section(
+    reason_counts: dict[str, int],
+) -> list[str]:
+    lines = [
+        "",
+        "## Blocked reason counts",
+        "",
+    ]
+
+    if not reason_counts:
+        lines.append("_None_")
+        return lines
+
+    sorted_reasons = sorted(
+        reason_counts.items(),
+        key=lambda item: (-item[1], item[0]),
+    )
+
+    lines.extend(
+        f"- `{reason}`: {count}"
+        for reason, count in sorted_reasons
+    )
+    return lines
+
+
+def _build_observed_hosts_section(
+    observed_not_promoted: list[str],
+) -> list[str]:
+    lines = [
+        "",
+        "## Observed official-like hosts not promoted",
+        "",
+    ]
+
+    if observed_not_promoted:
+        lines.extend(
+            f"- `{host}`"
+            for host in observed_not_promoted[:300]
+        )
+    else:
+        lines.append("_None_")
+
+    return lines
+
+
+def _build_blocked_examples_section(
+    blocked: list[DiscoveryResult],
+) -> list[str]:
+    return _build_result_section(
+        "Blocked examples",
+        blocked[:300],
+    )
+
+
+def _build_coverage_report_lines(
+    *,
+    seed: str,
+    accepted: list[DiscoveryResult],
+    review: list[DiscoveryResult],
+    blocked: list[DiscoveryResult],
+    raw_candidates: list[str],
+    raw_blocked: list[DiscoveryResult],
+    elapsed: float,
+) -> list[str]:
+    accepted_hosts = _result_hosts(accepted)
+    review_hosts = _result_hosts(review)
+    blocked_hosts = _result_hosts(blocked)
+
+    promoted_hosts = accepted_hosts | review_hosts
+    observed_not_promoted = sorted(
+        _raw_hosts(raw_candidates) - promoted_hosts
+    )
+    reason_counts = _count_block_reasons(
+        blocked,
+        raw_blocked,
+    )
+
+    lines = _build_summary_section(
+        seed=seed,
+        elapsed=elapsed,
+        raw_candidates=raw_candidates,
+        accepted=accepted,
+        review=review,
+        blocked=blocked,
+        raw_blocked=raw_blocked,
+        accepted_hosts=accepted_hosts,
+        review_hosts=review_hosts,
+        blocked_hosts=blocked_hosts,
+        observed_not_promoted=observed_not_promoted,
+    )
+    lines.extend(
+        _build_result_section(
+            "Accepted",
+            accepted,
+        )
+    )
+    lines.extend(
+        _build_result_section(
+            "Review",
+            review,
+        )
+    )
+    lines.extend(
+        _build_reason_counts_section(reason_counts)
+    )
+    lines.extend(
+        _build_observed_hosts_section(
+            observed_not_promoted
+        )
+    )
+    lines.extend(
+        _build_blocked_examples_section(blocked)
+    )
+
+    return lines
 
 
 def write_discovery_coverage_report(
@@ -33,80 +266,22 @@ def write_discovery_coverage_report(
     raw_blocked: list[DiscoveryResult],
     elapsed: float,
 ) -> None:
-    report_dir = Path("state/global")
-    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = _build_report_path(seed)
+    lines = _build_coverage_report_lines(
+        seed=seed,
+        accepted=accepted,
+        review=review,
+        blocked=blocked,
+        raw_candidates=raw_candidates,
+        raw_blocked=raw_blocked,
+        elapsed=elapsed,
+    )
 
-    seed_key = host_of(seed).replace("/", "-").replace(":", "-") or "site"
-    report_path = report_dir / f"discovery_coverage_{seed_key}.md"
-
-    accepted_hosts = {host_of(item.url) for item in accepted}
-    review_hosts = {host_of(item.url) for item in review}
-    blocked_hosts = {
-        host_of(item.url)
-        for item in blocked
-        if item.url.startswith(("http://", "https://"))
-    }
-
-    raw_hosts: set[str] = set()
-    for url in raw_candidates:
-        if url.startswith(("http://", "https://")):
-            raw_hosts.add(host_of(url))
-
-    promoted_hosts = accepted_hosts | review_hosts
-    observed_not_promoted = sorted(raw_hosts - promoted_hosts)
-
-    reason_counts: dict[str, int] = {}
-    for item in list(blocked) + list(raw_blocked):
-        reason_counts[item.reason] = reason_counts.get(item.reason, 0) + 1
-
-    lines: list[str] = []
-    lines.append("# Discovery Coverage Report")
-    lines.append("")
-    lines.append(f"Seed: `{seed}`")
-    lines.append(f"Elapsed seconds: `{elapsed:.1f}`")
-    lines.append("")
-    lines.append("## Summary")
-    lines.append("")
-    lines.append(f"- Raw candidates discovered: `{len(raw_candidates)}`")
-    lines.append(f"- Accepted roots: `{len(accepted)}`")
-    lines.append(f"- Review roots: `{len(review)}`")
-    lines.append(f"- Blocked candidates: `{len(blocked)}`")
-    lines.append(f"- Raw blocked candidates: `{len(raw_blocked)}`")
-    lines.append(f"- Accepted hosts: `{len(accepted_hosts)}`")
-    lines.append(f"- Review hosts: `{len(review_hosts)}`")
-    lines.append(f"- Blocked hosts: `{len(blocked_hosts)}`")
-    lines.append(f"- Observed hosts not promoted: `{len(observed_not_promoted)}`")
-    lines.append("")
-    lines.append("## Accepted")
-    lines.append("")
-    for item in accepted:
-        lines.append(f"- `{item.url}` score={item.score} reason={item.reason}")
-    lines.append("")
-    lines.append("## Review")
-    lines.append("")
-    for item in review:
-        lines.append(f"- `{item.url}` score={item.score} reason={item.reason}")
-    lines.append("")
-    lines.append("## Blocked reason counts")
-    lines.append("")
-    if reason_counts:
-        for reason, count in sorted(reason_counts.items(), key=lambda x: (-x[1], x[0])):
-            lines.append(f"- `{reason}`: {count}")
-    else:
-        lines.append("_None_")
-    lines.append("")
-    lines.append("## Observed official-like hosts not promoted")
-    lines.append("")
-    if observed_not_promoted:
-        for host in observed_not_promoted[:300]:
-            lines.append(f"- `{host}`")
-    else:
-        lines.append("_None_")
-    lines.append("")
-    lines.append("## Blocked examples")
-    lines.append("")
-    for item in blocked[:300]:
-        lines.append(f"- `{item.url}` score={item.score} reason={item.reason}")
-
-    report_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    print(f"       coverage report written: {report_path}", flush=True)
+    report_path.write_text(
+        "\n".join(lines).rstrip() + "\n",
+        encoding="utf-8",
+    )
+    print(
+        f"       coverage report written: {report_path}",
+        flush=True,
+    )

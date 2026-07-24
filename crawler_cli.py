@@ -432,7 +432,7 @@ async def run_one(
         # STRICT: no sitemap expansion and no recursive link discovery here.
         object.__setattr__(config, "recursive_discovery", False)
         object.__setattr__(config, "use_sitemap_discovery", False)
-        object.__setattr__(config, "auto_continue_until_complete", False)
+        object.__setattr__(config, "auto_continue_until_complete", True)
 
     print()
     print(f"[{index}/{total}] Auto Config")

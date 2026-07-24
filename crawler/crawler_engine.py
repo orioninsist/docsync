@@ -8,6 +8,7 @@ content parsing, deduplication, and persistence to specialized collaborators.
 # pylint: disable=too-many-lines
 from __future__ import annotations
 
+from crawler.batch_executor import BatchExecutor
 from crawler.url_processor import UrlProcessor
 from crawler.crawler_engine_run_summary import (
     RunSummaryPaths,
@@ -20,7 +21,6 @@ from crawler.crawler_runtime_builder import (
 import asyncio
 import logging
 import math
-from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -33,17 +33,18 @@ from crawler.config import CrawlerConfig
 from crawler.crawler_discovery import CrawlerDiscoveryService
 from crawler.crawler_context import CrawlerRuntimeContext
 from crawler.database import DatabaseManager
-from crawler.dedup import DeduplicationEngine, DedupResult
+from crawler.dedup import DeduplicationEngine
 from crawler.engine_status import format_unlimited, merge_dashboard, print_batch_banner
-from crawler.fetcher import AsyncFetcher, FetchResult
+from crawler.fetch_pipeline import FetchPipeline
+from crawler.fetcher import AsyncFetcher
 from crawler.intent_analyzer import IntentAnalyzer
 from crawler.language import LanguageDetector
 from crawler.markdown_writer import MarkdownWriter
 from crawler.observability import CrawlerObservability
 from crawler.official_graph import OfficialHostGraph
 from crawler.page_quality import PageQualityAnalyzer
-from crawler.parser import ContentParser, ParsedPage
-from crawler.policy_engine import PolicyDecision, SmartScopePolicy
+from crawler.parser import ContentParser
+from crawler.policy_engine import SmartScopePolicy
 from crawler.progress import RichDashboard
 from crawler.queue_runner import QueueRunner
 from crawler.robots import RobotsManager
@@ -54,39 +55,6 @@ from crawler.shared.url_normalizer import (
 from crawler.shared.url_ownership import claim_url_ownership
 from crawler.sitemap import SitemapManager
 from crawler.global_url_registry import GlobalUrlRegistry
-
-
-@dataclass(frozen=True, slots=True)
-class EmptyRefetchStatusUpdate:  # pylint: disable=too-many-instance-attributes
-    """Status payload for an empty forced refetch after an HTTP 304 response."""
-
-    url: str
-    url_hash: str
-    final_url: str
-    final_url_hash: str
-    redirect_target_hash: str
-    status_code: int
-    fallback_status: str
-    etag: str | None
-    last_modified: str | None
-
-
-@dataclass(frozen=True)
-class SkippedPageStatusUpdate:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
-    """Database and queue update payload for skipped page outcomes."""
-
-    url: str
-    url_hash: str
-    status: str
-    final_url: str
-    final_url_hash: str
-    redirect_target_hash: str | None
-    canonical_url: str | None = None
-    content_hash: str | None = None
-    etag: str | None = None
-    last_modified: str | None = None
-    queue_status: str = "done"
-    dashboard_status: str = "skipped"
 
 
 class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
@@ -130,6 +98,22 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             config=self.config,
         )
         self.page_quality = PageQualityAnalyzer()
+        self.fetch_pipeline = FetchPipeline(
+            config=self.config,
+            database=self.database,
+            fetcher=self.fetcher,
+            parser=self.parser,
+            language=self.language,
+            dedup=self.dedup,
+            writer=self.writer,
+            policy=self.policy,
+            page_quality=self.page_quality,
+            observability=self.observability,
+            update_dashboard_step=self._update_dashboard_step,
+            finish_queue_item=self._finish_queue_item,
+            finish_url=self._finish_url,
+            logger=self.logger,
+        )
         self.discovery = CrawlerDiscoveryService(
             config=self.config,
             database=self.database,
@@ -155,16 +139,20 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             ),
             logger=self.logger,
         )
+        self.url_processor = UrlProcessor(self)
+        self.batch_executor = BatchExecutor(
+            config=self.config,
+            database=self.database,
+            process_url=self._process_batch_url,
+            logger=self.logger,
+        )
         self.queue_runner = QueueRunner(
             config=self.config,
             database=self.database,
             terminal_ui=self.terminal_ui,
-            run_database_queue_batch=(
-                self._run_database_queue_batch
-            ),
+            run_database_queue_batch=self.batch_executor.run,
             logger=self.logger,
         )
-        self.url_processor = UrlProcessor(self)
 
     def _owner_project_name(self) -> str:
         output_root = Path("output")
@@ -401,131 +389,6 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
 
 
 
-    async def _run_database_queue_batch(
-        self,
-        sitemap: SitemapManager,
-        batch_number: int,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> RichDashboard:
-        """Process one queue batch using the caller-owned Live display."""
-
-        pending_count = self.database.pending_queue_count()
-
-        if pending_count <= 0:
-            self.logger.info(
-                "Skipped empty crawl batch: batch=%s",
-                batch_number,
-            )
-            return dashboard
-
-        processed_at_batch_start = dashboard.processed
-        batch_page_limit = max(self.config.max_pages, 1)
-
-        while True:
-            processed_in_batch = (
-                dashboard.processed - processed_at_batch_start
-            )
-
-            if processed_in_batch >= batch_page_limit:
-                self.logger.info(
-                    (
-                        "Max pages per batch reached: "
-                        "batch=%s processed=%s max_pages=%s "
-                        "pending=%s queued=%s"
-                    ),
-                    batch_number,
-                    processed_in_batch,
-                    self.config.max_pages,
-                    self.database.pending_queue_count(),
-                    self.database.queued_count(),
-                )
-                break
-
-            pending_rows = self.database.fetch_pending_urls(
-                limit=self.config.concurrent_requests
-            )
-
-            if not pending_rows:
-                break
-
-            remaining_page_budget = (
-                batch_page_limit - processed_in_batch
-            )
-
-            if remaining_page_budget <= 0:
-                break
-
-            pending_rows = pending_rows[:remaining_page_budget]
-
-            current_pending = self.database.pending_queue_count()
-            dashboard.total_pages = max(
-                dashboard.total_pages,
-                dashboard.processed + current_pending,
-                dashboard.processed + len(pending_rows),
-                1,
-            )
-            dashboard.update_queue_context(
-                pending=current_pending,
-                queued=self.database.queued_count(),
-                            )
-            live.update(dashboard.render(), refresh=True)
-
-            tasks = []
-
-            for row in pending_rows:
-                url = str(row["url"])
-                url_hash = str(row["url_hash"])
-                depth = int(row["depth"])
-
-                self.database.mark_queue_status(
-                    url_hash=url_hash,
-                    status="processing",
-                )
-
-                tasks.append(
-                    self._process_url(
-                        url=url,
-                        depth=depth,
-                        dashboard=dashboard,
-                        live=live,
-                        sitemap=sitemap,
-                        use_recursive_discovery=True,
-                    )
-                )
-
-            results = await asyncio.gather(
-                *tasks,
-                return_exceptions=True,
-            )
-
-            fatal_errors: list[BaseException] = []
-
-            for result in results:
-                if not isinstance(result, BaseException):
-                    continue
-
-                self.logger.exception(
-                    "Isolated URL task failed inside batch %s",
-                    batch_number,
-                    exc_info=(
-                        type(result),
-                        result,
-                        result.__traceback__,
-                    ),
-                )
-                fatal_errors.append(result)
-
-            live.update(dashboard.render(), refresh=True)
-
-            if fatal_errors and len(fatal_errors) == len(results):
-                raise RuntimeError(
-                    "Every URL task failed in the current batch"
-                ) from fatal_errors[0]
-
-        return dashboard
-
-
     def _merge_dashboard(
         self,
         target: RichDashboard,
@@ -550,623 +413,24 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
     def _format_unlimited(self, value: int) -> str:
         return format_unlimited(value)
 
-    def _finish_empty_refetch_after_not_modified(
+    async def _process_batch_url(
         self,
-        *,
-        status_update: EmptyRefetchStatusUpdate,
+        url: str,
+        depth: int,
         dashboard: RichDashboard,
         live: TerminalUIHandle,
+        sitemap: SitemapManager,
+        use_recursive_discovery: bool,
     ) -> None:
-        self.logger.warning(
-            "Refetch after 304 returned no HTML: url=%s final_url=%s "
-            "status=%s mapped_status=%s",
-            status_update.url,
-            status_update.final_url,
-            status_update.status_code,
-            status_update.fallback_status,
-        )
+        """Adapt BatchExecutor calls to the keyword-only URL processor."""
 
-        self.database.mark_status(
-            url=status_update.url,
-            url_hash=status_update.url_hash,
-            status=status_update.fallback_status,
-            final_url=status_update.final_url,
-            final_url_hash=status_update.final_url_hash,
-            redirect_target_hash=status_update.redirect_target_hash,
-            etag=status_update.etag,
-            last_modified=status_update.last_modified,
-        )
-
-        self.database.mark_queue_status(
-            status_update.url_hash,
-            "done" if status_update.fallback_status != "error" else "error",
-        )
-        self._finish_url(
-            dashboard,
-            live,
-            "skipped" if status_update.fallback_status != "error" else "error",
-            status_update.url,
-        )
-
-    def _finish_skipped_page_status(
-        self,
-        *,
-        status_update: SkippedPageStatusUpdate,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> None:
-        """Persist a skipped page outcome and close the crawl queue item."""
-
-        self.database.mark_status(
-            url=status_update.url,
-            url_hash=status_update.url_hash,
-            status=status_update.status,
-            final_url=status_update.final_url,
-            final_url_hash=status_update.final_url_hash,
-            redirect_target_hash=status_update.redirect_target_hash,
-            canonical_url=status_update.canonical_url,
-            content_hash=status_update.content_hash,
-            etag=status_update.etag,
-            last_modified=status_update.last_modified,
-        )
-
-        self._finish_queue_item(
-            url_hash=status_update.url_hash,
-            queue_status=status_update.queue_status,
+        await self._process_url(
+            url=url,
+            depth=depth,
             dashboard=dashboard,
             live=live,
-            dashboard_status=status_update.dashboard_status,
-            url=status_update.url,
-        )
-
-    def _finish_non_english_or_invalid_before_fetch_skip(
-        self,
-        *,
-        url: str,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> None:
-        """Persist and close a URL skipped before fetch due to language or validity."""
-
-        self.logger.info(
-            "Skipped non-English or invalid URL before fetch: url=%s",
-            url,
-        )
-        self.observability.record_official_rejected(
-            url=url,
-            reason="non_english_or_invalid_url_before_fetch",
-        )
-        normalized_url = normalize_url(url)
-
-        if normalized_url is None:
-            normalized_url = url
-
-        fallback_hash = self.dedup.url_hash(normalized_url)
-        self.database.mark_status(
-            url=url,
-            url_hash=fallback_hash,
-            status="non_english_or_invalid_before_fetch",
-        )
-        self._finish_queue_item(
-            url_hash=fallback_hash,
-            queue_status="done",
-            dashboard=dashboard,
-            live=live,
-            dashboard_status="skipped",
-            url=url,
-        )
-
-    async def _fetch_page(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        cache_headers: dict[str, str],
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> tuple[FetchResult, str, str | None] | None:
-        self._update_dashboard_step(
-            dashboard=dashboard,
-            live=live,
-            step_current=7,
-            step_name="Fetching page",
-            url=url,
-        )
-        result = await self.fetcher.fetch(
-            url,
-            cache_headers=cache_headers,
-        )
-
-        final_url_hash = self.dedup.final_url_hash(result.final_url)
-        redirect_target_hash = self.dedup.redirect_target_hash(
-            original_url=url,
-            final_url=result.final_url,
-        )
-
-        if not result.not_modified:
-            return result, final_url_hash, redirect_target_hash
-
-        if not self.writer.exists(url=result.final_url):
-            self.logger.info(
-                (
-                    "HTTP 304 received but local Markdown is missing, "
-                    "refetching without cache headers: %s"
-                ),
-                url,
-            )
-
-            result = await self.fetcher.fetch(
-                url,
-                cache_headers={},
-            )
-
-            final_url_hash = self.dedup.final_url_hash(result.final_url)
-            redirect_target_hash = self.dedup.redirect_target_hash(
-                original_url=url,
-                final_url=result.final_url,
-            )
-
-            if not result.html:
-                fallback_status = self._status_for_empty_fetch(result.status_code)
-                safe_redirect_target_hash = (
-                    "" if redirect_target_hash is None else redirect_target_hash
-                )
-                safe_status_code = (
-                    0 if result.status_code is None else result.status_code
-                )
-
-                self._finish_empty_refetch_after_not_modified(
-                    status_update=EmptyRefetchStatusUpdate(
-                        url=url,
-                        url_hash=url_hash,
-                        final_url=result.final_url,
-                        final_url_hash=final_url_hash,
-                        redirect_target_hash=safe_redirect_target_hash,
-                        status_code=safe_status_code,
-                        fallback_status=fallback_status,
-                        etag=result.etag,
-                        last_modified=result.last_modified,
-                    ),
-                    dashboard=dashboard,
-                    live=live,
-                )
-                return None
-
-            return result, final_url_hash, redirect_target_hash
-
-        self.database.mark_status(
-            url=url,
-            url_hash=url_hash,
-            status="skipped",
-            final_url=result.final_url,
-            final_url_hash=final_url_hash,
-            redirect_target_hash=redirect_target_hash,
-            etag=result.etag,
-            last_modified=result.last_modified,
-        )
-
-        self._finish_queue_item(
-            url_hash=url_hash,
-            queue_status="done",
-            dashboard=dashboard,
-            live=live,
-            dashboard_status="skipped",
-            url=url,
-        )
-        return None
-
-    # pylint: disable=too-many-arguments,too-many-locals,too-many-return-statements,too-many-branches,too-many-statements
-    def _validate_fetch_response(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: FetchResult,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> bool:
-        self._update_dashboard_step(
-            dashboard=dashboard,
-            live=live,
-            step_current=8,
-            step_name="Validating fetch response",
-            url=url,
-        )
-        transport_quality_status = self._detect_transport_quality_issue(
-            result.status_code
-        )
-
-        if not result.html:
-            status = transport_quality_status or "error"
-
-            self.logger.warning(
-                "Fetch returned no HTML: url=%s final_url=%s status=%s mapped_status=%s",
-                url,
-                result.final_url,
-                result.status_code,
-                status,
-            )
-
-            self.database.mark_status(
-                url=url,
-                url_hash=url_hash,
-                status=status,
-                final_url=result.final_url,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                etag=result.etag,
-                last_modified=result.last_modified,
-            )
-
-            self.database.mark_queue_status(
-                url_hash,
-                "done" if status != "error" else "error",
-            )
-            self._finish_url(
-                dashboard,
-                live,
-                "skipped" if status != "error" else "error",
-                url,
-            )
-            return True
-
-        html_quality_status = self._detect_html_quality_issue(
-            html=result.html,
-            status_code=result.status_code,
-        )
-
-        if html_quality_status is not None:
-            self.logger.warning(
-                (
-                    "Skipped low quality, protected, or login page before parsing: "
-                    "url=%s final_url=%s http_status=%s reason=%s"
-                ),
-                url,
-                result.final_url,
-                result.status_code,
-                html_quality_status,
-            )
-
-            self._finish_skipped_page_status(
-                status_update=SkippedPageStatusUpdate(
-                    url=url,
-                    url_hash=url_hash,
-                    status=html_quality_status,
-                    final_url=result.final_url,
-                    final_url_hash=final_url_hash,
-                    redirect_target_hash=redirect_target_hash,
-                    etag=result.etag,
-                    last_modified=result.last_modified,
-                ),
-                dashboard=dashboard,
-                live=live,
-            )
-            return True
-
-        return False
-
-    def _parse_validated_content(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: FetchResult,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> ParsedPage | None:
-        self._update_dashboard_step(
-            dashboard=dashboard,
-            live=live,
-            step_current=9,
-            step_name="Parsing HTML",
-            url=url,
-        )
-        html = result.html
-
-        if html is None:
-            raise RuntimeError("Validated fetch result unexpectedly contains no HTML")
-
-        if self.config.require_english and not self.language.is_english(
-            html,
-            result.final_url,
-        ):
-            self.logger.info(
-                "Skipped non-English page: url=%s final_url=%s",
-                url,
-                result.final_url,
-            )
-
-            self.database.mark_status(
-                url=url,
-                url_hash=url_hash,
-                status="non_english",
-                final_url=result.final_url,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                etag=result.etag,
-                last_modified=result.last_modified,
-            )
-
-            self._finish_queue_item(
-                url_hash=url_hash,
-                queue_status="done",
-                dashboard=dashboard,
-                live=live,
-                dashboard_status="skipped",
-                url=url,
-            )
-            return None
-
-        parsed = self.parser.parse(html, result.final_url)
-
-        parsed_quality_status = self._detect_parsed_quality_issue(
-            markdown=parsed.markdown,
-            text_content=parsed.text_content,
-        )
-
-        if parsed_quality_status is not None:
-            self.logger.warning(
-                "Skipped low quality parsed page: url=%s final_url=%s reason=%s title=%s",
-                url,
-                result.final_url,
-                parsed_quality_status,
-                parsed.title,
-            )
-
-            self.database.mark_status(
-                url=url,
-                url_hash=url_hash,
-                status=parsed_quality_status,
-                final_url=result.final_url,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                canonical_url=parsed.canonical_url,
-                etag=result.etag,
-                last_modified=result.last_modified,
-            )
-
-            self._finish_queue_item(
-                url_hash=url_hash,
-                queue_status="done",
-                dashboard=dashboard,
-                live=live,
-                dashboard_status="skipped",
-                url=url,
-            )
-            return None
-
-        return parsed
-
-    def _handle_content_policy(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: FetchResult,
-        parsed: ParsedPage,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> bool:
-        self._update_dashboard_step(
-            dashboard=dashboard,
-            live=live,
-            step_current=10,
-            step_name="Evaluating content policy",
-            url=url,
-        )
-        content_policy = self.policy.evaluate_content(
-            url=result.final_url,
-            title=parsed.title,
-            text=parsed.text_content,
-        )
-
-        if content_policy.decision in {
-            PolicyDecision.SKIP,
-            PolicyDecision.BLOCK,
-        }:
-            self.logger.info(
-                "Skipped by smart content policy: "
-                "url=%s decision=%s reason=%s title=%s",
-                result.final_url,
-                content_policy.decision.value,
-                content_policy.reason,
-                parsed.title,
-            )
-
-            self._finish_skipped_page_status(
-                status_update=SkippedPageStatusUpdate(
-                    url=url,
-                    url_hash=url_hash,
-                    status=f"policy_{content_policy.decision.value}",
-                    final_url=result.final_url,
-                    final_url_hash=final_url_hash,
-                    redirect_target_hash=redirect_target_hash,
-                    canonical_url=parsed.canonical_url,
-                    etag=result.etag,
-                    last_modified=result.last_modified,
-                ),
-                dashboard=dashboard,
-                live=live,
-            )
-            return True
-
-        if content_policy.decision == PolicyDecision.REVIEW:
-            self.logger.info(
-                (
-                    "Smart content policy marked page for review but allowed it: "
-                    "url=%s reason=%s title=%s"
-                ),
-                result.final_url,
-                content_policy.reason,
-                parsed.title,
-            )
-
-        return False
-
-    def _handle_dedup_result(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: FetchResult,
-        parsed: ParsedPage,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        content_hash: str,
-        dedup_result: DedupResult,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> bool:
-        self._update_dashboard_step(
-            dashboard=dashboard,
-            live=live,
-            step_current=11,
-            step_name="Checking duplicates",
-            url=url,
-        )
-        duplicate_statuses = {
-            "same_content",
-            "same_canonical",
-            "same_final_url",
-            "same_redirect_target",
-        }
-
-        if dedup_result.status in duplicate_statuses:
-            self.logger.info(
-                "Skipped duplicate page: url=%s final_url=%s duplicate_reason=%s",
-                url,
-                result.final_url,
-                dedup_result.status,
-            )
-
-            self.database.mark_status(
-                url=url,
-                url_hash=url_hash,
-                status="duplicate",
-                final_url=result.final_url,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                canonical_url=parsed.canonical_url,
-                content_hash=content_hash,
-                etag=result.etag,
-                last_modified=result.last_modified,
-            )
-
-            self._finish_queue_item(
-                url_hash=url_hash,
-                queue_status="done",
-                dashboard=dashboard,
-                live=live,
-                dashboard_status="duplicate",
-                url=url,
-            )
-            return True
-
-        if dedup_result.status != "same_url_unchanged":
-            return False
-
-        if not self.writer.exists(url=result.final_url):
-            self.writer.write(
-                url=result.final_url,
-                title=parsed.title,
-                markdown=parsed.markdown,
-            )
-            status = "restored"
-        else:
-            status = "skipped"
-
-        self.database.mark_status(
-            url=url,
-            url_hash=url_hash,
-            status=status,
-            final_url=result.final_url,
-            final_url_hash=final_url_hash,
-            redirect_target_hash=redirect_target_hash,
-            canonical_url=parsed.canonical_url,
-            content_hash=content_hash,
-            etag=result.etag,
-            last_modified=result.last_modified,
-        )
-
-        self._finish_queue_item(
-            url_hash=url_hash,
-            queue_status="done",
-            dashboard=dashboard,
-            live=live,
-            dashboard_status=status,
-            url=url,
-        )
-        return True
-
-    # pylint: disable=too-many-arguments
-    def _persist_processed_page(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: FetchResult,
-        parsed: ParsedPage,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        content_hash: str,
-        dedup_result: DedupResult,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> None:
-        """Persist a successfully parsed and deduplicated page."""
-
-        self._update_dashboard_step(
-            dashboard=dashboard,
-            live=live,
-            step_current=12,
-            step_name="Writing Markdown",
-            url=url,
-        )
-
-        self.writer.write(
-            url=result.final_url,
-            title=parsed.title,
-            markdown=parsed.markdown,
-        )
-
-        status = (
-            "updated" if dedup_result.status == "same_url_changed" else "downloaded"
-        )
-
-        self.database.upsert_page(
-            url=url,
-            url_hash=url_hash,
-            final_url=result.final_url,
-            final_url_hash=final_url_hash,
-            redirect_target_hash=redirect_target_hash,
-            canonical_url=parsed.canonical_url,
-            content_hash=content_hash,
-            etag=result.etag,
-            last_modified=result.last_modified,
-            status=status,
-            content_changed=dedup_result.content_changed,
-        )
-
-        self._finish_queue_item(
-            url_hash=url_hash,
-            queue_status="done",
-            dashboard=dashboard,
-            live=live,
-            dashboard_status=status,
-            url=url,
-        )
-
-        self.logger.info(
-            "URL processed successfully: url=%s final_url=%s status=%s",
-            url,
-            result.final_url,
-            status,
+            sitemap=sitemap,
+            use_recursive_discovery=use_recursive_discovery,
         )
 
     async def _process_url(
