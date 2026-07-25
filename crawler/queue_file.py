@@ -106,7 +106,7 @@ def smart_sort_key(item: DiscoveryResult) -> tuple[int, int, str, str]:
     return -item.score, group_rank, host, item.url
 
 
-def write_seed_txt(
+def write_review_txt(
     *,
     txt_path: Path,
     accepted: list[DiscoveryResult],
@@ -125,12 +125,12 @@ def write_seed_txt(
         grouped.setdefault(key, []).append(item)
 
     with txt_path.open("w", encoding="utf-8") as file:
-        _ = file.write("# DOCSYNC STRICT SMART QUEUE - PHASE 1 DISCOVERY OUTPUT\n")
+        _ = file.write("# DOCSYNC REVIEW QUEUE - PHASE 1 DISCOVERY OUTPUT\n")
         _ = file.write("# This file is for human review before download.\n")
         _ = file.write("# Keep URL lines you want to download.\n")
         _ = file.write("# Delete unwanted URLs or comment them with '#'.\n")
         _ = file.write("# Download order is top-to-bottom after you press 'y'.\n")
-        _ = file.write("# Phase 2 reads only uncommented URL lines from this TXT.\n")
+        _ = file.write("# Phase 2 reads enabled URLs into an in-memory queue.\n")
         _ = file.write("\n")
 
         for group_name, items in grouped.items():
@@ -168,7 +168,7 @@ def print_review(
     print()
     print("Smart Site Analysis")
     print("===================")
-    print(f"Seed txt: {txt_path}")
+    print(f"Review txt: {txt_path}")
     print()
 
     print("ACCEPTED - written to txt")

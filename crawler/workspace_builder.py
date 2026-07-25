@@ -4,7 +4,7 @@ from pathlib import Path
 
 from crawler.discovery import discover
 from crawler.discovery_result import DiscoveryResult
-from crawler.queue_file import print_review, read_urls_from_txt, write_seed_txt
+from crawler.queue_file import print_review, read_urls_from_txt, write_review_txt
 from crawler.source_manifest import SourceManifest
 
 SOURCES_ROOT = Path("sources")
@@ -49,6 +49,71 @@ def _split_discovery_results(
     return accepted, blocked, review
 
 
+def _read_review_queue(review_path: Path) -> list[str]:
+    queue_urls = read_urls_from_txt(review_path)
+
+    if not queue_urls:
+        raise SystemExit("ERROR: Review TXT contains no enabled URLs.")
+
+    return queue_urls
+
+
+def _print_review_instructions(review_path: Path) -> None:
+    print(f"Review TXT ready: {review_path}")
+    print()
+    print("Edit the TXT using ANY editor (VS Code, Cursor, Kate, nano, etc.).")
+    print("The program watches for saved changes.")
+    print()
+    print("Commands:")
+    print("  y = read the latest saved TXT and start download")
+    print("  r = reload/check if TXT changed")
+    print("  q = cancel")
+    print()
+
+
+def _wait_for_review_confirmation(
+    *,
+    review_path: Path,
+    auto_yes: bool,
+) -> list[str]:
+    if auto_yes:
+        return _read_review_queue(review_path)
+
+    last_mtime = review_path.stat().st_mtime
+
+    while True:
+        current_mtime = review_path.stat().st_mtime
+
+        if current_mtime != last_mtime:
+            print("✓ TXT updated on disk.")
+            last_mtime = current_mtime
+
+        answer = input("[y/r/q] > ").strip().lower()
+
+        if answer == "r":
+            current_mtime = review_path.stat().st_mtime
+
+            if current_mtime != last_mtime:
+                print("✓ New changes detected.")
+                last_mtime = current_mtime
+            else:
+                print("No new saved changes.")
+
+            continue
+
+        if answer in {"y", "yes"}:
+            queue_urls = _read_review_queue(review_path)
+            print(f"Queue loaded from latest TXT ({len(queue_urls)} URLs).")
+            return queue_urls
+
+        if answer in {"q", "quit", "exit"}:
+            print()
+            print("Crawl cancelled. Discovery review TXT was created only.")
+            print(f"Edit later: {review_path}")
+            print(f"Then run: docsync docs {review_path}")
+            raise SystemExit(0)
+
+
 async def build_smart_workspace(
     *,
     workspace_name: str,
@@ -61,10 +126,6 @@ async def build_smart_workspace(
         root_dir=SOURCES_ROOT,
     )
     manifest.ensure_workspace()
-
-    workspace = manifest.project_name
-    txt_path = manifest.seed_file
-    queue_path = manifest.allow_file
 
     accepted_map: dict[str, DiscoveryResult] = {}
     blocked_map: dict[str, DiscoveryResult] = {}
@@ -101,106 +162,32 @@ async def build_smart_workspace(
         limit=limit,
     )
 
-    blocked = sorted(
-        blocked,
-        key=lambda item: (-item.score, item.url),
-    )
-
-    write_seed_txt(
-        txt_path=txt_path,
+    write_review_txt(
+        txt_path=manifest.review_file,
         accepted=accepted,
         review=review,
         blocked=blocked,
     )
 
-    while True:
-        print_review(
-            accepted=accepted,
-            blocked=blocked,
-            review=review,
-            txt_path=txt_path,
-        )
+    print_review(
+        accepted=accepted,
+        blocked=blocked,
+        review=review,
+        txt_path=manifest.review_file,
+    )
+    _print_review_instructions(manifest.review_file)
 
-        queue_urls = read_urls_from_txt(txt_path)
-        _ = queue_path.write_text(
-            "\n".join(queue_urls).rstrip() + ("\n" if queue_urls else ""),
-            encoding="utf-8",
-        )
-
-        last_mtime = txt_path.stat().st_mtime
-
-        print(f"TXT ready: {txt_path}")
-        print(f"Queue TXT ready: {queue_path}")
-        print()
-        print("Edit the TXT using ANY editor (VS Code, Cursor, Kate, nano, etc.).")
-        print("The program watches for saved changes.")
-        print()
-        print("Commands:")
-        print("  y = regenerate queue from latest saved TXT and start download")
-        print("  r = reload/check if TXT changed")
-        print("  q = cancel")
-        print()
-
-        if auto_yes:
-            break
-
-        start_download = False
-
-        while True:
-            current = txt_path.stat().st_mtime
-
-            if current != last_mtime:
-                print("✓ TXT updated on disk.")
-                last_mtime = current
-
-            answer = input("[y/r/q] > ").strip().lower()
-
-            if answer == "r":
-                current = txt_path.stat().st_mtime
-
-                if current != last_mtime:
-                    print("✓ New changes detected.")
-                    last_mtime = current
-                else:
-                    print("No new saved changes.")
-
-                continue
-
-            if answer in {"y", "yes"}:
-                queue_urls = read_urls_from_txt(txt_path)
-
-                _ = queue_path.write_text(
-                    "\n".join(queue_urls).rstrip() + ("\n" if queue_urls else ""),
-                    encoding="utf-8",
-                )
-
-                print(f"Queue regenerated from latest TXT ({len(queue_urls)} URLs).")
-                start_download = True
-                break
-
-            if answer in {"q", "quit", "exit"}:
-                raise SystemExit(0)
-
-        if start_download:
-            break
-
-        print()
-        print("Crawl cancelled. Discovery TXT was created only.")
-        print(f"Edit later: {txt_path}")
-        print(f"Then run: docsync docs {queue_path}")
-        raise SystemExit(0)
-
-    targets = read_urls_from_txt(queue_path)
-
-    if not targets:
-        raise SystemExit("ERROR: Queue TXT is empty.")
+    targets = _wait_for_review_confirmation(
+        review_path=manifest.review_file,
+        auto_yes=auto_yes,
+    )
 
     print()
-    print("PHASE 2: Linear TXT download")
-    print("--------------------------------")
-    print(f"Reading crawl roots top-to-bottom: {queue_path}")
+    print("PHASE 2: Linear in-memory queue download")
+    print("-----------------------------------------")
+    print(f"Reading crawl roots top-to-bottom: {manifest.review_file}")
     print("STRICT: No recursive discovery in Phase 2.")
-    print("Only uncommented TXT lines will be downloaded top-to-bottom.")
+    print("Only uncommented TXT lines are held in the runtime queue.")
     print()
 
-    return targets, workspace
+    return targets, manifest.project_name

@@ -57,6 +57,8 @@ class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
 
     start_url: str
     output_dir: Path
+    run_id: str = ""
+    history_path: Path | None = None
     db_path: Path = Path("state.db")
     logs_dir: Path = Path("logs")
 
@@ -111,6 +113,7 @@ class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
     def __post_init__(self) -> None:
         """Validate required values and normalize unsafe configuration."""
         self._normalize_start_url()
+        self._normalize_run_context()
         self._normalize_limit_settings()
         self._normalize_request_settings()
         self._normalize_playwright_settings()
@@ -125,6 +128,13 @@ class CrawlerConfig:  # pylint: disable=too-many-instance-attributes
             raise ValueError("start_url must not be empty.")
 
         object.__setattr__(self, "start_url", normalized_url)
+
+    def _normalize_run_context(self) -> None:
+        """Normalize optional crawler run and manifest history context."""
+        object.__setattr__(self, "run_id", self.run_id.strip())
+
+        if self.history_path is not None:
+            object.__setattr__(self, "history_path", Path(self.history_path))
 
     def _normalize_limit_settings(self) -> None:
         """Normalize crawler page, queue, and depth limits."""

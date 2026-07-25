@@ -21,12 +21,11 @@ def build_auto_config(
 ) -> CrawlerConfig:
     project_slug = build_project_slug(start_url)
     allowed_path_prefix = build_allowed_path_prefix(start_url)
-
     project_name = workspace or project_slug
-    output_dir = SourceManifest.from_project_name(
+    manifest = SourceManifest.from_project_name(
         project_name=project_name,
         root_dir=SOURCES_ROOT,
-    ).output_dir
+    )
 
     db_path, logs_dir = build_runtime_paths(
         project_slug,
@@ -37,7 +36,9 @@ def build_auto_config(
     return CrawlerConfig(
         start_url=start_url,
         allowed_path_prefix=allowed_path_prefix,
-        output_dir=output_dir,
+        output_dir=manifest.output_dir,
+        run_id=run_id,
+        history_path=manifest.history_file,
         db_path=db_path,
         logs_dir=logs_dir,
         require_english=True,

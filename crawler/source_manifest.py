@@ -18,8 +18,8 @@ class SourceManifest:
     Example for project_name="openai":
 
         workspace_dir      -> openai/
-        seed_file          -> openai/openai.seed.txt
-        allow_file         -> openai/openai.allow.txt
+        review_file        -> openai/openai.review.txt
+        history_file       -> openai/openai.allow.md
         block_file         -> openai/openai.block.txt
         discovery_report   -> openai/openai.discovery.md
         output_dir         -> openai/
@@ -27,8 +27,8 @@ class SourceManifest:
 
     project_name: str
     workspace_dir: Path
-    seed_file: Path
-    allow_file: Path
+    review_file: Path
+    history_file: Path
     block_file: Path
     discovery_report: Path
     output_dir: Path
@@ -57,8 +57,8 @@ class SourceManifest:
         return cls(
             project_name=normalized_name,
             workspace_dir=workspace_dir,
-            seed_file=workspace_dir / f"{normalized_name}.seed.txt",
-            allow_file=workspace_dir / f"{normalized_name}.allow.txt",
+            review_file=workspace_dir / f"{normalized_name}.review.txt",
+            history_file=workspace_dir / f"{normalized_name}.allow.md",
             block_file=workspace_dir / f"{normalized_name}.block.txt",
             discovery_report=workspace_dir / f"{normalized_name}.discovery.md",
             output_dir=workspace_dir,

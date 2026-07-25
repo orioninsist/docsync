@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from crawler.config import CrawlerConfig
@@ -11,6 +11,7 @@ from crawler.database import DatabaseManager
 from crawler.dedup import DeduplicationEngine, DedupResult
 from crawler.fetcher import AsyncFetcher, FetchResult
 from crawler.language import LanguageDetector
+from crawler.manifest_history import ManifestHistory
 from crawler.markdown_writer import MarkdownWriter
 from crawler.observability import CrawlerObservability
 from crawler.page_quality import PageQualityAnalyzer
@@ -67,6 +68,7 @@ class FetchPipeline:
     _fetcher: AsyncFetcher
     _parser: ContentParser
     _language: LanguageDetector
+    _manifest_history: ManifestHistory | None
     _dedup: DeduplicationEngine
     _writer: MarkdownWriter
     _policy: SmartScopePolicy
@@ -100,6 +102,11 @@ class FetchPipeline:
         self._fetcher = fetcher
         self._parser = parser
         self._language = language
+        self._manifest_history = (
+            ManifestHistory(config.history_path)
+            if config.history_path is not None
+            else None
+        )
         self._dedup = dedup
         self._writer = writer
         self._policy = policy
@@ -134,11 +141,22 @@ class FetchPipeline:
             normalized_url = url
 
         fallback_hash = self._dedup.url_hash(normalized_url)
+        status = "non_english_or_invalid_before_fetch"
 
         self._database.mark_status(
             url=url,
             url_hash=fallback_hash,
-            status="non_english_or_invalid_before_fetch",
+            status=status,
+        )
+        self._record_history(
+            event="Page skipped",
+            fields={
+                "Status": status,
+                "Requested URL": url,
+                "Final URL": None,
+                "HTTP status": None,
+                "Reason": status,
+            },
         )
         self._finish_queue_item(
             url_hash=fallback_hash,
@@ -256,7 +274,7 @@ class FetchPipeline:
                 url_hash=url_hash,
                 final_url=result.final_url,
                 final_url_hash=final_url_hash,
-                redirect_target_hash=(redirect_target_hash or ""),
+                redirect_target_hash=redirect_target_hash or "",
                 status_code=result.status_code or 0,
                 fallback_status=fallback_status,
                 etag=result.etag,
@@ -278,22 +296,34 @@ class FetchPipeline:
         dashboard: RichDashboard,
         live: TerminalUIHandle,
     ) -> None:
+        status = "skipped"
+
         self._database.mark_status(
             url=url,
             url_hash=url_hash,
-            status="skipped",
+            status=status,
             final_url=result.final_url,
             final_url_hash=final_url_hash,
             redirect_target_hash=redirect_target_hash,
             etag=result.etag,
             last_modified=result.last_modified,
         )
+        self._record_history(
+            event="Page skipped",
+            fields={
+                "Status": status,
+                "Requested URL": url,
+                "Final URL": result.final_url,
+                "HTTP status": result.status_code,
+                "Reason": "not_modified",
+            },
+        )
         self._finish_queue_item(
             url_hash=url_hash,
             queue_status="done",
             dashboard=dashboard,
             live=live,
-            dashboard_status="skipped",
+            dashboard_status=status,
             url=url,
         )
 
@@ -368,7 +398,7 @@ class FetchPipeline:
         live: TerminalUIHandle,
     ) -> None:
         self._logger.warning(
-            ("Fetch returned no HTML: url=%s final_url=%s status=%s mapped_status=%s"),
+            "Fetch returned no HTML: url=%s final_url=%s status=%s mapped_status=%s",
             url,
             result.final_url,
             result.status_code,
@@ -384,6 +414,16 @@ class FetchPipeline:
             redirect_target_hash=redirect_target_hash,
             etag=result.etag,
             last_modified=result.last_modified,
+        )
+        self._record_history(
+            event="Empty fetch",
+            fields={
+                "Status": status,
+                "Requested URL": url,
+                "Final URL": result.final_url,
+                "HTTP status": result.status_code,
+                "Reason": status,
+            },
         )
 
         queue_status = "done" if status != "error" else "error"
@@ -563,7 +603,7 @@ class FetchPipeline:
         live: TerminalUIHandle,
     ) -> None:
         self._logger.warning(
-            ("Skipped low quality parsed page: url=%s final_url=%s reason=%s title=%s"),
+            "Skipped low quality parsed page: url=%s final_url=%s reason=%s title=%s",
             url,
             result.final_url,
             status,
@@ -633,7 +673,7 @@ class FetchPipeline:
                 status_update=SkippedPageStatusUpdate(
                     url=url,
                     url_hash=url_hash,
-                    status=(f"policy_{content_policy.decision.value}"),
+                    status=f"policy_{content_policy.decision.value}",
                     final_url=result.final_url,
                     final_url_hash=final_url_hash,
                     redirect_target_hash=redirect_target_hash,
@@ -691,8 +731,10 @@ class FetchPipeline:
         }
 
         if dedup_result.status in duplicate_statuses:
+            status = "duplicate"
+
             self._logger.info(
-                ("Skipped duplicate page: url=%s final_url=%s duplicate_reason=%s"),
+                "Skipped duplicate page: url=%s final_url=%s duplicate_reason=%s",
                 url,
                 result.final_url,
                 dedup_result.status,
@@ -701,7 +743,7 @@ class FetchPipeline:
             self._database.mark_status(
                 url=url,
                 url_hash=url_hash,
-                status="duplicate",
+                status=status,
                 final_url=result.final_url,
                 final_url_hash=final_url_hash,
                 redirect_target_hash=redirect_target_hash,
@@ -710,12 +752,24 @@ class FetchPipeline:
                 etag=result.etag,
                 last_modified=result.last_modified,
             )
+            self._record_history(
+                event="Duplicate page",
+                fields={
+                    "Status": status,
+                    "Requested URL": url,
+                    "Final URL": result.final_url,
+                    "Title": parsed.title,
+                    "Canonical URL": parsed.canonical_url,
+                    "Content hash": content_hash,
+                    "Reason": dedup_result.status,
+                },
+            )
             self._finish_queue_item(
                 url_hash=url_hash,
                 queue_status="done",
                 dashboard=dashboard,
                 live=live,
-                dashboard_status="duplicate",
+                dashboard_status=status,
                 url=url,
             )
             return True
@@ -744,6 +798,18 @@ class FetchPipeline:
             content_hash=content_hash,
             etag=result.etag,
             last_modified=result.last_modified,
+        )
+        self._record_history(
+            event="Unchanged page",
+            fields={
+                "Status": status,
+                "Requested URL": url,
+                "Final URL": result.final_url,
+                "Title": parsed.title,
+                "Canonical URL": parsed.canonical_url,
+                "Content hash": content_hash,
+                "Reason": dedup_result.status,
+            },
         )
         self._finish_queue_item(
             url_hash=url_hash,
@@ -802,6 +868,13 @@ class FetchPipeline:
             status=status,
             content_changed=dedup_result.content_changed,
         )
+        self._record_processed_page_history(
+            url=url,
+            result=result,
+            parsed=parsed,
+            content_hash=content_hash,
+            status=status,
+        )
         self._finish_queue_item(
             url_hash=url_hash,
             queue_status="done",
@@ -812,10 +885,50 @@ class FetchPipeline:
         )
 
         self._logger.info(
-            ("URL processed successfully: url=%s final_url=%s status=%s"),
+            "URL processed successfully: url=%s final_url=%s status=%s",
             url,
             result.final_url,
             status,
+        )
+
+    def _record_processed_page_history(
+        self,
+        *,
+        url: str,
+        result: FetchResult,
+        parsed: ParsedPage,
+        content_hash: str,
+        status: str,
+    ) -> None:
+        self._record_history(
+            event="Page persisted",
+            fields={
+                "Status": status,
+                "Requested URL": url,
+                "Final URL": result.final_url,
+                "Title": parsed.title,
+                "Canonical URL": parsed.canonical_url,
+                "Content hash": content_hash,
+            },
+        )
+
+    def _record_history(
+        self,
+        *,
+        event: str,
+        fields: Mapping[str, object],
+    ) -> None:
+        """Append one terminal pipeline outcome to the manifest history."""
+
+        history = self._manifest_history
+
+        if history is None or not self._config.run_id:
+            return
+
+        history.append(
+            run_id=self._config.run_id,
+            event=event,
+            fields=fields,
         )
 
     def _finish_empty_refetch_after_not_modified(
@@ -846,14 +959,24 @@ class FetchPipeline:
             etag=status_update.etag,
             last_modified=status_update.last_modified,
         )
+        self._record_history(
+            event="Empty refetch after not modified",
+            fields={
+                "Status": status_update.fallback_status,
+                "Requested URL": status_update.url,
+                "Final URL": status_update.final_url,
+                "HTTP status": status_update.status_code,
+                "Reason": "empty_refetch_after_not_modified",
+            },
+        )
         self._database.mark_queue_status(
             status_update.url_hash,
-            ("done" if status_update.fallback_status != "error" else "error"),
+            "done" if status_update.fallback_status != "error" else "error",
         )
         self._finish_url(
             dashboard,
             live,
-            ("skipped" if status_update.fallback_status != "error" else "error"),
+            "skipped" if status_update.fallback_status != "error" else "error",
             status_update.url,
         )
 
@@ -875,6 +998,17 @@ class FetchPipeline:
             content_hash=status_update.content_hash,
             etag=status_update.etag,
             last_modified=status_update.last_modified,
+        )
+        self._record_history(
+            event="Page skipped",
+            fields={
+                "Status": status_update.status,
+                "Requested URL": status_update.url,
+                "Final URL": status_update.final_url,
+                "Canonical URL": status_update.canonical_url,
+                "Content hash": status_update.content_hash,
+                "Reason": status_update.status,
+            },
         )
         self._finish_queue_item(
             url_hash=status_update.url_hash,

@@ -1,4 +1,0 @@
-- [x] Diagnose systemd.io discovery scope rejection
-- [x] Fix the responsible single file
-- [x] Verify with static checks and systemd.io regression
-- [ ] Complete release validation

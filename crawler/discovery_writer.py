@@ -7,7 +7,7 @@ from crawler.discovery_result import DiscoveryResult
 from crawler.queue_file import read_urls_from_txt as read_urls_from_txt
 from crawler.queue_file import smart_group_key as smart_group_key
 from crawler.queue_file import smart_sort_key as smart_sort_key
-from crawler.queue_file import write_seed_txt as write_seed_txt
+from crawler.queue_file import write_review_txt as write_review_txt
 
 
 def host_of(url: str) -> str:
@@ -16,6 +16,7 @@ def host_of(url: str) -> str:
 
 def path_depth(url: str) -> int:
     parsed = urlparse(url)
+
     return len([part for part in parsed.path.strip("/").split("/") if part])
 
 
@@ -88,15 +89,15 @@ def _build_summary_section(
         "",
         "## Summary",
         "",
-        (f"- Raw candidates discovered: `{len(raw_candidates)}`"),
+        f"- Raw candidates discovered: `{len(raw_candidates)}`",
         f"- Accepted roots: `{len(accepted)}`",
         f"- Review roots: `{len(review)}`",
         f"- Blocked candidates: `{len(blocked)}`",
-        (f"- Raw blocked candidates: `{len(raw_blocked)}`"),
+        f"- Raw blocked candidates: `{len(raw_blocked)}`",
         f"- Accepted hosts: `{len(accepted_hosts)}`",
         f"- Review hosts: `{len(review_hosts)}`",
         f"- Blocked hosts: `{len(blocked_hosts)}`",
-        (f"- Observed hosts not promoted: `{len(observed_not_promoted)}`"),
+        f"- Observed hosts not promoted: `{len(observed_not_promoted)}`",
     ]
 
 
@@ -110,6 +111,7 @@ def _build_result_section(
         "",
     ]
     lines.extend(_format_result(item) for item in results)
+
     return lines
 
 
@@ -124,6 +126,7 @@ def _build_reason_counts_section(
 
     if not reason_counts:
         lines.append("_None_")
+
         return lines
 
     sorted_reasons = sorted(
@@ -132,6 +135,7 @@ def _build_reason_counts_section(
     )
 
     lines.extend(f"- `{reason}`: {count}" for reason, count in sorted_reasons)
+
     return lines
 
 
