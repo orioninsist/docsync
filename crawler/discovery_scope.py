@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from crawler.discovery_paths import (
     discovery_path_prefix,
     normalized_host,
@@ -12,6 +14,7 @@ from crawler.discovery_paths import (
 from crawler.policy_engine import SmartScopePolicy
 
 DISCOVERY_MIN_BRANCH_LINKS = 2
+ROOT_PATH_PREFIX = "/"
 
 
 def branch_support_count(
@@ -20,7 +23,21 @@ def branch_support_count(
 ) -> int:
     """Count unique real paths contained by one candidate branch."""
 
-    return sum(1 for path in real_paths if path_is_inside_prefix(path, branch_prefix))
+    return sum(
+        1
+        for path in real_paths
+        if path_is_inside_prefix(
+            path,
+            branch_prefix,
+        )
+    )
+
+
+def source_is_host_root(source_url: str) -> bool:
+    """Return whether the fetched source represents the host root."""
+
+    path = urlparse(source_url).path
+    return path in {"", ROOT_PATH_PREFIX}
 
 
 def infer_scope_prefix_from_real_links(
@@ -34,6 +51,10 @@ def infer_scope_prefix_from_real_links(
     Scope evidence is restricted to links from the same host. Candidate
     branches are ancestors of the fetched source page, ordered deepest first.
     The first branch containing multiple real links becomes the proposal.
+
+    A host-root source explicitly proposes the root path when multiple
+    same-host real links exist. This bootstraps documentation sites whose
+    primary pages are sibling directories directly beneath the host root.
     """
 
     if normalized_host(source_url) != normalized_host(base_url):
@@ -46,6 +67,9 @@ def infer_scope_prefix_from_real_links(
 
     if len(real_paths) < DISCOVERY_MIN_BRANCH_LINKS:
         return None
+
+    if source_is_host_root(source_url):
+        return ROOT_PATH_PREFIX
 
     for branch_prefix in source_branch_candidates(source_url):
         support = branch_support_count(
@@ -72,10 +96,16 @@ def merge_scope_prefixes(
     if current_prefix is None:
         return proposed_prefix
 
-    if path_is_inside_prefix(proposed_prefix, current_prefix):
+    if path_is_inside_prefix(
+        proposed_prefix,
+        current_prefix,
+    ):
         return current_prefix
 
-    if path_is_inside_prefix(current_prefix, proposed_prefix):
+    if path_is_inside_prefix(
+        current_prefix,
+        proposed_prefix,
+    ):
         return proposed_prefix
 
     return None
