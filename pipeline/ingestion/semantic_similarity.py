@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from math import fsum, isfinite, sqrt
-from typing import Protocol, TypeAlias, runtime_checkable
+from typing import Protocol, TypeAlias
 
 from pipeline.ingestion.config import RoutingConfig
 
@@ -35,7 +35,6 @@ class ZeroMagnitudeEmbeddingError(SemanticSimilarityError):
     """Raised when cosine similarity is undefined for a zero vector."""
 
 
-@runtime_checkable
 class TextEmbedder(Protocol):
     """Produce one numeric embedding vector for supplied text."""
 
@@ -53,12 +52,6 @@ class SemanticComparisonRequest:
 
     def __post_init__(self) -> None:
         """Validate and normalize comparison content."""
-
-        if not isinstance(self.left_content, str):
-            raise TypeError("left_content must be a string")
-
-        if not isinstance(self.right_content, str):
-            raise TypeError("right_content must be a string")
 
         normalized_left = self.left_content.strip()
         normalized_right = self.right_content.strip()
@@ -109,25 +102,11 @@ class SemanticSimilarityService:
     embedder: TextEmbedder
     routing: RoutingConfig
 
-    def __post_init__(self) -> None:
-        """Validate service dependencies."""
-
-        if not isinstance(self.embedder, TextEmbedder):
-            raise TypeError("embedder must implement TextEmbedder")
-
-        if not isinstance(self.routing, RoutingConfig):
-            raise TypeError("routing must be a RoutingConfig")
-
     def compare(
         self,
         request: SemanticComparisonRequest,
     ) -> SemanticComparisonResult:
         """Embed request content and return its cosine similarity."""
-
-        if not isinstance(request, SemanticComparisonRequest):
-            raise TypeError(
-                "request must be a SemanticComparisonRequest",
-            )
 
         left_embedding = normalize_embedding(
             self.embedder.embed(request.left_content),
@@ -150,7 +129,7 @@ class SemanticSimilarityService:
 
 
 def normalize_embedding(
-    embedding: Sequence[float],
+    embedding: object,
     *,
     field_name: str = "embedding",
 ) -> EmbeddingVector:
@@ -239,7 +218,7 @@ def cosine_similarity(
 
 
 def _validate_unit_interval(
-    value: float,
+    value: object,
     *,
     field_name: str,
 ) -> float:

@@ -90,13 +90,15 @@ class AsyncFetcher:
     def __init__(
         self, config: CrawlerConfig, logger: logging.Logger | None = None
     ) -> None:
-        self.config = config
-        self.logger = logger or logging.getLogger(__name__)
-        self.semaphore = asyncio.Semaphore(config.concurrent_requests)
+        self.config: CrawlerConfig = config
+        self.logger: logging.Logger = logger or logging.getLogger(__name__)
+        self.semaphore: asyncio.Semaphore = asyncio.Semaphore(
+            config.concurrent_requests
+        )
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
-        self._playwright_lock = asyncio.Lock()
+        self._playwright_lock: asyncio.Lock = asyncio.Lock()
 
     async def fetch(
         self,

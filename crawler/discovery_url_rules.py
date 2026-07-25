@@ -338,7 +338,7 @@ def text_sample_is_confidently_non_english(text: str) -> bool:
     if not clean_text:
         return False
 
-    words = re.findall(r"[a-zA-ZÀ-ÿ]{2,}", clean_text.lower())
+    words: list[str] = re.findall(r"[a-zA-ZÀ-ÿ]{2,}", clean_text.lower())
     if len(words) < PREFLIGHT_MIN_WORDS:
         return False
 

@@ -40,7 +40,7 @@ class IngestionConfigurationError(ValueError):
 
 
 def _require_positive_integer(value: int, *, field_name: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, int):
+    if isinstance(value, bool):
         raise TypeError(f"{field_name} must be an integer")
 
     if value < 1:
@@ -56,15 +56,9 @@ def _normalize_suffixes(
 ) -> tuple[str, ...]:
     """Return unique, deterministic lowercase suffixes."""
 
-    if not isinstance(suffixes, tuple):
-        raise TypeError(f"{field_name} must be a tuple")
-
     normalized: set[str] = set()
 
     for suffix in suffixes:
-        if not isinstance(suffix, str):
-            raise TypeError(f"{field_name} entries must be strings")
-
         candidate = suffix.strip().casefold()
 
         if not candidate:
@@ -125,9 +119,6 @@ class FileLimitConfig:
                 "hard_token_ceiling must not be lower than max_file_tokens",
             )
 
-        if not isinstance(self.token_encoding, str):
-            raise TypeError("token_encoding must be a string")
-
         normalized_encoding = self.token_encoding.strip()
 
         if not normalized_encoding:
@@ -151,10 +142,7 @@ class RoutingConfig:
     def __post_init__(self) -> None:
         """Validate semantic-routing invariants."""
 
-        if isinstance(self.similarity_threshold, bool) or not isinstance(
-            self.similarity_threshold,
-            (int, float),
-        ):
+        if isinstance(self.similarity_threshold, bool):
             raise TypeError("similarity_threshold must be a number")
 
         if not 0.0 <= self.similarity_threshold <= 1.0:
@@ -241,21 +229,6 @@ class IngestionConfig:
     routing: RoutingConfig = RoutingConfig()
     transformation: TransformationConfig = TransformationConfig()
     formats: FileFormatConfig = FileFormatConfig()
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.limits, FileLimitConfig):
-            raise TypeError("limits must be a FileLimitConfig")
-
-        if not isinstance(self.routing, RoutingConfig):
-            raise TypeError("routing must be a RoutingConfig")
-
-        if not isinstance(self.transformation, TransformationConfig):
-            raise TypeError(
-                "transformation must be a TransformationConfig",
-            )
-
-        if not isinstance(self.formats, FileFormatConfig):
-            raise TypeError("formats must be a FileFormatConfig")
 
 
 DEFAULT_INGESTION_CONFIG: Final[IngestionConfig] = IngestionConfig()

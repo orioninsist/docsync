@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from pipeline.paths import (
     PROJECT_ROOT,
@@ -19,7 +19,7 @@ PIPELINE_RUNNER_MODULE = "pipeline.docs_pipeline_runner"
 
 def run_project_pipeline(project_directory: Path) -> None:
     """Run the document pipeline for one source project directory."""
-    run_command(
+    _ = run_command(
         [
             sys.executable,
             "-m",

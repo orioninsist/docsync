@@ -21,7 +21,7 @@ DatabaseQueueBatchRunner = Callable[
         RichDashboard,
         TerminalUIHandle,
     ],
-    Awaitable[None],
+    Awaitable[RichDashboard],
 ]
 
 
@@ -37,11 +37,13 @@ class QueueRunner:
         run_database_queue_batch: DatabaseQueueBatchRunner,
         logger: logging.Logger,
     ) -> None:
-        self._config = config
-        self._database = database
-        self._terminal_ui = terminal_ui
-        self._run_database_queue_batch = run_database_queue_batch
-        self._logger = logger
+        self._config: CrawlerConfig = config
+        self._database: DatabaseManager = database
+        self._terminal_ui: TerminalUI = terminal_ui
+        self._run_database_queue_batch: DatabaseQueueBatchRunner = (
+            run_database_queue_batch
+        )
+        self._logger: logging.Logger = logger
 
     async def run(
         self,
@@ -58,9 +60,7 @@ class QueueRunner:
             refresh_per_second=4,
         ) as live:
             while True:
-                pending_before_batch = (
-                    self._database.pending_queue_count()
-                )
+                pending_before_batch = self._database.pending_queue_count()
 
                 self._refresh_queue_dashboard(
                     dashboard=dashboard,
@@ -78,11 +78,9 @@ class QueueRunner:
                     break
 
                 batch_number += 1
-                estimated_total_batches = (
-                    self._estimate_total_batches(
-                        batch_number=batch_number,
-                        pending=pending_before_batch,
-                    )
+                estimated_total_batches = self._estimate_total_batches(
+                    batch_number=batch_number,
+                    pending=pending_before_batch,
                 )
 
                 self._show_batch_started(
@@ -94,19 +92,15 @@ class QueueRunner:
 
                 processed_before_batch = dashboard.processed
 
-                await self._run_database_queue_batch(
+                dashboard = await self._run_database_queue_batch(
                     sitemap,
                     batch_number,
                     dashboard,
                     live,
                 )
 
-                pending_after_batch = (
-                    self._database.pending_queue_count()
-                )
-                processed_in_batch = (
-                    dashboard.processed - processed_before_batch
-                )
+                pending_after_batch = self._database.pending_queue_count()
+                processed_in_batch = dashboard.processed - processed_before_batch
 
                 self._refresh_queue_dashboard(
                     dashboard=dashboard,
@@ -146,9 +140,7 @@ class QueueRunner:
         self,
         initial_pending: int,
     ) -> RichDashboard:
-        dashboard = RichDashboard(
-            total_pages=max(initial_pending, 1)
-        )
+        dashboard = RichDashboard(total_pages=max(initial_pending, 1))
         dashboard.set_pipeline_context(
             step_current=6,
             step_total=14,
@@ -212,10 +204,7 @@ class QueueRunner:
         pending: int,
     ) -> int:
         remaining_batches = max(
-            math.ceil(
-                pending / max(self._config.max_pages, 1)
-            )
-            - 1,
+            math.ceil(pending / max(self._config.max_pages, 1)) - 1,
             0,
         )
         return batch_number + remaining_batches
@@ -274,10 +263,7 @@ class QueueRunner:
         dashboard.set_pipeline_context(
             step_current=6,
             step_total=14,
-            step_name=(
-                "Waiting before next automatic batch "
-                f"({pause_seconds}s)"
-            ),
+            step_name=(f"Waiting before next automatic batch ({pause_seconds}s)"),
             batch_current=batch_number,
             batch_total=estimated_total_batches,
         )
@@ -293,9 +279,7 @@ class QueueRunner:
     ) -> None:
         final_pending = self._database.pending_queue_count()
         final_step_name = (
-            "Finished"
-            if final_pending <= 0
-            else "Stopped with pending queue items"
+            "Finished" if final_pending <= 0 else "Stopped with pending queue items"
         )
 
         dashboard.total_pages = max(

@@ -33,6 +33,18 @@ from crawler.sitemap import SitemapManager
 class CrawlerDiscoveryService:
     """Discover, validate, and enqueue crawlable links from fetched pages."""
 
+    config: CrawlerConfig
+    database: DatabaseManager
+    robots: RobotsManager
+    dedup: DeduplicationEngine
+    intent_analyzer: IntentAnalyzer
+    policy: SmartScopePolicy
+    official_graph: OfficialHostGraph
+    observability: CrawlerObservability
+    global_url_registry: GlobalUrlRegistry
+    owner_project: str
+    logger: logging.Logger
+
     def __init__(
         self,
         *,
@@ -173,8 +185,7 @@ class CrawlerDiscoveryService:
 
         if not intent.allowed:
             self.logger.info(
-                "Smart Router skipped discovered URL before queue: "
-                "url=%s reason=%s",
+                "Smart Router skipped discovered URL before queue: url=%s reason=%s",
                 link,
                 intent.reason,
             )
@@ -220,7 +231,7 @@ class CrawlerDiscoveryService:
         if not self._claim_url_ownership(link):
             return
 
-        self.database.enqueue_url(
+        _ = self.database.enqueue_url(
             url=link,
             url_hash=self.dedup.url_hash(link),
             depth=depth,
@@ -229,10 +240,7 @@ class CrawlerDiscoveryService:
         )
 
         self.logger.debug(
-            (
-                "Discovered URL enqueued: url=%s parent_url=%s "
-                "depth=%s priority=%s"
-            ),
+            ("Discovered URL enqueued: url=%s parent_url=%s depth=%s priority=%s"),
             link,
             parent_url,
             depth,

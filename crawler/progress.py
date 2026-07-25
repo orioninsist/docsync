@@ -13,25 +13,25 @@ class RichDashboard:
     """Store crawler progress state and render it as a Rich panel."""
 
     def __init__(self, total_pages: int) -> None:
-        self.total_pages = max(total_pages, 1)
-        self.start_time = datetime.now()
-        self.current_url = ""
+        self.total_pages: int = max(total_pages, 1)
+        self.start_time: datetime = datetime.now()
+        self.current_url: str = ""
 
-        self.downloaded = 0
-        self.updated = 0
-        self.skipped = 0
-        self.duplicates = 0
-        self.errors = 0
+        self.downloaded: int = 0
+        self.updated: int = 0
+        self.skipped: int = 0
+        self.duplicates: int = 0
+        self.errors: int = 0
 
-        self.pending = 0
-        self.queued = 0
-        self.remaining_batches = 0
+        self.pending: int = 0
+        self.queued: int = 0
+        self.remaining_batches: int = 0
 
-        self.step_current = 0
-        self.step_total = 14
-        self.step_name = "Crawler running"
-        self.batch_current = 0
-        self.batch_total = 0
+        self.step_current: int = 0
+        self.step_total: int = 14
+        self.step_name: str = "Crawler running"
+        self.batch_current: int = 0
+        self.batch_total: int = 0
 
     def set_pipeline_context(
         self,
@@ -77,12 +77,7 @@ class RichDashboard:
 
     @property
     def processed(self) -> int:
-        return (
-            self.downloaded
-            + self.skipped
-            + self.duplicates
-            + self.errors
-        )
+        return self.downloaded + self.skipped + self.duplicates + self.errors
 
     def _stats(self) -> tuple[float, int, float, datetime]:
         elapsed = max(
@@ -96,9 +91,7 @@ class RichDashboard:
             (self.processed / self.total_pages) * 100,
             100.0,
         )
-        estimated_end = datetime.now() + timedelta(
-            seconds=eta_seconds
-        )
+        estimated_end = datetime.now() + timedelta(seconds=eta_seconds)
 
         return speed, eta_seconds, percent, estimated_end
 
@@ -122,9 +115,7 @@ class RichDashboard:
 
         if self.batch_current:
             if self.batch_total:
-                batch_text = (
-                    f" batch={self.batch_current}/{self.batch_total}"
-                )
+                batch_text = f" batch={self.batch_current}/{self.batch_total}"
             else:
                 batch_text = f" batch={self.batch_current}"
 
@@ -152,18 +143,13 @@ class RichDashboard:
 
         speed, eta_seconds, percent, estimated_end = self._stats()
 
-        table = Table(
-            title="Docs Markdown Crawler Progress"
-        )
+        table = Table(title="Docs Markdown Crawler Progress")
         table.add_column("Metric")
         table.add_column("Value")
 
         table.add_row(
             "Step",
-            (
-                f"{self.step_current}/{self.step_total} "
-                f"- {self.step_name}"
-            ),
+            f"{self.step_current}/{self.step_total} - {self.step_name}",
         )
 
         if self.batch_current:

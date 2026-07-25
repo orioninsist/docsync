@@ -8,49 +8,48 @@ collaborators.
 No crawler-wide run lifecycle or queue-batch logic belongs in this module.
 """
 
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
+from crawler.crawler_context import CrawlerRuntimeContext
+from crawler.crawler_discovery import CrawlerDiscoveryService
 from crawler.crawler_engine_url_rules import is_hard_blacklisted_url
+from crawler.database import DatabaseManager
+from crawler.dedup import DeduplicationEngine, DedupResult
+from crawler.fetch_pipeline import FetchPipeline
+from crawler.fetcher import FetchResult
+from crawler.observability import CrawlerObservability
+from crawler.parser import ParsedPage
+from crawler.policy_engine import SmartScopePolicy
 
 if TYPE_CHECKING:
-    from rich.live import Live
-
     from crawler.progress import RichDashboard
     from crawler.sitemap import SitemapManager
+    from crawler.terminal_ui import TerminalUIHandle
 
 
-FetchLifecycle = tuple[Any, str, str | None]
-DedupLifecycle = tuple[str, Any]
+FetchLifecycle = tuple[FetchResult, str, str | None]
+DedupLifecycle = tuple[str, DedupResult]
 
 
 class UrlProcessorHost(Protocol):
     """Operations and collaborators required to process one URL."""
 
     logger: logging.Logger
-    config: Any
-    database: Any
-    dedup: Any
-    runtime_context: Any
-    observability: Any
-    policy: Any
-    discovery: Any
-    fetch_pipeline: Any
+    database: DatabaseManager
+    dedup: DeduplicationEngine
+    runtime_context: CrawlerRuntimeContext
+    observability: CrawlerObservability
+    policy: SmartScopePolicy
+    discovery: CrawlerDiscoveryService
+    fetch_pipeline: FetchPipeline
 
     def _normalize_english_candidate_url(self, url: str) -> str | None:
         """Normalize a URL or reject it when invalid for this crawl."""
-        ...
-
-    def _finish_non_english_or_invalid_before_fetch_skip(
-        self,
-        *,
-        url: str,
-        dashboard: RichDashboard,
-        live: Live,
-    ) -> None:
-        """Persist and finish a URL rejected before fetching."""
         ...
 
     def _finish_queue_item(
@@ -59,7 +58,7 @@ class UrlProcessorHost(Protocol):
         url_hash: str,
         queue_status: str,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
         dashboard_status: str,
         url: str,
     ) -> None:
@@ -69,7 +68,7 @@ class UrlProcessorHost(Protocol):
     def _start_url(
         self,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
         url: str,
         depth: int,
     ) -> None:
@@ -81,7 +80,7 @@ class UrlProcessor:
     """Orchestrate the complete lifecycle of one crawl URL."""
 
     def __init__(self, host: UrlProcessorHost) -> None:
-        self._host = host
+        self._host: UrlProcessorHost = host
 
     async def process(
         self,
@@ -89,7 +88,7 @@ class UrlProcessor:
         url: str,
         depth: int,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
         sitemap: SitemapManager,
         use_recursive_discovery: bool,
     ) -> None:
@@ -136,7 +135,7 @@ class UrlProcessor:
                 sitemap=sitemap,
                 use_recursive_discovery=use_recursive_discovery,
             )
-        except (OSError, RuntimeError, ValueError):
+        except OSError, RuntimeError, ValueError:
             self._finish_processing_error(
                 url=url,
                 url_hash=url_hash,
@@ -153,7 +152,7 @@ class UrlProcessor:
         depth: int,
         fetch_lifecycle: FetchLifecycle,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
         sitemap: SitemapManager,
         use_recursive_discovery: bool,
     ) -> None:
@@ -217,7 +216,7 @@ class UrlProcessor:
         *,
         url: str,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
     ) -> str | None:
         host = self._host
         normalized_url = host._normalize_english_candidate_url(url)
@@ -235,13 +234,11 @@ class UrlProcessor:
     def _prepare_request_context(
         self,
         url: str,
-    ) -> tuple[str, Any]:
+    ) -> tuple[str, dict[str, str]]:
         host = self._host
         url_hash = host.dedup.url_hash(url)
-        cache_headers = (
-            host.runtime_context.database.get_cache_headers_by_url_hash(
-                url_hash
-            )
+        cache_headers = host.runtime_context.database.get_cache_headers_by_url_hash(
+            url_hash
         )
         return url_hash, cache_headers
 
@@ -251,7 +248,7 @@ class UrlProcessor:
         url: str,
         url_hash: str,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
     ) -> bool:
         if is_hard_blacklisted_url(url):
             self._finish_hard_blacklist_skip(
@@ -278,10 +275,10 @@ class UrlProcessor:
         *,
         url: str,
         url_hash: str,
-        cache_headers: Any,
+        cache_headers: dict[str, str],
         depth: int,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
     ) -> FetchLifecycle | None:
         host = self._host
 
@@ -317,7 +314,7 @@ class UrlProcessor:
     async def _run_recursive_discovery(
         self,
         *,
-        result: Any,
+        result: FetchResult,
         depth: int,
         sitemap: SitemapManager,
         use_recursive_discovery: bool,
@@ -325,8 +322,13 @@ class UrlProcessor:
         if not use_recursive_discovery:
             return
 
+        html = result.html
+
+        if html is None:
+            raise RuntimeError("Validated fetch result unexpectedly contains no HTML")
+
         await self._host.discovery.discover_and_enqueue_links(
-            html=result.html,
+            html=html,
             final_url=result.final_url,
             depth=depth,
             sitemap=sitemap,
@@ -337,12 +339,12 @@ class UrlProcessor:
         *,
         url: str,
         url_hash: str,
-        result: Any,
+        result: FetchResult,
         final_url_hash: str,
         redirect_target_hash: str | None,
         dashboard: RichDashboard,
-        live: Live,
-    ) -> Any | None:
+        live: TerminalUIHandle,
+    ) -> ParsedPage | None:
         host = self._host
 
         parsed = host.fetch_pipeline.parse_validated_content(
@@ -376,7 +378,7 @@ class UrlProcessor:
         self,
         *,
         url_hash: str,
-        parsed: Any,
+        parsed: ParsedPage,
         final_url_hash: str,
         redirect_target_hash: str | None,
     ) -> DedupLifecycle:
@@ -396,14 +398,14 @@ class UrlProcessor:
         *,
         url: str,
         url_hash: str,
-        result: Any,
-        parsed: Any,
+        result: FetchResult,
+        parsed: ParsedPage,
         final_url_hash: str,
         redirect_target_hash: str | None,
         content_hash: str,
-        dedup_result: Any,
+        dedup_result: DedupResult,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
     ) -> bool:
         return self._host.fetch_pipeline.handle_dedup_result(
             url=url,
@@ -423,14 +425,14 @@ class UrlProcessor:
         *,
         url: str,
         url_hash: str,
-        result: Any,
-        parsed: Any,
+        result: FetchResult,
+        parsed: ParsedPage,
         final_url_hash: str,
         redirect_target_hash: str | None,
         content_hash: str,
-        dedup_result: Any,
+        dedup_result: DedupResult,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
     ) -> None:
         self._host.fetch_pipeline.persist_processed_page(
             url=url,
@@ -451,7 +453,7 @@ class UrlProcessor:
         url: str,
         url_hash: str,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
     ) -> None:
         host = self._host
 
@@ -492,7 +494,7 @@ class UrlProcessor:
         url: str,
         url_hash: str,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
     ) -> None:
         host = self._host
         url_policy = host.policy.evaluate_url(url)
@@ -524,7 +526,7 @@ class UrlProcessor:
         url_hash: str,
         depth: int,
         dashboard: RichDashboard,
-        live: Live,
+        live: TerminalUIHandle,
     ) -> None:
         host = self._host
 

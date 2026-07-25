@@ -16,7 +16,10 @@ def write_queue_file(folder: str | Path, urls: Iterable[str]) -> Path:
     queue_path.parent.mkdir(parents=True, exist_ok=True)
 
     unique_urls = sorted({url.strip() for url in urls if url.strip()})
-    queue_path.write_text("\n".join(unique_urls) + "\n", encoding="utf-8")
+    _ = queue_path.write_text(
+        "\n".join(unique_urls) + "\n",
+        encoding="utf-8",
+    )
 
     return queue_path
 
@@ -24,6 +27,7 @@ def write_queue_file(folder: str | Path, urls: Iterable[str]) -> Path:
 def read_queue_file(folder: str | Path) -> list[str]:
     """Read cleaned URLs from the editable queue TXT file."""
     queue_path = queue_file_path(folder)
+
     if not queue_path.exists():
         return []
 

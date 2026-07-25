@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import ceil
-from typing import Mapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,8 +58,7 @@ def print_preliminary_summary(
     print(f"Queue error: {counts.queue_status_counts.get('error', 0)}")
     print(f"Interrupted items restored to pending: {counts.interrupted_items_restored}")
     print(
-        "Missing Markdown outputs restored to pending: "
-        f"{counts.missing_markdown_outputs_restored}"
+        f"Missing Markdown outputs restored to pending: {counts.missing_markdown_outputs_restored}"
     )
     print(f"Recursive discovery: {config.recursive_discovery}")
     print(f"Max pages per batch: {config.max_pages}")

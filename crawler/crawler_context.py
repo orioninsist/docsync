@@ -1,31 +1,20 @@
-"""Shared runtime context models for crawler orchestration."""
+"""Typed runtime dependency context for crawler orchestration."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import logging
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+
+from crawler.config import CrawlerConfig
+from crawler.database import DatabaseManager
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class CrawlerRuntimeContext:
-    """Immutable-looking container for crawler runtime dependencies.
-
-    The context intentionally stores externally created collaborators without
-    constructing them. This keeps dependency ownership inside ``CrawlerEngine``
-    while making future SRP extraction safer and more explicit.
-    """
+    """Provide typed crawler dependencies without owning their construction."""
 
     output_dir: Path
-    database: Any
-    logger: Any
-    config: Any
-    state: dict[str, Any] = field(default_factory=dict)
-
-    def remember(self, key: str, value: Any) -> None:
-        """Store runtime-only metadata for downstream extraction steps."""
-        self.state[key] = value
-
-    def recall(self, key: str, default: Any = None) -> Any:
-        """Return runtime-only metadata without coupling callers to dict access."""
-        return self.state.get(key, default)
+    database: DatabaseManager
+    logger: logging.Logger
+    config: CrawlerConfig

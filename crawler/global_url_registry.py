@@ -8,7 +8,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, TypeVar
+from typing import Callable, TypeVar, cast
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 from crawler.time_utils import utc_now
@@ -111,9 +111,7 @@ def _normalized_netloc(
 def url_hash(normalized_url: str) -> str:
     """Return the SHA-256 digest of a normalized URL."""
 
-    return hashlib.sha256(
-        normalized_url.encode("utf-8")
-    ).hexdigest()
+    return hashlib.sha256(normalized_url.encode("utf-8")).hexdigest()
 
 
 def _is_locked_error(error: sqlite3.OperationalError) -> bool:
@@ -135,10 +133,10 @@ class GlobalUrlRegistry:
     def __init__(self, db_path: Path = GLOBAL_REGISTRY_DB) -> None:
         """Open the registry database and ensure its schema exists."""
 
-        self._db_path = db_path
+        self._db_path: Path = db_path
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self._connection = sqlite3.connect(
+        self._connection: sqlite3.Connection = sqlite3.connect(
             str(self._db_path),
             timeout=_SQLITE_BUSY_TIMEOUT_SECONDS,
             isolation_level=None,
@@ -157,16 +155,16 @@ class GlobalUrlRegistry:
     def _configure_connection(self) -> None:
         """Configure SQLite for concurrent registry access."""
 
-        self._connection.execute("PRAGMA journal_mode=WAL;")
-        self._connection.execute("PRAGMA synchronous=NORMAL;")
-        self._connection.execute("PRAGMA busy_timeout=30000;")
-        self._connection.execute("PRAGMA foreign_keys=ON;")
-        self._connection.execute("PRAGMA temp_store=MEMORY;")
+        _ = self._connection.execute("PRAGMA journal_mode=WAL;")
+        _ = self._connection.execute("PRAGMA synchronous=NORMAL;")
+        _ = self._connection.execute("PRAGMA busy_timeout=30000;")
+        _ = self._connection.execute("PRAGMA foreign_keys=ON;")
+        _ = self._connection.execute("PRAGMA temp_store=MEMORY;")
 
     def _create_schema(self) -> None:
         """Create the URL ownership table and its lookup index."""
 
-        self._connection.execute(
+        _ = self._connection.execute(
             """
             CREATE TABLE IF NOT EXISTS url_ownership (
                 url_hash TEXT PRIMARY KEY,
@@ -178,7 +176,7 @@ class GlobalUrlRegistry:
             );
             """
         )
-        self._connection.execute(
+        _ = self._connection.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_url_ownership_owner_project
             ON url_ownership(owner_project);
@@ -189,7 +187,7 @@ class GlobalUrlRegistry:
         """Rollback without masking the original database error."""
 
         try:
-            self._connection.execute("ROLLBACK;")
+            _ = self._connection.execute("ROLLBACK;")
         except sqlite3.Error:
             pass
 
@@ -204,9 +202,9 @@ class GlobalUrlRegistry:
 
         for attempt in range(1, _SQLITE_MAX_WRITE_ATTEMPTS + 1):
             try:
-                self._connection.execute("BEGIN IMMEDIATE;")
+                _ = self._connection.execute("BEGIN IMMEDIATE;")
                 result = operation()
-                self._connection.execute("COMMIT;")
+                _ = self._connection.execute("COMMIT;")
                 return result
 
             except sqlite3.OperationalError as error:
@@ -232,9 +230,7 @@ class GlobalUrlRegistry:
                 raise
 
         if last_error is None:
-            raise RuntimeError(
-                "SQLite retry loop ended without an operational error."
-            )
+            raise RuntimeError("SQLite retry loop ended without an operational error.")
 
         raise last_error
 
@@ -261,7 +257,7 @@ class GlobalUrlRegistry:
             existing_owner = self._find_owner(digest)
 
             if existing_owner is None:
-                self._connection.execute(
+                _ = self._connection.execute(
                     """
                     INSERT INTO url_ownership (
                         url_hash,
@@ -290,13 +286,12 @@ class GlobalUrlRegistry:
                     normalized_url=normalized_url,
                     owner_project=normalized_project,
                     message=(
-                        "[CLAIMED] URL registered for project: "
-                        f"{normalized_project}"
+                        f"[CLAIMED] URL registered for project: {normalized_project}"
                     ),
                 )
 
             if existing_owner == normalized_project:
-                self._connection.execute(
+                _ = self._connection.execute(
                     """
                     UPDATE url_ownership
                     SET last_seen_at = ?
@@ -326,10 +321,7 @@ class GlobalUrlRegistry:
                 url_hash=digest,
                 normalized_url=normalized_url,
                 owner_project=existing_owner,
-                message=(
-                    "[BLOCKED] URL already belongs to project: "
-                    f"{existing_owner}"
-                ),
+                message=(f"[BLOCKED] URL already belongs to project: {existing_owner}"),
             )
 
         return self._run_write_with_retry(claim_transaction)
@@ -337,20 +329,23 @@ class GlobalUrlRegistry:
     def _find_owner(self, digest: str) -> str | None:
         """Return the owning project for a URL hash when registered."""
 
-        row = self._connection.execute(
-            """
-            SELECT owner_project
-            FROM url_ownership
-            WHERE url_hash = ?
-            LIMIT 1;
-            """,
-            (digest,),
-        ).fetchone()
+        row = cast(
+            sqlite3.Row | None,
+            self._connection.execute(
+                """
+                SELECT owner_project
+                FROM url_ownership
+                WHERE url_hash = ?
+                LIMIT 1;
+                """,
+                (digest,),
+            ).fetchone(),
+        )
 
         if row is None:
             return None
 
-        return str(row["owner_project"])
+        return cast(str, row["owner_project"])
 
     def close(self) -> None:
         """Close the underlying SQLite connection."""

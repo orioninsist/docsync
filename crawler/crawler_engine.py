@@ -1,15 +1,22 @@
-"""Crawler orchestration engine for fetching, parsing, deduplicating, and writing pages.
+"""Crawler orchestration engine.
 
-from typing import Any
-This module coordinates crawl lifecycle operations while delegating network access,
-content parsing, deduplication, and persistence to specialized collaborators.
+This module coordinates crawl lifecycle operations while delegating network
+access, content parsing, deduplication, persistence, discovery, and queue
+execution to specialized collaborators.
 """
 
 # pylint: disable=too-many-lines
 from __future__ import annotations
 
+import asyncio
+import logging
+from pathlib import Path
+from urllib.parse import urlparse
+
 from crawler.batch_executor import BatchExecutor
-from crawler.url_processor import UrlProcessor
+from crawler.config import CrawlerConfig
+from crawler.crawler_context import CrawlerRuntimeContext
+from crawler.crawler_discovery import CrawlerDiscoveryService
 from crawler.crawler_engine_run_summary import (
     RunSummaryPaths,
     build_run_summary_queue_counts,
@@ -18,25 +25,16 @@ from crawler.crawler_runtime_builder import (
     CrawlerRunRuntime,
     CrawlerRuntimeBuilder,
 )
-import asyncio
-import logging
-import math
-from pathlib import Path
-from urllib.parse import urlparse
-
-from crawler.terminal_ui import (
-    TerminalUI,
-    TerminalUIHandle,
-)
-
-from crawler.config import CrawlerConfig
-from crawler.crawler_discovery import CrawlerDiscoveryService
-from crawler.crawler_context import CrawlerRuntimeContext
 from crawler.database import DatabaseManager
 from crawler.dedup import DeduplicationEngine
-from crawler.engine_status import format_unlimited, merge_dashboard, print_batch_banner
+from crawler.engine_status import (
+    format_unlimited,
+    merge_dashboard,
+    print_batch_banner,
+)
 from crawler.fetch_pipeline import FetchPipeline
 from crawler.fetcher import AsyncFetcher
+from crawler.global_url_registry import GlobalUrlRegistry
 from crawler.intent_analyzer import IntentAnalyzer
 from crawler.language import LanguageDetector
 from crawler.markdown_writer import MarkdownWriter
@@ -54,7 +52,8 @@ from crawler.shared.url_normalizer import (
 )
 from crawler.shared.url_ownership import claim_url_ownership
 from crawler.sitemap import SitemapManager
-from crawler.global_url_registry import GlobalUrlRegistry
+from crawler.terminal_ui import TerminalUI, TerminalUIHandle
+from crawler.url_processor import UrlProcessor
 
 
 class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
@@ -63,42 +62,45 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
     # Dependency wiring constructor for crawler orchestration.
     # pylint: disable=too-many-statements
     def __init__(self, config: CrawlerConfig) -> None:
-        self.config = config
-        self.logger = self._build_logger()
-        self.terminal_ui = TerminalUI()
+        self.config: CrawlerConfig = config
+        self.logger: logging.Logger = self._build_logger()
+        self.terminal_ui: TerminalUI = TerminalUI()
 
-        self.database = DatabaseManager(config.db_path)
-        self.robots = RobotsManager(config)
-        self.fetcher = AsyncFetcher(config, logger=self.logger)
-        self.intent_analyzer = IntentAnalyzer()
-        self.parser = ContentParser()
-        self.language = LanguageDetector()
-        self.dedup = DeduplicationEngine(self.database)
-        self.writer = MarkdownWriter(config.output_dir)
-        self.policy = SmartScopePolicy(
+        self.database: DatabaseManager = DatabaseManager(config.db_path)
+        self.robots: RobotsManager = RobotsManager(config)
+        self.fetcher: AsyncFetcher = AsyncFetcher(
+            config,
+            logger=self.logger,
+        )
+        self.intent_analyzer: IntentAnalyzer = IntentAnalyzer()
+        self.parser: ContentParser = ContentParser()
+        self.language: LanguageDetector = LanguageDetector()
+        self.dedup: DeduplicationEngine = DeduplicationEngine(self.database)
+        self.writer: MarkdownWriter = MarkdownWriter(config.output_dir)
+        self.policy: SmartScopePolicy = SmartScopePolicy(
             start_url=config.start_url,
             allowed_path_prefix=config.allowed_path_prefix,
         )
 
-        self.start_netloc = urlparse(config.start_url).netloc.lower()
-        self.owner_project = self._owner_project_name()
-        self.global_url_registry = GlobalUrlRegistry()
-        self.official_graph = OfficialHostGraph(
+        self.start_netloc: str = urlparse(config.start_url).netloc.lower()
+        self.owner_project: str = self._owner_project_name()
+        self.global_url_registry: GlobalUrlRegistry = GlobalUrlRegistry()
+        self.official_graph: OfficialHostGraph = OfficialHostGraph(
             seed_url=config.start_url,
             owner_project=self.owner_project,
         )
-        self.observability = CrawlerObservability(
+        self.observability: CrawlerObservability = CrawlerObservability(
             logs_dir=config.logs_dir,
             start_url=config.start_url,
         )
-        self.runtime_context = CrawlerRuntimeContext(
+        self.runtime_context: CrawlerRuntimeContext = CrawlerRuntimeContext(
             output_dir=config.output_dir,
             database=self.database,
             logger=self.logger,
             config=self.config,
         )
-        self.page_quality = PageQualityAnalyzer()
-        self.fetch_pipeline = FetchPipeline(
+        self.page_quality: PageQualityAnalyzer = PageQualityAnalyzer()
+        self.fetch_pipeline: FetchPipeline = FetchPipeline(
             config=self.config,
             database=self.database,
             fetcher=self.fetcher,
@@ -114,7 +116,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             finish_url=self._finish_url,
             logger=self.logger,
         )
-        self.discovery = CrawlerDiscoveryService(
+        self.discovery: CrawlerDiscoveryService = CrawlerDiscoveryService(
             config=self.config,
             database=self.database,
             robots=self.robots,
@@ -127,26 +129,24 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             owner_project=self.owner_project,
             logger=self.logger,
         )
-        self.runtime_builder = CrawlerRuntimeBuilder(
+        self.runtime_builder: CrawlerRuntimeBuilder = CrawlerRuntimeBuilder(
             config=self.config,
             database=self.database,
             robots=self.robots,
             dedup=self.dedup,
             observability=self.observability,
             claim_url_ownership=self._claim_url_ownership,
-            normalize_english_candidate_url=(
-                self._normalize_english_candidate_url
-            ),
+            normalize_english_candidate_url=(self._normalize_english_candidate_url),
             logger=self.logger,
         )
-        self.url_processor = UrlProcessor(self)
-        self.batch_executor = BatchExecutor(
+        self.url_processor: UrlProcessor = UrlProcessor(self)
+        self.batch_executor: BatchExecutor = BatchExecutor(
             config=self.config,
             database=self.database,
             process_url=self._process_batch_url,
             logger=self.logger,
         )
-        self.queue_runner = QueueRunner(
+        self.queue_runner: QueueRunner = QueueRunner(
             config=self.config,
             database=self.database,
             terminal_ui=self.terminal_ui,
@@ -190,9 +190,13 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         return logger
 
     async def run(self) -> None:
-        """Run the crawler until configured crawl limits or queue exhaustion."""
+        """Run until crawl limits or queue exhaustion."""
+
         try:
-            self.logger.info("Crawler started: %s", self.config.start_url)
+            self.logger.info(
+                "Crawler started: %s",
+                self.config.start_url,
+            )
 
             runtime = await self.runtime_builder.build()
             self._print_preliminary_run_summary(runtime)
@@ -217,27 +221,26 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 self.logger.info(message)
 
             dashboard = await self._execute_crawl(
-                runtime["sitemap"], runtime["seed_urls"]
+                runtime["sitemap"],
+                runtime["seed_urls"],
             )
             self._finalize_successful_run(dashboard)
 
-            self.logger.info("Crawler finished: %s", self.config.start_url)
-
+            self.logger.info(
+                "Crawler finished: %s",
+                self.config.start_url,
+            )
         except Exception:
             self.logger.exception(
                 "Crawler crashed before normal completion: %s",
                 self.config.start_url,
             )
             raise
-
         finally:
             await self.fetcher.close()
             self.official_graph.close()
             self.global_url_registry.close()
             self.database.close()
-
-
-
 
     def _print_preliminary_run_summary(
         self,
@@ -262,9 +265,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         elif has_crawl_work:
             proceed_message = "Proceeding immediately..."
         else:
-            proceed_message = (
-                "Queue is empty. Startup delay will be skipped."
-            )
+            proceed_message = "Queue is empty. Startup delay will be skipped."
 
         self.terminal_ui.show_preliminary_summary(
             sitemap_pages_found=sitemap_pages_found,
@@ -272,17 +273,11 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             total_queued_urls=total_queued_urls,
             queue_status_counts=queue_counts,
             interrupted_items_restored=runtime["interrupted_count"],
-            missing_markdown_outputs_restored=runtime[
-                "repaired_missing_outputs"
-            ],
+            missing_markdown_outputs_restored=runtime["repaired_missing_outputs"],
             recursive_discovery=self.config.recursive_discovery,
             max_pages=self.config.max_pages,
-            auto_continue_until_complete=(
-                self.config.auto_continue_until_complete
-            ),
-            max_auto_batches=self._format_unlimited(
-                self.config.max_auto_batches
-            ),
+            auto_continue_until_complete=(self.config.auto_continue_until_complete),
+            max_auto_batches=self._format_unlimited(self.config.max_auto_batches),
             batch_pause_seconds=self.config.batch_pause_seconds,
             max_queue_size=self.config.max_queue_size,
             max_depth=self.config.max_depth,
@@ -335,12 +330,6 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._print_final_run_summary(dashboard)
         self._write_observability_report()
 
-
-
-
-
-
-
     async def _run_static(
         self,
         urls: list[str],
@@ -357,7 +346,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         dashboard.update_queue_context(
             pending=len(urls),
             queued=len(urls),
-                    )
+        )
 
         with self.terminal_ui.open(
             dashboard,
@@ -375,7 +364,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 for url in urls
             ]
 
-            await asyncio.gather(*tasks)
+            _ = await asyncio.gather(*tasks)
 
         return dashboard
 
@@ -386,8 +375,6 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         """Delegate persistent recursive queue execution."""
 
         return await self.queue_runner.run(sitemap)
-
-
 
     def _merge_dashboard(
         self,
@@ -443,7 +430,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         sitemap: SitemapManager,
         use_recursive_discovery: bool,
     ) -> None:
-        """Delegate single-URL lifecycle orchestration to UrlProcessor."""
+        """Delegate single-URL lifecycle orchestration."""
 
         await self.url_processor.process(
             url=url,
@@ -487,7 +474,7 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         step_name: str,
         url: str | None = None,
     ) -> None:
-        """Update the existing Live dashboard without emitting extra lines."""
+        """Update the existing Live dashboard without extra lines."""
 
         dashboard.set_pipeline_context(
             step_current=step_current,
@@ -518,8 +505,8 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         )
 
         start_line = (
-            f"START    [{dashboard.processed + 1}/{dashboard.total_pages}] "
-            f"depth={depth} {url}"
+            f"START    [{dashboard.processed + 1}/"
+            f"{dashboard.total_pages}] depth={depth} {url}"
         )
         self.logger.info(start_line)
 
@@ -541,7 +528,12 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             url=url,
         )
         self.database.mark_queue_status(url_hash, queue_status)
-        self._finish_url(dashboard, live, dashboard_status, url)
+        self._finish_url(
+            dashboard,
+            live,
+            dashboard_status,
+            url,
+        )
 
     def _finish_url(
         self,
@@ -550,7 +542,10 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         status: str,
         url: str,
     ) -> None:
-        self.observability.record_url_status(url=url, status=status)
+        self.observability.record_url_status(
+            url=url,
+            status=status,
+        )
         dashboard.increment(status)
 
         pending = self.database.pending_queue_count()
@@ -591,10 +586,16 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             report_path,
         )
 
-    def _detect_transport_quality_issue(self, status_code: int | None) -> str | None:
+    def _detect_transport_quality_issue(
+        self,
+        status_code: int | None,
+    ) -> str | None:
         return self.page_quality.detect_transport_quality_issue(status_code)
 
-    def _status_for_empty_fetch(self, status_code: int | None) -> str:
+    def _status_for_empty_fetch(
+        self,
+        status_code: int | None,
+    ) -> str:
         return self.page_quality.status_for_empty_fetch(status_code)
 
     def _detect_html_quality_issue(

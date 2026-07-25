@@ -1,9 +1,4 @@
-"""Build a deterministic, read-only inventory of files below ``sources/``.
-
-This module owns only filesystem discovery. It does not read document
-contents, calculate fingerprints, access the network, invoke the crawler,
-or write pipeline outputs.
-"""
+"""Deterministic and non-mutating source-file inventory."""
 
 from __future__ import annotations
 
@@ -48,13 +43,11 @@ class SourceInventory:
     @property
     def is_complete(self) -> bool:
         """Return whether the scan completed without filesystem issues."""
-
         return not self.issues
 
     @property
     def file_count(self) -> int:
         """Return the number of discovered regular files."""
-
         return len(self.files)
 
     def absolute_path(self, relative_path: Path) -> Path:
@@ -64,7 +57,6 @@ class SourceInventory:
             ValueError: If ``relative_path`` is absolute, escapes the source
                 root, or is not present in this inventory.
         """
-
         normalized_path = _normalize_relative_path(relative_path)
 
         if normalized_path not in self.files:
@@ -84,8 +76,8 @@ class SourceInventoryReader:
         *,
         ignored_directory_names: Iterable[str] = (DEFAULT_IGNORED_DIRECTORY_NAMES),
     ) -> None:
-        self._source_root = source_root.expanduser().absolute()
-        self._ignored_directory_names = _normalize_ignored_names(
+        self._source_root: Path = source_root.expanduser().absolute()
+        self._ignored_directory_names: frozenset[str] = _normalize_ignored_names(
             ignored_directory_names
         )
 
@@ -95,8 +87,8 @@ class SourceInventoryReader:
         Missing, invalid, unreadable, and unsafe entries are represented as
         issues instead of terminating the entire pipeline.
         """
-
         root_issue = self._validate_root()
+
         if root_issue is not None:
             return SourceInventory(
                 root=self._source_root,
@@ -108,10 +100,9 @@ class SourceInventoryReader:
         issues: list[SourceInventoryIssue] = []
 
         def record_walk_error(error: OSError) -> None:
-            error_path = Path(error.filename) if error.filename else self._source_root
             issues.append(
                 SourceInventoryIssue(
-                    path=error_path,
+                    path=self._source_root,
                     reason=_format_os_error(error),
                 )
             )
@@ -157,7 +148,6 @@ class SourceInventoryReader:
 
         Use :meth:`scan` when filesystem issues must also be inspected.
         """
-
         return self.scan().files
 
     def _validate_root(self) -> SourceInventoryIssue | None:
@@ -253,7 +243,7 @@ class SourceInventoryReader:
             issues.append(
                 SourceInventoryIssue(
                     path=candidate,
-                    reason=("Symbolic-link files are not accepted as source inputs."),
+                    reason="Symbolic-link files are not accepted as source inputs.",
                 )
             )
             return
@@ -287,7 +277,6 @@ def build_source_inventory(
     ignored_directory_names: Iterable[str] = (DEFAULT_IGNORED_DIRECTORY_NAMES),
 ) -> SourceInventory:
     """Build one immutable inventory using the default reader."""
-
     return SourceInventoryReader(
         source_root,
         ignored_directory_names=ignored_directory_names,
@@ -307,10 +296,11 @@ def _normalize_ignored_names(names: Iterable[str]) -> frozenset[str]:
             raise ValueError(f"Unsafe ignored directory name: {normalized_name!r}")
 
         if "/" in normalized_name or "\\" in normalized_name:
-            raise ValueError(
+            message = (
                 "Ignored directory names must be individual names, "
                 f"not paths: {normalized_name!r}"
             )
+            raise ValueError(message)
 
         normalized_names.add(normalized_name)
 

@@ -63,28 +63,24 @@ def discovery_db_path(seed: str) -> Path:
     seed_digest = discovery_db_key(seed)
     host_slug = _safe_host_slug(seed)
 
-    return (
-        DISCOVERY_STATE_ROOT
-        / host_slug
-        / f"{seed_digest}.db"
-    )
+    return DISCOVERY_STATE_ROOT / host_slug / f"{seed_digest}.db"
 
 
 def _configure_connection(connection: sqlite3.Connection) -> None:
     """Apply SQLite pragmas used by crawler discovery state."""
 
     connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA journal_mode=WAL;")
-    connection.execute("PRAGMA synchronous=NORMAL;")
-    connection.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS};")
-    connection.execute("PRAGMA foreign_keys=ON;")
-    connection.execute("PRAGMA temp_store=MEMORY;")
+    _ = connection.execute("PRAGMA journal_mode=WAL;")
+    _ = connection.execute("PRAGMA synchronous=NORMAL;")
+    _ = connection.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS};")
+    _ = connection.execute("PRAGMA foreign_keys=ON;")
+    _ = connection.execute("PRAGMA temp_store=MEMORY;")
 
 
 def _create_schema(connection: sqlite3.Connection) -> None:
     """Create discovery persistence tables and indexes."""
 
-    connection.execute(
+    _ = connection.execute(
         """
         CREATE TABLE IF NOT EXISTS discovery_seen (
             seed_key TEXT NOT NULL,
@@ -100,7 +96,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         );
         """
     )
-    connection.execute(
+    _ = connection.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_discovery_seen_seed_status
         ON discovery_seen(seed_key, status);
@@ -141,7 +137,7 @@ def _run_write_with_retry(
 
     for attempt in range(1, _SQLITE_MAX_WRITE_ATTEMPTS + 1):
         try:
-            connection.execute("BEGIN IMMEDIATE;")
+            _ = connection.execute("BEGIN IMMEDIATE;")
             result = operation()
             connection.commit()
             return result
@@ -207,7 +203,7 @@ def discovery_mark_seen(
 
     def insert() -> bool:
         try:
-            connection.execute(
+            _ = connection.execute(
                 """
                 INSERT INTO discovery_seen (
                     seed_key,
@@ -248,7 +244,7 @@ def discovery_update_seen_status(
     """Update status and reason for an existing discovery URL."""
 
     def update() -> None:
-        connection.execute(
+        _ = connection.execute(
             """
             UPDATE discovery_seen
             SET status = ?,

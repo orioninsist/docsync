@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import ClassVar
 from urllib.parse import ParseResult, parse_qs, urlparse
 
 from crawler.shared.url_policy import (
@@ -40,9 +41,9 @@ class PolicyResult:
 class SmartScopePolicy:
     """Smart crawler scope policy for URL and content filtering."""
 
-    GLOBAL_BLOCKED_SCHEMES = BLOCKED_SCHEMES
+    GLOBAL_BLOCKED_SCHEMES: ClassVar[set[str]] = BLOCKED_SCHEMES
 
-    GLOBAL_BLOCKED_EXTENSIONS = tuple(
+    GLOBAL_BLOCKED_EXTENSIONS: ClassVar[tuple[str, ...]] = tuple(
         extension
         for extension in BLOCKED_EXTENSIONS
         if extension
@@ -56,9 +57,9 @@ class SmartScopePolicy:
         }
     )
 
-    MEDIA_SOCIAL_HOSTS = SHARED_MEDIA_SOCIAL_HOSTS
+    MEDIA_SOCIAL_HOSTS: ClassVar[frozenset[str]] = SHARED_MEDIA_SOCIAL_HOSTS
 
-    DOCS_POSITIVE_HINTS = {
+    DOCS_POSITIVE_HINTS: ClassVar[set[str]] = {
         "docs",
         "doc",
         "documentation",
@@ -75,7 +76,7 @@ class SmartScopePolicy:
         "learn",
     }
 
-    BLOG_POSITIVE_HINTS = {
+    BLOG_POSITIVE_HINTS: ClassVar[set[str]] = {
         "blog",
         "post",
         "posts",
@@ -86,14 +87,14 @@ class SmartScopePolicy:
         "stories",
     }
 
-    WIKI_POSITIVE_HINTS = {
+    WIKI_POSITIVE_HINTS: ClassVar[set[str]] = {
         "wiki",
         "manual",
         "docs",
         "documentation",
     }
 
-    SUPPORT_NEGATIVE_HINTS = {
+    SUPPORT_NEGATIVE_HINTS: ClassVar[set[str]] = {
         "community",
         "forum",
         "forums",
@@ -120,7 +121,7 @@ class SmartScopePolicy:
         "tv",
     }
 
-    DOCS_NEGATIVE_HINTS = {
+    DOCS_NEGATIVE_HINTS: ClassVar[set[str]] = {
         "community",
         "forum",
         "forums",
@@ -151,7 +152,7 @@ class SmartScopePolicy:
         "demo",
     }
 
-    BLOG_NEGATIVE_HINTS = {
+    BLOG_NEGATIVE_HINTS: ClassVar[set[str]] = {
         "login",
         "signin",
         "auth",
@@ -172,7 +173,7 @@ class SmartScopePolicy:
         "page",
     }
 
-    LOW_VALUE_TEXT_PATTERNS = (
+    LOW_VALUE_TEXT_PATTERNS: ClassVar[tuple[str, ...]] = (
         "sign in",
         "log in",
         "create account",
@@ -188,7 +189,7 @@ class SmartScopePolicy:
         "rate limited",
     )
 
-    DOCS_TEXT_HINTS = (
+    DOCS_TEXT_HINTS: ClassVar[tuple[str, ...]] = (
         "how to",
         "learn how",
         "set up",
@@ -205,7 +206,7 @@ class SmartScopePolicy:
         "edit",
     )
 
-    BLOG_TEXT_HINTS = (
+    BLOG_TEXT_HINTS: ClassVar[tuple[str, ...]] = (
         "published",
         "author",
         "read more",
@@ -221,13 +222,13 @@ class SmartScopePolicy:
         allowed_path_prefix: str = "/",
     ) -> None:
         """Initialize policy from the crawler seed URL and allowed path scope."""
-        self.start_url = start_url
-        self.allowed_path_prefix = allowed_path_prefix or "/"
+        self.start_url: str = start_url
+        self.allowed_path_prefix: str = allowed_path_prefix or "/"
 
         parsed = urlparse(start_url)
-        self.start_netloc = parsed.netloc.lower()
-        self.start_path_parts = self._path_parts(parsed.path)
-        self.mode = self._detect_mode(parsed)
+        self.start_netloc: str = parsed.netloc.lower()
+        self.start_path_parts: set[str] = self._path_parts(parsed.path)
+        self.mode: str = self._detect_mode(parsed)
 
     def evaluate_url(self, url: str) -> PolicyResult:
         """Evaluate whether a URL is inside crawler policy scope."""

@@ -37,9 +37,6 @@ class OutputDocument:
     def __post_init__(self) -> None:
         normalized_target = _normalize_target_name(self.target_name)
 
-        if not isinstance(self.content, str):
-            raise TypeError("content must be a string")
-
         normalized_signature = _normalize_signature(
             self.source_signature,
             OutputWriteError,
@@ -349,7 +346,7 @@ class AtomicOutputWriter:
         if next_state == previous_state and state_path.is_file():
             return
 
-        self.save_state(
+        _ = self.save_state(
             next_state,
             state_path=state_path,
         )
@@ -573,7 +570,7 @@ def _create_temporary_file(
         temporary_path = Path(temporary_name)
 
         with os.fdopen(descriptor, "wb") as temporary_file:
-            temporary_file.write(content)
+            _ = temporary_file.write(content)
             temporary_file.flush()
             os.fsync(temporary_file.fileno())
 
@@ -692,9 +689,6 @@ def _normalize_state_file_name(value: str) -> str:
 
 
 def _normalize_root(value: Path, field_name: str) -> Path:
-    if not isinstance(value, Path):
-        raise TypeError(f"{field_name} must be a pathlib.Path")
-
     expanded = value.expanduser()
 
     if expanded.exists() and expanded.is_symlink():
@@ -835,7 +829,7 @@ def _encode_persisted_output(
 def _read_json_state(state_path: Path) -> object:
     try:
         raw_text = state_path.read_text(encoding=UTF8)
-        return json.loads(raw_text)
+        return cast(object, json.loads(raw_text))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise StatePersistenceError(
             f"failed to read output state: {state_path}",
@@ -938,7 +932,7 @@ def _require_mapping(
     if not isinstance(value, Mapping):
         raise StatePersistenceError(message)
 
-    return value
+    return cast(Mapping[str, object], value)
 
 
 def _require_list(
@@ -948,7 +942,7 @@ def _require_list(
     if not isinstance(value, list):
         raise StatePersistenceError(message)
 
-    return value
+    return cast(list[object], value)
 
 
 def _require_string(value: object, message: str) -> str:

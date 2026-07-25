@@ -38,7 +38,7 @@ class IntentDecision:
 class IntentAnalyzer:
     """Analyze candidate URLs before queue insertion."""
 
-    _BLOCKED_QUERY_KEYS = frozenset(
+    _BLOCKED_QUERY_KEYS: frozenset[str] = frozenset(
         {
             "lang",
             "locale",
@@ -49,7 +49,7 @@ class IntentAnalyzer:
             "gl",
         }
     )
-    _REGIONAL_PATH_PREFIXES = frozenset(
+    _REGIONAL_PATH_PREFIXES: frozenset[str] = frozenset(
         {
             "ar",
             "br",

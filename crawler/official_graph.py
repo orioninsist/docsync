@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlparse
 
 from crawler.discovery_url_rules import (
@@ -55,15 +56,14 @@ class OfficialHostGraph:
         owner_project: str,
         db_path: Path = GRAPH_DB_PATH,
     ) -> None:
-        self.seed_url = normalize_candidate_url(seed_url)
-        self.owner_project = owner_project
-        self.seed_host = host_of_url(seed_url)
-        self.seed_root_domain = root_domain(seed_url)
-        self.db_path = db_path
+        self.seed_url: str = normalize_candidate_url(seed_url)
+        self.owner_project: str = owner_project
+        self.seed_host: str = host_of_url(seed_url)
+        self.seed_root_domain: str = root_domain(seed_url)
+        self.db_path: Path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.connection = sqlite3.connect(str(self.db_path))
-        self.connection.row_factory = sqlite3.Row
+        self.connection: sqlite3.Connection = sqlite3.connect(str(self.db_path))
         self._configure()
         self._create_schema()
         self.learn_host(
@@ -75,12 +75,12 @@ class OfficialHostGraph:
         )
 
     def _configure(self) -> None:
-        self.connection.execute("PRAGMA journal_mode=WAL;")
-        self.connection.execute("PRAGMA synchronous=NORMAL;")
-        self.connection.execute("PRAGMA busy_timeout=30000;")
+        _ = self.connection.execute("PRAGMA journal_mode=WAL;")
+        _ = self.connection.execute("PRAGMA synchronous=NORMAL;")
+        _ = self.connection.execute("PRAGMA busy_timeout=30000;")
 
     def _create_schema(self) -> None:
-        self.connection.execute(
+        _ = self.connection.execute(
             """
             CREATE TABLE IF NOT EXISTS official_hosts (
                 owner_project TEXT NOT NULL,
@@ -96,7 +96,7 @@ class OfficialHostGraph:
             );
             """
         )
-        self.connection.execute(
+        _ = self.connection.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_official_hosts_seed
             ON official_hosts(owner_project, seed_host);
@@ -108,17 +108,20 @@ class OfficialHostGraph:
         self.connection.close()
 
     def known_hosts(self) -> set[str]:
-        rows = self.connection.execute(
-            """
-            SELECT host
-            FROM official_hosts
-            WHERE owner_project = ?
-              AND seed_host = ?;
-            """,
-            (self.owner_project, self.seed_host),
-        ).fetchall()
+        rows = cast(
+            list[tuple[str]],
+            self.connection.execute(
+                """
+                SELECT host
+                FROM official_hosts
+                WHERE owner_project = ?
+                  AND seed_host = ?;
+                """,
+                (self.owner_project, self.seed_host),
+            ).fetchall(),
+        )
 
-        return {str(row["host"]) for row in rows}
+        return {host for (host,) in rows}
 
     def learn_host(
         self,
@@ -136,19 +139,22 @@ class OfficialHostGraph:
         parent_host = host_of_url(parent_url) if parent_url else None
         now = utc_now()
 
-        existing = self.connection.execute(
-            """
-            SELECT confidence, depth
-            FROM official_hosts
-            WHERE owner_project = ?
-              AND seed_host = ?
-              AND host = ?;
-            """,
-            (self.owner_project, self.seed_host, host),
-        ).fetchone()
+        existing = cast(
+            tuple[int, int] | None,
+            self.connection.execute(
+                """
+                SELECT confidence, depth
+                FROM official_hosts
+                WHERE owner_project = ?
+                  AND seed_host = ?
+                  AND host = ?;
+                """,
+                (self.owner_project, self.seed_host, host),
+            ).fetchone(),
+        )
 
         if existing is None:
-            self.connection.execute(
+            _ = self.connection.execute(
                 """
                 INSERT INTO official_hosts (
                     owner_project,
@@ -176,9 +182,11 @@ class OfficialHostGraph:
                 ),
             )
         else:
-            best_confidence = max(int(existing["confidence"]), confidence)
-            best_depth = min(int(existing["depth"]), depth)
-            self.connection.execute(
+            existing_confidence, existing_depth = existing
+            best_confidence = max(existing_confidence, confidence)
+            best_depth = min(existing_depth, depth)
+
+            _ = self.connection.execute(
                 """
                 UPDATE official_hosts
                 SET
@@ -231,6 +239,7 @@ class OfficialHostGraph:
             parent_url=parent_url,
             depth=depth,
         )
+
         if scope_block_reason:
             return HostDecision(False, host, 0, scope_block_reason)
 
@@ -298,6 +307,7 @@ class OfficialHostGraph:
         return False
 
     def _google_product_scope_block_reason(self, *, url: str) -> str | None:
+        _ = url
         return None
 
     def _generic_cross_host_scope_block_reason(
@@ -312,6 +322,7 @@ class OfficialHostGraph:
 
         if parent_url:
             parent_host = host_of_url(parent_url)
+
             if parent_host == self.seed_host or parent_host in self.known_hosts():
                 parent_is_trusted = True
             else:

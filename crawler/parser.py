@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
+from markdownify import markdownify as md
 
 from crawler.shared.url_normalizer import normalize_url
 from crawler.shared.url_policy import BLOCKED_LINK_PREFIXES
-from markdownify import markdownify as md
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class ParsedPage:
 
 
 class ContentParser:
-    REMOVE_SELECTORS = (
+    REMOVE_SELECTORS: tuple[str, ...] = (
         "script",
         "style",
         "noscript",
@@ -51,7 +51,7 @@ class ContentParser:
         ".breadcrumbs",
     )
 
-    MAIN_SELECTORS = (
+    MAIN_SELECTORS: tuple[str, ...] = (
         "main",
         "article",
         "[role='main']",
@@ -146,9 +146,6 @@ class ContentParser:
 
     def _make_links_absolute(self, soup: BeautifulSoup, url: str) -> None:
         for tag in soup.find_all(["a", "img"]):
-            if not isinstance(tag, Tag):
-                continue
-
             attribute = "href" if tag.name == "a" else "src"
             value = tag.get(attribute)
 

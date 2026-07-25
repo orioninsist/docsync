@@ -56,11 +56,7 @@ def path_is_inside_prefix(path: str, prefix: str) -> bool:
 def common_path_prefix(paths: list[str]) -> str | None:
     """Return the longest non-root path shared by supplied paths."""
 
-    unique_segments = {
-        path_segments(path)
-        for path in paths
-        if path and path != "/"
-    }
+    unique_segments = {path_segments(path) for path in paths if path and path != "/"}
 
     if len(unique_segments) < 2:
         return None
@@ -104,10 +100,7 @@ def source_branch_candidates(source_url: str) -> list[str]:
     if deepest_size <= 0:
         return []
 
-    return [
-        path_from_segments(segments[:size])
-        for size in range(deepest_size, 0, -1)
-    ]
+    return [path_from_segments(segments[:size]) for size in range(deepest_size, 0, -1)]
 
 
 def same_host_real_paths(

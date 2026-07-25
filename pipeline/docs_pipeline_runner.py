@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import cast
 
 from pipeline.constants import READ_ONLY_MODE, WRITE_MODE
 from pipeline.document_workspace import (
@@ -58,7 +59,7 @@ def parse_arguments(arguments: Sequence[str] | None = None) -> argparse.Namespac
     parser = argparse.ArgumentParser(
         description="Run the document pipeline for one source project directory."
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "project_directory",
         type=Path,
         help="Source project directory to process.",
@@ -129,12 +130,12 @@ def run_document_pipeline(project_directory: Path) -> None:
     )
     print(f"[1/6] Unlocked markdown files: {unlocked_file_count}")
 
-    removed_artifact_count = cleanup_legacy_merged_artifacts(resolved_project_directory)
-    print(f"[2/6] Removed legacy artifacts: {removed_artifact_count}")
-
-    locked_file_count = 0
-
     try:
+        removed_artifact_count = cleanup_legacy_merged_artifacts(
+            resolved_project_directory
+        )
+        print(f"[2/6] Removed legacy artifacts: {removed_artifact_count}")
+
         execute_pipeline_stages(resolved_project_directory)
     finally:
         locked_file_count = set_markdown_mode(
@@ -152,9 +153,10 @@ def main(arguments: Sequence[str] | None = None) -> int:
     """Run the document pipeline CLI."""
 
     parsed_arguments = parse_arguments(arguments)
+    project_directory = cast(Path, parsed_arguments.project_directory)
 
     try:
-        run_document_pipeline(parsed_arguments.project_directory)
+        run_document_pipeline(project_directory)
     except (PipelineExecutionError, OSError, ValueError) as error:
         print(f"ERROR: {error}")
         return 1

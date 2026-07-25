@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
@@ -19,7 +20,7 @@ from crawler.shared.language_policy import (
 class LanguageDetector:  # pylint: disable=too-few-public-methods
     """Rule-based English language detector for crawler pre-filtering."""
 
-    ENGLISH_STOPWORDS = {
+    ENGLISH_STOPWORDS: ClassVar[set[str]] = {
         "the",
         "and",
         "you",
@@ -98,7 +99,7 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
         "update",
     }
 
-    NON_ENGLISH_STOPWORDS = {
+    NON_ENGLISH_STOPWORDS: ClassVar[set[str]] = {
         "ve",
         "veya",
         "bir",
@@ -202,7 +203,7 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
         "ondersteuning",
     }
 
-    NON_ENGLISH_CHARACTER_MARKERS = {
+    NON_ENGLISH_CHARACTER_MARKERS: ClassVar[set[str]] = {
         "ç",
         "ğ",
         "ı",
@@ -218,19 +219,19 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
         "õ",
     }
 
-    META_LANGUAGE_SELECTORS = (
+    META_LANGUAGE_SELECTORS: ClassVar[tuple[str, ...]] = (
         'meta[property="og:locale"]',
         'meta[name="locale"]',
         'meta[http-equiv="content-language"]',
         'meta[name="language"]',
     )
 
-    MIN_TEXT_LENGTH = 80
-    MIN_WORD_COUNT = 20
-    MIN_LATIN_RATIO = 0.75
-    MIN_ENGLISH_STOPWORD_RATIO = 0.035
-    MAX_NON_ENGLISH_STOPWORD_RATIO = 0.025
-    MAX_NON_ENGLISH_MARKER_RATIO = 0.02
+    MIN_TEXT_LENGTH: ClassVar[int] = 80
+    MIN_WORD_COUNT: ClassVar[int] = 20
+    MIN_LATIN_RATIO: ClassVar[float] = 0.75
+    MIN_ENGLISH_STOPWORD_RATIO: ClassVar[float] = 0.035
+    MAX_NON_ENGLISH_STOPWORD_RATIO: ClassVar[float] = 0.025
+    MAX_NON_ENGLISH_MARKER_RATIO: ClassVar[float] = 0.02
 
     def is_english(
         self,

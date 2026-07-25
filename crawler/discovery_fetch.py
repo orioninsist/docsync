@@ -30,33 +30,20 @@ async def fetch_text(
             timeout=timeout,
         ) as response:
             if response.status >= HTTP_ERROR_STATUS:
-                log(
-                    f"       FETCH SKIP status={response.status} "
-                    f"url={url}"
-                )
+                log(f"       FETCH SKIP status={response.status} url={url}")
                 return None
 
             return await response.text()
     except TimeoutError:
         log(
-            "       FETCH TIMEOUT "
-            f"after={DISCOVERY_REQUEST_TIMEOUT_SECONDS}s "
-            f"url={url}"
+            f"       FETCH TIMEOUT after={DISCOVERY_REQUEST_TIMEOUT_SECONDS}s url={url}"
         )
         return None
     except aiohttp.ClientError as exc:
-        log(
-            f"       FETCH ERROR type={type(exc).__name__} "
-            f"url={url} "
-            f"detail={exc}"
-        )
+        log(f"       FETCH ERROR type={type(exc).__name__} url={url} detail={exc}")
         return None
     except (OSError, UnicodeError) as exc:
-        log(
-            f"       FETCH ERROR type={type(exc).__name__} "
-            f"url={url} "
-            f"detail={exc}"
-        )
+        log(f"       FETCH ERROR type={type(exc).__name__} url={url} detail={exc}")
         return None
 
 
@@ -110,8 +97,9 @@ async def certificate_transparency_candidates(
         ValueError,
     ) as exc:
         log(
-            f"       CT SKIP type={type(exc).__name__} "
-            f"seed={state.base_url} "
-            f"detail={exc}"
+            "       CT SKIP "
+            + f"type={type(exc).__name__} "
+            + f"seed={state.base_url} "
+            + f"detail={exc}"
         )
         return []

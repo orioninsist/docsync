@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from pipeline.ingestion.config import TransformationConfig
 from pipeline.ingestion.model import IngestionDocument
-
 
 _HTML_COMMENT_PATTERN = re.compile(r"<!--.*?-->", flags=re.DOTALL)
 _MARKDOWN_HEADING_PATTERN = re.compile(
@@ -24,9 +23,13 @@ _BULLET_PATTERN = re.compile(
     r"^(?P<indent>[ \t]*)(?P<marker>[-+*])(?P<spacing>[ \t]+)(?P<body>.*)$"
 )
 _COMMENTED_CODE_PATTERN = re.compile(
-    r"^[ \t]*(?://|#)[ \t]*(?P<code>"
-    r"(?:class|def|return|import|from|if|elif|else|for|while|try|except|finally|"
-    r"with|raise|yield|async|await|const|let|var|function)\b.*)$"
+    "".join(
+        (
+            r"^[ \t]*(?://|#)[ \t]*(?P<code>",
+            r"(?:class|def|return|import|from|if|elif|else|for|while|try|except|",
+            r"finally|with|raise|yield|async|await|const|let|var|function)\b.*)$",
+        )
+    )
 )
 _HISTORICAL_HEADING_TITLES = frozenset(
     {
@@ -46,7 +49,6 @@ class ContentCleaningError(ValueError):
     """Raised when content-cleaning input violates its contract."""
 
 
-@runtime_checkable
 class DocumentCleaner(Protocol):
     """Define the plug-in contract for isolated document cleaners."""
 
@@ -61,16 +63,8 @@ class DeterministicContentCleaner:
 
     config: TransformationConfig = TransformationConfig()
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.config, TransformationConfig):
-            raise TypeError("config must be a TransformationConfig")
-
     def clean(self, document: IngestionDocument) -> IngestionDocument:
         """Return a new document containing deterministically cleaned text."""
-
-        if not isinstance(document, IngestionDocument):
-            raise TypeError("document must be an IngestionDocument")
-
         cleaned_content = clean_content(
             document.content,
             config=self.config,
@@ -92,19 +86,7 @@ def clean_document(
     cleaner: DocumentCleaner,
 ) -> IngestionDocument:
     """Clean one document through an explicitly supplied cleaner."""
-
-    if not isinstance(document, IngestionDocument):
-        raise TypeError("document must be an IngestionDocument")
-
-    if not isinstance(cleaner, DocumentCleaner):
-        raise TypeError("cleaner must implement the DocumentCleaner protocol")
-
     cleaned_document = cleaner.clean(document)
-
-    if not isinstance(cleaned_document, IngestionDocument):
-        raise ContentCleaningError(
-            "cleaner must return an IngestionDocument",
-        )
 
     if cleaned_document.identity != document.identity:
         raise ContentCleaningError(
@@ -125,13 +107,6 @@ def clean_content(
     config: TransformationConfig,
 ) -> str:
     """Return deterministically cleaned document content."""
-
-    if not isinstance(content, str):
-        raise TypeError("content must be a string")
-
-    if not isinstance(config, TransformationConfig):
-        raise TypeError("config must be a TransformationConfig")
-
     cleaned = _normalize_newlines(content)
 
     if config.strip_html_comments:

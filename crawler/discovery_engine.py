@@ -2,51 +2,18 @@
 
 from __future__ import annotations
 
-
 import aiohttp
 
-from crawler.discovery_paths import (
-    common_path_prefix,
-    discovery_path_prefix,
-    normalized_host,
-    normalized_path,
-    path_from_segments,
-    path_is_inside_prefix,
-    path_segments,
-    same_host_real_paths,
-    source_branch_candidates,
-)
-from crawler.discovery_result import DiscoveryResult
-from crawler.discovery_processing import process_queue_item
 from crawler.discovery_fetch import (
     certificate_transparency_candidates,
-    fetch_text,
     robots_sitemaps,
     sitemap_candidates,
 )
-from crawler.discovery_runtime import (
-    DiscoveryRunState,
-    log,
-    strict_normalize_discovery_url,
-)
-from crawler.discovery_scope import (
-    branch_support_count,
-    build_discovery_policy,
-    discovery_allowed_real_link,
-    infer_scope_prefix_from_real_links,
-    merge_scope_prefixes,
-)
-from crawler.discovery_types import (
-    DiscoveryQueueItem,
-    DiscoveryScore,
-)
-from crawler.discovery_state import (
-    discovery_db_key,
-    discovery_mark_seen,
-    discovery_update_seen_status,
-    open_discovery_db,
-)
-from crawler.policy_engine import SmartScopePolicy
+from crawler.discovery_paths import normalized_host
+from crawler.discovery_processing import process_queue_item
+from crawler.discovery_result import DiscoveryResult
+from crawler.discovery_runtime import DiscoveryRunState, log
+from crawler.discovery_state import open_discovery_db
 
 DISCOVERY_MAX_ACCEPTED_MULTIPLIER = 10
 DISCOVERY_MAX_DEFAULT_PAGES = 30
@@ -54,7 +21,6 @@ DISCOVERY_MAX_NO_NEW_GOOD = 40
 DISCOVERY_MIN_GOOD_SCORE = 2
 DISCOVERY_QUALITY_EXTRA_SCAN_PAGES = 80
 DISCOVERY_SCOPE_WIDENING_CONFIRMATIONS = 2
-
 
 
 def host_without_www(url: str) -> str:
@@ -97,10 +63,7 @@ async def enqueue_robots_and_sitemap_candidates(
             reason="external_discovery_candidate",
         )
 
-    log(
-        f"       external candidates={len(candidates)} "
-        "scope_evidence=disabled"
-    )
+    log(f"       external candidates={len(candidates)} " + "scope_evidence=disabled")
 
 
 async def enqueue_certificate_transparency_candidates(
@@ -124,10 +87,7 @@ async def enqueue_certificate_transparency_candidates(
             reason="certificate_transparency",
         )
 
-    log(
-        f"       CT candidates={len(ct_candidates)} "
-        "scope_evidence=disabled"
-    )
+    log(f"       CT candidates={len(ct_candidates)} " + "scope_evidence=disabled")
 
 
 async def walk_recursive_link_graph(
@@ -148,15 +108,15 @@ async def walk_recursive_link_graph(
                 item,
             )
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            state.mark_status(
+            _ = state.mark_status(
                 item.url,
                 "unexpected_error",
                 type(exc).__name__,
             )
             log(
                 "       UNEXPECTED PROCESS ERROR "
-                f"type={type(exc).__name__} "
-                f"url={item.url}"
+                + f"type={type(exc).__name__} "
+                + f"url={item.url}"
             )
             should_continue = True
 
@@ -169,15 +129,13 @@ def finish_discovery(
 ) -> tuple[list[str], list[DiscoveryResult]]:
     """Return fetched discovery URLs and blocked results."""
 
-    successful_urls = list(
-        dict.fromkeys(state.discovered)
-    )
+    successful_urls = list(dict.fromkeys(state.discovered))
 
     log(
         f"       BFS finished processed={state.processed} "
-        f"verified={len(successful_urls)} "
-        f"blocked={len(state.blocked_results)} "
-        f"scope={state.learned_path_prefix or '<unlearned>'}"
+        + f"verified={len(successful_urls)} "
+        + f"blocked={len(state.blocked_results)} "
+        + f"scope={state.learned_path_prefix or '<unlearned>'}"
     )
 
     return successful_urls, state.blocked_results

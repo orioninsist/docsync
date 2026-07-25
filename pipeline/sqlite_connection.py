@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -56,7 +56,7 @@ def sqlite_connection(
     database_path: Path,
     *,
     busy_timeout_milliseconds: int = DEFAULT_BUSY_TIMEOUT_MILLISECONDS,
-) -> Iterator[sqlite3.Connection]:
+) -> Generator[sqlite3.Connection]:
     """Provide a configured SQLite connection with deterministic closing."""
 
     connection = connect_sqlite(
@@ -73,7 +73,7 @@ def sqlite_connection(
 @contextmanager
 def sqlite_transaction(
     connection: sqlite3.Connection,
-) -> Iterator[sqlite3.Connection]:
+) -> Generator[sqlite3.Connection]:
     """Commit successful work and roll back failed work."""
 
     try:
@@ -90,9 +90,6 @@ def sqlite_transaction(
 
 
 def _prepare_database_path(database_path: Path) -> Path:
-    if not isinstance(database_path, Path):
-        raise TypeError("database_path must be a pathlib.Path")
-
     resolved_database_path = database_path.expanduser().resolve(
         strict=False,
     )
@@ -103,16 +100,18 @@ def _prepare_database_path(database_path: Path) -> Path:
             exist_ok=True,
         )
     except OSError as error:
-        raise SQLiteConnectionError(
+        message = (
             "failed to create SQLite database directory: "
-            f"{resolved_database_path.parent}",
-        ) from error
+            f"{resolved_database_path.parent}"
+        )
+        raise SQLiteConnectionError(message) from error
 
     if not resolved_database_path.parent.is_dir():
-        raise SQLiteConnectionError(
+        message = (
             "SQLite database parent is not a directory: "
-            f"{resolved_database_path.parent}",
+            f"{resolved_database_path.parent}"
         )
+        raise SQLiteConnectionError(message)
 
     if resolved_database_path.exists() and not resolved_database_path.is_file():
         raise SQLiteConnectionError(
@@ -126,11 +125,6 @@ def _validate_busy_timeout(
     busy_timeout_milliseconds: int,
 ) -> int:
     if isinstance(busy_timeout_milliseconds, bool):
-        raise TypeError(
-            "busy_timeout_milliseconds must be an integer",
-        )
-
-    if not isinstance(busy_timeout_milliseconds, int):
         raise TypeError(
             "busy_timeout_milliseconds must be an integer",
         )
@@ -149,10 +143,10 @@ def _configure_connection(
     busy_timeout_milliseconds: int,
 ) -> None:
     connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA synchronous=FULL")
-    connection.execute("PRAGMA foreign_keys=ON")
-    connection.execute(
+    _ = connection.execute("PRAGMA journal_mode=WAL")
+    _ = connection.execute("PRAGMA synchronous=FULL")
+    _ = connection.execute("PRAGMA foreign_keys=ON")
+    _ = connection.execute(
         f"PRAGMA busy_timeout={busy_timeout_milliseconds}",
     )
 

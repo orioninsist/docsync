@@ -26,10 +26,10 @@ class LanguageGateResult:
 class LanguageGate:
     """Validate URLs and HTML content for English-language crawling."""
 
-    LANGUAGE_QUERY_KEYS = SHARED_LANGUAGE_QUERY_KEYS
-    ENGLISH_VALUES = NORMALIZED_ENGLISH_QUERY_VALUES
+    LANGUAGE_QUERY_KEYS: frozenset[str] = SHARED_LANGUAGE_QUERY_KEYS
+    ENGLISH_VALUES: frozenset[str] = NORMALIZED_ENGLISH_QUERY_VALUES
 
-    ISO_LANGUAGE_CODES = {
+    ISO_LANGUAGE_CODES: set[str] = {
         "aa",
         "ab",
         "ae",
@@ -215,7 +215,7 @@ class LanguageGate:
         "zu",
     }
 
-    SAFE_HOST_PREFIXES = {
+    SAFE_HOST_PREFIXES: set[str] = {
         "www",
         "docs",
         "doc",
@@ -232,19 +232,23 @@ class LanguageGate:
 
     def check_url(self, url: str) -> LanguageGateResult:
         """Return whether the URL explicitly declares a supported language."""
+
         parsed = urlparse(url)
         host = parsed.netloc.lower().removeprefix("www.")
         path = parsed.path or "/"
 
         host_reason = self._blocked_host_reason(host)
+
         if host_reason:
             return LanguageGateResult(False, host_reason)
 
         path_reason = self._blocked_path_reason(path)
+
         if path_reason:
             return LanguageGateResult(False, path_reason)
 
         query_reason = self._blocked_query_reason(parsed.query)
+
         if query_reason:
             return LanguageGateResult(False, query_reason)
 
@@ -252,11 +256,14 @@ class LanguageGate:
 
     def check_html(self, html: str) -> LanguageGateResult:
         """Return whether HTML content is identified as English."""
+
         soup = BeautifulSoup(html or "", "html.parser")
 
         html_tag = soup.find("html")
+
         if isinstance(html_tag, Tag):
             lang = self._norm(str(html_tag.get("lang", "")))
+
             if lang and not self._is_english(lang):
                 return LanguageGateResult(False, f"html_lang_non_english:{lang}")
 
@@ -267,10 +274,12 @@ class LanguageGate:
             'meta[name="language"]',
         ):
             tag = soup.select_one(selector)
+
             if not isinstance(tag, Tag):
                 continue
 
             value = self._norm(str(tag.get("content", "")))
+
             if value and not self._is_english(value):
                 return LanguageGateResult(False, f"html_meta_non_english:{value}")
 
@@ -278,14 +287,17 @@ class LanguageGate:
 
     def _blocked_host_reason(self, host: str) -> str | None:
         labels = [x for x in host.split(".") if x]
+
         if not labels:
             return None
 
         first = self._norm(labels[0])
+
         if first in self.SAFE_HOST_PREFIXES:
             return None
 
         parts = [p for p in re.split(r"[-_]", first) if p]
+
         for part in parts:
             if part in self.ISO_LANGUAGE_CODES and part != "en":
                 return f"iso_block_host_label:{part}"
@@ -295,6 +307,7 @@ class LanguageGate:
     def _blocked_path_reason(self, path: str) -> str | None:
         for segment in path.strip("/").split("/"):
             value = self._norm(segment)
+
             if not value:
                 continue
 
@@ -302,6 +315,7 @@ class LanguageGate:
                 return None
 
             parts = [p for p in re.split(r"[-_]", value) if p]
+
             if parts and parts[0] in self.ISO_LANGUAGE_CODES and parts[0] != "en":
                 return f"iso_block_path_segment:{value}"
 
@@ -313,6 +327,7 @@ class LanguageGate:
                 continue
 
             normalized = self._norm(value)
+
             if normalized and not self._is_english(normalized):
                 return f"iso_block_query:{key}={normalized}"
 
@@ -320,6 +335,7 @@ class LanguageGate:
 
     def _is_english(self, value: str) -> bool:
         normalized = self._norm(value)
+
         return (
             normalized == "en"
             or normalized.startswith("en-")
@@ -335,9 +351,11 @@ language_gate = LanguageGate()
 
 def allow_english_url(url: str) -> LanguageGateResult:
     """Return the URL language-gate result for a candidate URL."""
+
     return language_gate.check_url(url)
 
 
 def allow_english_html(html: str) -> LanguageGateResult:
     """Return the HTML language-gate result for downloaded content."""
+
     return language_gate.check_html(html)

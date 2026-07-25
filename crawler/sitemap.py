@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import gzip
 import re
-import defusedxml.ElementTree as ET  # type: ignore[import-untyped]
 from html import unescape
-from typing import Any
 from urllib.parse import ParseResult, parse_qs, urljoin, urlparse
+from xml.etree.ElementTree import Element
 
 import aiohttp
+import defusedxml.ElementTree as ET  # type: ignore[import-untyped]
 from bs4 import BeautifulSoup
 
 from crawler.config import CrawlerConfig
@@ -116,10 +116,10 @@ class SitemapManager:
         robots: RobotsManager,
     ) -> None:
         """Initialize sitemap discovery with config, robots, and scope policy."""
-        self.config = config
-        self.robots = robots
-        self.start_netloc = urlparse(config.start_url).netloc.lower()
-        self.policy = SmartScopePolicy(
+        self.config: CrawlerConfig = config
+        self.robots: RobotsManager = robots
+        self.start_netloc: str = urlparse(config.start_url).netloc.lower()
+        self.policy: SmartScopePolicy = SmartScopePolicy(
             start_url=config.start_url,
             allowed_path_prefix=config.allowed_path_prefix,
         )
@@ -212,7 +212,9 @@ class SitemapManager:
 
         for candidate in DEFAULT_SITEMAP_PATHS:
             self._append_unique_candidate(
-                candidates, seen, urljoin(base_url, candidate)
+                candidates,
+                seen,
+                urljoin(base_url, candidate),
             )
 
         return candidates
@@ -250,7 +252,10 @@ class SitemapManager:
 
         self._visited_sitemaps.add(normalized_sitemap_url)
 
-        fetched = await self._fetch_sitemap_payload(session, normalized_sitemap_url)
+        fetched = await self._fetch_sitemap_payload(
+            session,
+            normalized_sitemap_url,
+        )
 
         if fetched is None:
             return set()
@@ -273,7 +278,11 @@ class SitemapManager:
             depth=depth,
         )
 
-    def _should_skip_sitemap(self, sitemap_url: str, depth: int) -> bool:
+    def _should_skip_sitemap(
+        self,
+        sitemap_url: str,
+        depth: int,
+    ) -> bool:
         return depth > MAX_SITEMAP_DEPTH or sitemap_url in self._visited_sitemaps
 
     async def _fetch_sitemap_payload(
@@ -338,7 +347,7 @@ class SitemapManager:
         self,
         *,
         session: aiohttp.ClientSession,
-        root: Any,
+        root: Element,
         depth: int,
     ) -> set[str]:
         urls: set[str] = set()
@@ -367,19 +376,27 @@ class SitemapManager:
 
         return urls
 
-    def _extract_urls_from_urlset(self, root: Any) -> set[str]:
+    def _extract_urls_from_urlset(
+        self,
+        root: Element,
+    ) -> set[str]:
         urls: set[str] = set()
         namespace = self._namespace(root.tag)
         url_nodes = root.findall(f".//{namespace}url")
 
         for url_node in url_nodes[:MAX_SITEMAP_URLS_PER_FILE]:
-            urls.update(self._allowed_urls_from_url_node(url_node, namespace))
+            urls.update(
+                self._allowed_urls_from_url_node(
+                    url_node,
+                    namespace,
+                ),
+            )
 
         return urls
 
     def _allowed_urls_from_url_node(
         self,
-        url_node: Any,
+        url_node: Element,
         namespace: str,
     ) -> set[str]:
         loc_node = url_node.find(f"{namespace}loc")
@@ -412,20 +429,26 @@ class SitemapManager:
 
         return urls
 
-    def _parse_xml_safely(self, text: str) -> Any | None:
+    def _parse_xml_safely(
+        self,
+        text: str,
+    ) -> Element | None:
         try:
-            return ET.fromstring(text)  # nosec B314
-
+            root: Element = ET.fromstring(text)  # nosec B314
         except ET.ParseError:
             cleaned = self._remove_invalid_xml_chars(text)
 
             try:
-                return ET.fromstring(cleaned)  # nosec B314
-
+                root = ET.fromstring(cleaned)  # nosec B314
             except ET.ParseError:
                 return None
 
-    def _remove_invalid_xml_chars(self, text: str) -> str:
+        return root
+
+    def _remove_invalid_xml_chars(
+        self,
+        text: str,
+    ) -> str:
         return re.sub(
             r"[\x00-\x08\x0B\x0C\x0E-\x1F]",
             "",
@@ -470,7 +493,9 @@ class SitemapManager:
         urls: set[str] = set()
 
         for match in URL_PATTERN.finditer(text):
-            normalized = self.normalize_url(unescape(match.group(0).strip()))
+            normalized = self.normalize_url(
+                unescape(match.group(0).strip()),
+            )
 
             if normalized is None:
                 continue
@@ -490,11 +515,18 @@ class SitemapManager:
         try:
             payload = (
                 gzip.decompress(raw)
-                if self._should_decompress(raw, sitemap_url, content_type)
+                if self._should_decompress(
+                    raw,
+                    sitemap_url,
+                    content_type,
+                )
                 else raw
             )
-            return payload.decode("utf-8", errors="replace")
 
+            return payload.decode(
+                "utf-8",
+                errors="replace",
+            )
         except gzip.BadGzipFile, OSError, UnicodeError:
             return None
 
@@ -524,7 +556,12 @@ class SitemapManager:
         if cleaned_href.lower().startswith(BLOCKED_HREF_SCHEMES):
             return None
 
-        return self.normalize_url(urljoin(base_url, cleaned_href))
+        return self.normalize_url(
+            urljoin(
+                base_url,
+                cleaned_href,
+            ),
+        )
 
     def _namespace(
         self,
@@ -549,6 +586,7 @@ class SitemapManager:
         url: str,
     ) -> bool:
         parsed = urlparse(url)
+
         return parsed.netloc.lower() == self.start_netloc
 
     def _is_allowed_document_url(
@@ -568,16 +606,25 @@ class SitemapManager:
             and not self._has_blocked_query_fragment(parsed.query)
         )
 
-    def _has_allowed_scheme_and_host(self, parsed: ParseResult) -> bool:
+    def _has_allowed_scheme_and_host(
+        self,
+        parsed: ParseResult,
+    ) -> bool:
         return (
             parsed.scheme.lower() in {"http", "https"}
             and parsed.netloc.lower() == self.start_netloc
         )
 
-    def _policy_allows(self, url: str) -> bool:
+    def _policy_allows(
+        self,
+        url: str,
+    ) -> bool:
         return self.policy.evaluate_url(url).allowed
 
-    def _path_scope_allows(self, path: str) -> bool:
+    def _path_scope_allows(
+        self,
+        path: str,
+    ) -> bool:
         normalized_path = self._normalized_path(path)
         allowed_prefix = self.config.allowed_path_prefix.rstrip("/") or "/"
         allowed_prefix_lower = allowed_prefix.lower()
@@ -589,7 +636,10 @@ class SitemapManager:
             f"{allowed_prefix_lower}/",
         )
 
-    def _path_is_blocked(self, path: str) -> bool:
+    def _path_is_blocked(
+        self,
+        path: str,
+    ) -> bool:
         normalized_path = self._normalized_path(path)
         path_parts = [part for part in normalized_path.strip("/").split("/") if part]
 
@@ -597,7 +647,10 @@ class SitemapManager:
             normalized_path,
         )
 
-    def _normalized_path(self, path: str) -> str:
+    def _normalized_path(
+        self,
+        path: str,
+    ) -> str:
         return f"/{path.lower().strip('/')}"
 
     def _is_blocked_application_path(
@@ -607,7 +660,9 @@ class SitemapManager:
         for blocked_path in BLOCKED_PATH_PARTS:
             blocked = f"/{blocked_path.strip('/')}"
 
-            if normalized_path == blocked or normalized_path.startswith(f"{blocked}/"):
+            if normalized_path == blocked or normalized_path.startswith(
+                f"{blocked}/",
+            ):
                 return True
 
         return False
@@ -621,10 +676,16 @@ class SitemapManager:
 
         return any(
             key.lower() in BLOCKED_QUERY_KEYS
-            for key in parse_qs(query, keep_blank_values=False)
+            for key in parse_qs(
+                query,
+                keep_blank_values=False,
+            )
         )
 
-    def _language_is_blocked(self, url: str) -> bool:
+    def _language_is_blocked(
+        self,
+        url: str,
+    ) -> bool:
         return self.config.require_english and url_declares_non_english(url)
 
     def _has_blocked_extension(

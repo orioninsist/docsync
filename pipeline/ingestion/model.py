@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from types import MappingProxyType
-from typing import Final, TypeAlias
+from typing import Final, TypeAlias, cast
 
 
 MetadataValue: TypeAlias = str | int | float | bool | None
@@ -39,8 +39,10 @@ class DocumentSection:
                 "section position must be greater than zero",
             )
 
-        if not isinstance(self.content, str):
-            raise TypeError("section content must be a string")
+        _ = _require_string(
+            self.content,
+            field_name="section content",
+        )
 
         normalized_heading = _normalize_optional_text(
             self.heading,
@@ -120,8 +122,10 @@ class IngestionDocument:
             field_name="document title",
         )
 
-        if not isinstance(self.content, str):
-            raise TypeError("document content must be a string")
+        _ = _require_string(
+            self.content,
+            field_name="document content",
+        )
 
         normalized_sections = _normalize_sections(self.sections)
         immutable_metadata = _normalize_metadata(self.metadata)
@@ -169,7 +173,7 @@ class IngestionDocument:
         )
 
 
-def _normalize_source_path(path: PurePosixPath) -> PurePosixPath:
+def _normalize_source_path(path: object) -> PurePosixPath:
     if not isinstance(path, PurePosixPath):
         raise TypeError("document source_path must be a PurePosixPath")
 
@@ -197,31 +201,41 @@ def _normalize_source_path(path: PurePosixPath) -> PurePosixPath:
 
 
 def _normalize_sections(
-    sections: tuple[DocumentSection, ...],
+    sections: object,
 ) -> tuple[DocumentSection, ...]:
     if not isinstance(sections, tuple):
         raise TypeError("document sections must be a tuple")
 
-    expected_positions = tuple(range(1, len(sections) + 1))
-    actual_positions = tuple(section.position for section in sections)
+    raw_sections = cast(tuple[object, ...], sections)
+
+    for section in raw_sections:
+        if not isinstance(section, DocumentSection):
+            raise TypeError(
+                "document section entries must be DocumentSection instances",
+            )
+
+    normalized_sections = cast(tuple[DocumentSection, ...], raw_sections)
+    expected_positions = tuple(range(1, len(normalized_sections) + 1))
+    actual_positions = tuple(section.position for section in normalized_sections)
 
     if actual_positions != expected_positions:
         raise IngestionModelError(
             "document section positions must be contiguous and ordered",
         )
 
-    return sections
+    return normalized_sections
 
 
 def _normalize_metadata(
-    metadata: DocumentMetadata,
+    metadata: object,
 ) -> DocumentMetadata:
     if not isinstance(metadata, Mapping):
         raise TypeError("document metadata must be a mapping")
 
+    raw_metadata = cast(Mapping[object, object], metadata)
     normalized: dict[str, MetadataValue] = {}
 
-    for raw_key, value in metadata.items():
+    for raw_key, value in raw_metadata.items():
         key = _require_text(
             raw_key,
             field_name="metadata key",
@@ -242,11 +256,18 @@ def _normalize_metadata(
     return MappingProxyType(normalized)
 
 
-def _require_text(value: str, *, field_name: str) -> str:
+def _require_string(value: object, *, field_name: str) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{field_name} must be a string")
 
-    normalized = value.strip()
+    return value
+
+
+def _require_text(value: object, *, field_name: str) -> str:
+    normalized = _require_string(
+        value,
+        field_name=field_name,
+    ).strip()
 
     if not normalized:
         raise IngestionModelError(
@@ -257,7 +278,7 @@ def _require_text(value: str, *, field_name: str) -> str:
 
 
 def _normalize_optional_text(
-    value: str | None,
+    value: object,
     *,
     field_name: str,
 ) -> str | None:
@@ -267,7 +288,7 @@ def _normalize_optional_text(
     return _require_text(value, field_name=field_name)
 
 
-def _require_non_negative(value: int, *, field_name: str) -> None:
+def _require_non_negative(value: object, *, field_name: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"{field_name} must be an integer")
 

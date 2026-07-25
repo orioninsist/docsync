@@ -22,7 +22,7 @@ class MarkdownWriter:
     """
 
     def __init__(self, output_dir: Path) -> None:
-        self.output_dir = Path(output_dir)
+        self.output_dir: Path = Path(output_dir)
 
     def exists(self, *, url: str) -> bool:
         """Return whether the current Markdown file exists for a URL."""
@@ -46,8 +46,7 @@ class MarkdownWriter:
             return False
 
         return any(
-            path.is_file()
-            for path in self.output_dir.glob(f"*__{short_hash}.md")
+            path.is_file() for path in self.output_dir.glob(f"*__{short_hash}.md")
         )
 
     def write(self, *, url: str, title: str, markdown: str) -> Path:
@@ -102,8 +101,7 @@ class MarkdownWriter:
             self._remove_temporary_file(temporary_path)
 
             raise RuntimeError(
-                "Markdown output could not be written and verified: "
-                f"path={current_path} error={error}"
+                f"Markdown output could not be written and verified: path={current_path} error={error}"
             ) from error
 
         self._remove_stale_current_markdown(
@@ -132,7 +130,7 @@ class MarkdownWriter:
         try:
             with os.fdopen(descriptor, "wb") as file:
                 payload = document.encode("utf-8")
-                file.write(payload)
+                _ = file.write(payload)
                 file.flush()
                 os.fsync(file.fileno())
 
@@ -148,8 +146,7 @@ class MarkdownWriter:
             self._remove_temporary_file(temporary_path)
 
             raise RuntimeError(
-                "Temporary Markdown output could not be written: "
-                f"path={temporary_path} error={error}"
+                f"Temporary Markdown output could not be written: path={temporary_path} error={error}"
             ) from error
 
     def _verify_written_file(
@@ -161,23 +158,17 @@ class MarkdownWriter:
         """Verify that the final file exists and contains the full document."""
 
         if not path.exists():
-            raise RuntimeError(
-                f"Markdown output does not exist after write: {path}"
-            )
+            raise RuntimeError(f"Markdown output does not exist after write: {path}")
 
         if not path.is_file():
-            raise RuntimeError(
-                f"Markdown output path is not a regular file: {path}"
-            )
+            raise RuntimeError(f"Markdown output path is not a regular file: {path}")
 
         expected_bytes = expected_document.encode("utf-8")
         actual_size = path.stat().st_size
 
         if actual_size != len(expected_bytes):
             raise RuntimeError(
-                "Markdown output size verification failed: "
-                f"path={path} expected={len(expected_bytes)} "
-                f"actual={actual_size}"
+                f"Markdown output size verification failed: path={path} expected={len(expected_bytes)} actual={actual_size}"
             )
 
         actual_document = path.read_text(encoding="utf-8")
@@ -212,8 +203,7 @@ class MarkdownWriter:
                 self._lock(path)
 
                 raise RuntimeError(
-                    "Stale Markdown output could not be removed: "
-                    f"path={path} error={error}"
+                    f"Stale Markdown output could not be removed: path={path} error={error}"
                 ) from error
 
     def _remove_temporary_file(self, path: Path) -> None:
@@ -245,9 +235,7 @@ class MarkdownWriter:
     def _current_path(self, *, url_hash: str, title: str) -> Path:
         """Build the deterministic current Markdown output path."""
 
-        filename = (
-            f"{self._safe_filename(title)}__{url_hash[:12]}.md"
-        )
+        filename = f"{self._safe_filename(title)}__{url_hash[:12]}.md"
         return self.output_dir / filename
 
     def _build_document(
@@ -265,14 +253,9 @@ class MarkdownWriter:
         heading = f"# {safe_title}"
 
         if clean_markdown.startswith(heading):
-            clean_markdown = clean_markdown[len(heading):].strip()
+            clean_markdown = clean_markdown[len(heading) :].strip()
 
-        return (
-            f"{heading}\n\n"
-            f"Original URL: {url}\n\n"
-            "---\n\n"
-            f"{clean_markdown}\n"
-        )
+        return f"{heading}\n\nOriginal URL: {url}\n\n---\n\n{clean_markdown}\n"
 
     def _normalize_url(self, url: str) -> str:
         """Return the canonical URL representation used for file identity."""
@@ -280,9 +263,7 @@ class MarkdownWriter:
         normalized = normalize_url(url)
 
         if normalized is None:
-            raise ValueError(
-                f"URL could not be normalized: {url!r}"
-            )
+            raise ValueError(f"URL could not be normalized: {url!r}")
 
         return normalized
 
@@ -310,9 +291,7 @@ class MarkdownWriter:
         """Make an existing Markdown output read-only."""
 
         if not path.is_file():
-            raise RuntimeError(
-                f"Cannot lock missing Markdown output: {path}"
-            )
+            raise RuntimeError(f"Cannot lock missing Markdown output: {path}")
 
         try:
             os.chmod(path, READ_ONLY_MODE)
@@ -328,9 +307,7 @@ class MarkdownWriter:
             return
 
         if not path.is_file():
-            raise RuntimeError(
-                f"Markdown output path is not a regular file: {path}"
-            )
+            raise RuntimeError(f"Markdown output path is not a regular file: {path}")
 
         try:
             os.chmod(path, WRITE_MODE)

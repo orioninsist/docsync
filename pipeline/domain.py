@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Final, Mapping, TypeAlias
+from collections.abc import Mapping
+from typing import Final, TypeAlias
 
 
 MetadataValue: TypeAlias = str | int | float | bool | None
@@ -99,9 +100,9 @@ class PipelineStageError(PipelineError):
         if not normalized_message:
             raise ValueError("message must not be empty")
 
-        self.stage = normalized_stage
-        self.message = normalized_message
-        self.cause = cause
+        self.stage: str = normalized_stage
+        self.message: str = normalized_message
+        self.cause: BaseException | None = cause
 
         super().__init__(f"{self.stage}: {self.message}")
 

@@ -165,10 +165,13 @@ class CrawlerObservability:
             examples=self.status_examples,
         )
 
-        path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+        _ = path.write_text(
+            "\n".join(lines).rstrip() + "\n",
+            encoding="utf-8",
+        )
 
         json_path = self.logs_dir / "crawl_observability_report.json"
-        json_path.write_text(
+        _ = json_path.write_text(
             json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
             encoding="utf-8",
         )

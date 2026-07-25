@@ -62,6 +62,21 @@ class SkippedPageStatusUpdate:
 class FetchPipeline:
     """Execute the content-ingestion stages for one crawler URL."""
 
+    _config: CrawlerConfig
+    _database: DatabaseManager
+    _fetcher: AsyncFetcher
+    _parser: ContentParser
+    _language: LanguageDetector
+    _dedup: DeduplicationEngine
+    _writer: MarkdownWriter
+    _policy: SmartScopePolicy
+    _page_quality: PageQualityAnalyzer
+    _observability: CrawlerObservability
+    _update_dashboard_step: DashboardStepUpdater
+    _finish_queue_item: QueueItemFinisher
+    _finish_url: UrlFinisher
+    _logger: logging.Logger
+
     def __init__(
         self,
         *,
@@ -157,11 +172,9 @@ class FetchPipeline:
             url,
             cache_headers=cache_headers,
         )
-        final_url_hash, redirect_target_hash = (
-            self._build_fetch_identity(
-                original_url=url,
-                result=result,
-            )
+        final_url_hash, redirect_target_hash = self._build_fetch_identity(
+            original_url=url,
+            result=result,
         )
 
         if not result.not_modified:
@@ -196,14 +209,10 @@ class FetchPipeline:
         original_url: str,
         result: FetchResult,
     ) -> tuple[str, str | None]:
-        final_url_hash = self._dedup.final_url_hash(
-            result.final_url
-        )
-        redirect_target_hash = (
-            self._dedup.redirect_target_hash(
-                original_url=original_url,
-                final_url=result.final_url,
-            )
+        final_url_hash = self._dedup.final_url_hash(result.final_url)
+        redirect_target_hash = self._dedup.redirect_target_hash(
+            original_url=original_url,
+            final_url=result.final_url,
         )
         return final_url_hash, redirect_target_hash
 
@@ -227,11 +236,9 @@ class FetchPipeline:
             url,
             cache_headers={},
         )
-        final_url_hash, redirect_target_hash = (
-            self._build_fetch_identity(
-                original_url=url,
-                result=result,
-            )
+        final_url_hash, redirect_target_hash = self._build_fetch_identity(
+            original_url=url,
+            result=result,
         )
 
         if result.html:
@@ -241,11 +248,7 @@ class FetchPipeline:
                 redirect_target_hash,
             )
 
-        fallback_status = (
-            self._page_quality.status_for_empty_fetch(
-                result.status_code
-            )
-        )
+        fallback_status = self._page_quality.status_for_empty_fetch(result.status_code)
 
         self._finish_empty_refetch_after_not_modified(
             status_update=EmptyRefetchStatusUpdate(
@@ -253,9 +256,7 @@ class FetchPipeline:
                 url_hash=url_hash,
                 final_url=result.final_url,
                 final_url_hash=final_url_hash,
-                redirect_target_hash=(
-                    redirect_target_hash or ""
-                ),
+                redirect_target_hash=(redirect_target_hash or ""),
                 status_code=result.status_code or 0,
                 fallback_status=fallback_status,
                 etag=result.etag,
@@ -317,10 +318,8 @@ class FetchPipeline:
             url=url,
         )
 
-        transport_status = (
-            self._page_quality.detect_transport_quality_issue(
-                result.status_code
-            )
+        transport_status = self._page_quality.detect_transport_quality_issue(
+            result.status_code
         )
 
         if not result.html:
@@ -336,11 +335,9 @@ class FetchPipeline:
             )
             return True
 
-        html_quality_status = (
-            self._page_quality.detect_html_quality_issue(
-                html=result.html,
-                status_code=result.status_code,
-            )
+        html_quality_status = self._page_quality.detect_html_quality_issue(
+            html=result.html,
+            status_code=result.status_code,
         )
 
         if html_quality_status is None:
@@ -371,11 +368,7 @@ class FetchPipeline:
         live: TerminalUIHandle,
     ) -> None:
         self._logger.warning(
-            (
-                "Fetch returned no HTML: "
-                "url=%s final_url=%s status=%s "
-                "mapped_status=%s"
-            ),
+            ("Fetch returned no HTML: url=%s final_url=%s status=%s mapped_status=%s"),
             url,
             result.final_url,
             result.status_code,
@@ -393,16 +386,8 @@ class FetchPipeline:
             last_modified=result.last_modified,
         )
 
-        queue_status = (
-            "done"
-            if status != "error"
-            else "error"
-        )
-        dashboard_status = (
-            "skipped"
-            if status != "error"
-            else "error"
-        )
+        queue_status = "done" if status != "error" else "error"
+        dashboard_status = "skipped" if status != "error" else "error"
 
         self._database.mark_queue_status(
             url_hash,
@@ -478,10 +463,7 @@ class FetchPipeline:
         html = result.html
 
         if html is None:
-            raise RuntimeError(
-                "Validated fetch result unexpectedly "
-                "contains no HTML"
-            )
+            raise RuntimeError("Validated fetch result unexpectedly contains no HTML")
 
         if self._should_skip_non_english(
             html=html,
@@ -503,11 +485,9 @@ class FetchPipeline:
             result.final_url,
         )
 
-        parsed_quality_status = (
-            self._page_quality.detect_parsed_quality_issue(
-                markdown=parsed.markdown,
-                text_content=parsed.text_content,
-            )
+        parsed_quality_status = self._page_quality.detect_parsed_quality_issue(
+            markdown=parsed.markdown,
+            text_content=parsed.text_content,
         )
 
         if parsed_quality_status is None:
@@ -532,12 +512,9 @@ class FetchPipeline:
         html: str,
         final_url: str,
     ) -> bool:
-        return (
-            self._config.require_english
-            and not self._language.is_english(
-                html,
-                final_url,
-            )
+        return self._config.require_english and not self._language.is_english(
+            html,
+            final_url,
         )
 
     def _finish_non_english_page(
@@ -552,8 +529,7 @@ class FetchPipeline:
         live: TerminalUIHandle,
     ) -> None:
         self._logger.info(
-            "Skipped non-English page: "
-            "url=%s final_url=%s",
+            "Skipped non-English page: url=%s final_url=%s",
             url,
             result.final_url,
         )
@@ -587,10 +563,7 @@ class FetchPipeline:
         live: TerminalUIHandle,
     ) -> None:
         self._logger.warning(
-            (
-                "Skipped low quality parsed page: "
-                "url=%s final_url=%s reason=%s title=%s"
-            ),
+            ("Skipped low quality parsed page: url=%s final_url=%s reason=%s title=%s"),
             url,
             result.final_url,
             status,
@@ -660,9 +633,7 @@ class FetchPipeline:
                 status_update=SkippedPageStatusUpdate(
                     url=url,
                     url_hash=url_hash,
-                    status=(
-                        f"policy_{content_policy.decision.value}"
-                    ),
+                    status=(f"policy_{content_policy.decision.value}"),
                     final_url=result.final_url,
                     final_url_hash=final_url_hash,
                     redirect_target_hash=redirect_target_hash,
@@ -721,10 +692,7 @@ class FetchPipeline:
 
         if dedup_result.status in duplicate_statuses:
             self._logger.info(
-                (
-                    "Skipped duplicate page: "
-                    "url=%s final_url=%s duplicate_reason=%s"
-                ),
+                ("Skipped duplicate page: url=%s final_url=%s duplicate_reason=%s"),
                 url,
                 result.final_url,
                 dedup_result.status,
@@ -756,7 +724,7 @@ class FetchPipeline:
             return False
 
         if not self._writer.exists(url=result.final_url):
-            self._writer.write(
+            _ = self._writer.write(
                 url=result.final_url,
                 title=parsed.title,
                 markdown=parsed.markdown,
@@ -811,16 +779,14 @@ class FetchPipeline:
             url=url,
         )
 
-        self._writer.write(
+        _ = self._writer.write(
             url=result.final_url,
             title=parsed.title,
             markdown=parsed.markdown,
         )
 
         status = (
-            "updated"
-            if dedup_result.status == "same_url_changed"
-            else "downloaded"
+            "updated" if dedup_result.status == "same_url_changed" else "downloaded"
         )
 
         self._database.upsert_page(
@@ -846,10 +812,7 @@ class FetchPipeline:
         )
 
         self._logger.info(
-            (
-                "URL processed successfully: "
-                "url=%s final_url=%s status=%s"
-            ),
+            ("URL processed successfully: url=%s final_url=%s status=%s"),
             url,
             result.final_url,
             status,
@@ -885,20 +848,12 @@ class FetchPipeline:
         )
         self._database.mark_queue_status(
             status_update.url_hash,
-            (
-                "done"
-                if status_update.fallback_status != "error"
-                else "error"
-            ),
+            ("done" if status_update.fallback_status != "error" else "error"),
         )
         self._finish_url(
             dashboard,
             live,
-            (
-                "skipped"
-                if status_update.fallback_status != "error"
-                else "error"
-            ),
+            ("skipped" if status_update.fallback_status != "error" else "error"),
             status_update.url,
         )
 

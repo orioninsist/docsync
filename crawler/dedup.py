@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 import xxhash
 
 from crawler.database import DatabaseManager
 from crawler.shared.url_normalizer import normalize_url, url_sha256
-
 
 DedupStatus = Literal[
     "same_url_unchanged",
@@ -32,7 +31,7 @@ class DedupResult:
 
 class DeduplicationEngine:
     def __init__(self, database: DatabaseManager) -> None:
-        self.database = database
+        self.database: DatabaseManager = database
 
     def normalize_url(self, url: str) -> str | None:
         return normalize_url(url)
@@ -75,7 +74,7 @@ class DeduplicationEngine:
         same_url = self.database.get_by_url_hash(url_hash)
 
         if same_url is not None:
-            old_hash = same_url["content_hash"]
+            old_hash = cast(str | None, same_url["content_hash"])
 
             if old_hash == content_hash:
                 return DedupResult(
@@ -89,9 +88,7 @@ class DeduplicationEngine:
             )
 
         if final_url_hash:
-            same_final_url = self.database.get_by_final_url_hash(
-                final_url_hash
-            )
+            same_final_url = self.database.get_by_final_url_hash(final_url_hash)
 
             if same_final_url is not None:
                 return DedupResult(

@@ -106,8 +106,7 @@ def host_is_media_or_social(host: str) -> bool:
     normalized = host.lower().strip().removeprefix("www.")
 
     return normalized in MEDIA_SOCIAL_HOSTS or any(
-        normalized.endswith(f".{blocked_host}")
-        for blocked_host in MEDIA_SOCIAL_HOSTS
+        normalized.endswith(f".{blocked_host}") for blocked_host in MEDIA_SOCIAL_HOSTS
     )
 
 

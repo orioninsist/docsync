@@ -16,7 +16,6 @@ from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Final, Protocol, runtime_checkable
 
-
 _EMPTY_METADATA: Final[Mapping[str, str]] = MappingProxyType({})
 
 
@@ -55,16 +54,12 @@ class ConversionRequest:
             field_name="conversion request media_type",
         )
 
-        if not isinstance(self.content, bytes):
-            raise TypeError("conversion request content must be bytes")
-
         object.__setattr__(self, "source_path", normalized_path)
         object.__setattr__(self, "media_type", normalized_media_type)
 
     @property
     def suffix(self) -> str:
         """Return the normalized source suffix including its leading dot."""
-
         return _normalize_suffix(self.source_path.suffix)
 
 
@@ -80,9 +75,6 @@ class ConversionResult:
     )
 
     def __post_init__(self) -> None:
-        if not isinstance(self.content, str):
-            raise TypeError("conversion result content must be a string")
-
         normalized_media_type = _require_text(
             self.media_type,
             field_name="conversion result media_type",
@@ -119,9 +111,6 @@ class ConverterRegistry:
     _converters_by_suffix: Mapping[str, DocumentConverter]
 
     def __post_init__(self) -> None:
-        if not isinstance(self._converters_by_suffix, Mapping):
-            raise TypeError("converter registry entries must be a mapping")
-
         normalized_entries: dict[str, DocumentConverter] = {}
 
         for raw_suffix, converter in self._converters_by_suffix.items():
@@ -147,7 +136,6 @@ class ConverterRegistry:
         converters: Iterable[DocumentConverter],
     ) -> ConverterRegistry:
         """Build a registry from independent converter plug-ins."""
-
         entries: dict[str, DocumentConverter] = {}
 
         for converter in converters:
@@ -169,17 +157,14 @@ class ConverterRegistry:
     @property
     def supported_suffixes(self) -> tuple[str, ...]:
         """Return all registered suffixes in deterministic order."""
-
         return tuple(sorted(self._converters_by_suffix))
 
     def supports(self, suffix: str) -> bool:
         """Return whether a converter is registered for the suffix."""
-
         return _normalize_suffix(suffix) in self._converters_by_suffix
 
     def resolve(self, suffix: str) -> DocumentConverter:
         """Return the converter registered for the suffix."""
-
         normalized_suffix = _normalize_suffix(suffix)
 
         try:
@@ -191,29 +176,18 @@ class ConverterRegistry:
 
     def convert(self, request: ConversionRequest) -> ConversionResult:
         """Resolve and execute the converter for one request."""
-
-        if not isinstance(request, ConversionRequest):
-            raise TypeError("request must be a ConversionRequest")
-
         converter = self.resolve(request.suffix)
 
         try:
-            result = converter.convert(request)
+            return converter.convert(request)
         except ConversionError:
             raise
         except Exception as error:
-            raise ConverterExecutionError(
-                "converter failed for "
-                f"{request.source_path.as_posix()}: "
-                f"{type(error).__name__}: {error}",
-            ) from error
-
-        if not isinstance(result, ConversionResult):
-            raise ConversionContractError(
-                "converter must return a ConversionResult",
+            message = (
+                f"converter failed for {request.source_path.as_posix()}: "
+                f"{type(error).__name__}: {error}"
             )
-
-        return result
+            raise ConverterExecutionError(message) from error
 
 
 def convert_document(
@@ -222,14 +196,10 @@ def convert_document(
     registry: ConverterRegistry,
 ) -> ConversionResult:
     """Convert one request through an explicitly supplied registry."""
-
-    if not isinstance(registry, ConverterRegistry):
-        raise TypeError("registry must be a ConverterRegistry")
-
     return registry.convert(request)
 
 
-def _validate_converter(converter: DocumentConverter) -> None:
+def _validate_converter(converter: object) -> None:
     if not isinstance(converter, DocumentConverter):
         raise TypeError(
             "converter must implement the DocumentConverter protocol",
@@ -239,9 +209,6 @@ def _validate_converter(converter: DocumentConverter) -> None:
 def _normalize_supported_suffixes(
     suffixes: tuple[str, ...],
 ) -> tuple[str, ...]:
-    if not isinstance(suffixes, tuple):
-        raise TypeError("converter supported_suffixes must be a tuple")
-
     normalized: list[str] = []
     seen: set[str] = set()
 
@@ -265,11 +232,6 @@ def _normalize_supported_suffixes(
 
 
 def _normalize_source_path(path: PurePosixPath) -> PurePosixPath:
-    if not isinstance(path, PurePosixPath):
-        raise TypeError(
-            "conversion request source_path must be a PurePosixPath",
-        )
-
     if path.is_absolute():
         raise ConversionContractError(
             "conversion request source_path must be relative",
@@ -320,9 +282,6 @@ def _normalize_suffix(suffix: str) -> str:
 def _normalize_metadata(
     metadata: Mapping[str, str],
 ) -> Mapping[str, str]:
-    if not isinstance(metadata, Mapping):
-        raise TypeError("conversion result metadata must be a mapping")
-
     normalized: dict[str, str] = {}
 
     for raw_key, raw_value in metadata.items():
@@ -346,9 +305,6 @@ def _normalize_metadata(
 
 
 def _require_text(value: str, *, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field_name} must be a string")
-
     normalized = value.strip()
 
     if not normalized:

@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-import re
+from typing import ClassVar
 
 from bs4 import BeautifulSoup
 from bs4.element import AttributeValueList
 
 
 class PageQualityDetector:
-    """Detect blocked, login-gated, shell, and low-quality page outputs."""
+    """Detect blocked, login-gated, shell, and unusable page outputs."""
 
-    LOGIN_HTTP_STATUS_CODES = {401, 407}
-    BLOCKED_HTTP_STATUS_CODES = {403, 429, 451}
+    LOGIN_HTTP_STATUS_CODES: ClassVar[set[int]] = {401, 407}
+    BLOCKED_HTTP_STATUS_CODES: ClassVar[set[int]] = {403, 429, 451}
 
-    BOT_PROTECTION_PATTERNS = (
+    BOT_PROTECTION_PATTERNS: ClassVar[tuple[str, ...]] = (
         "checking your browser",
         "verify you are human",
         "verify that you are human",
@@ -40,7 +40,7 @@ class PageQualityDetector:
         "distil networks",
     )
 
-    LOGIN_PATTERNS = (
+    LOGIN_PATTERNS: ClassVar[tuple[str, ...]] = (
         "sign in",
         "sign-in",
         "signin",
@@ -66,7 +66,7 @@ class PageQualityDetector:
         "members only",
     )
 
-    JS_REQUIRED_PATTERNS = (
+    JS_REQUIRED_PATTERNS: ClassVar[tuple[str, ...]] = (
         "enable javascript",
         "javascript is required",
         "please enable js",
@@ -75,7 +75,7 @@ class PageQualityDetector:
         "this app works best with javascript",
     )
 
-    LOGIN_FORM_SELECTORS = (
+    LOGIN_FORM_SELECTORS: ClassVar[tuple[str, ...]] = (
         "form[action*='login' i]",
         "form[action*='signin' i]",
         "form[action*='sign-in' i]",
@@ -89,8 +89,9 @@ class PageQualityDetector:
         "button[type='submit']",
     )
 
-    MIN_TEXT_CONTENT_LENGTH = 120
-    MIN_MARKDOWN_LENGTH = 80
+    MIN_TEXT_CONTENT_LENGTH: ClassVar[int] = 120
+    MIN_PARSED_TEXT_LENGTH: ClassVar[int] = 20
+    MIN_PARSED_MARKDOWN_LENGTH: ClassVar[int] = 20
 
     def detect_transport_quality_issue(self, status_code: int | None) -> str | None:
         """Return a transport-level quality issue for known blocking statuses."""
@@ -130,11 +131,7 @@ class PageQualityDetector:
         ):
             return "blocked_or_bot_protected"
 
-        if not has_article_content and self._looks_like_login_required_page(
-            soup,
-            visible_text,
-            normalized_text,
-        ):
+        if not has_article_content and self._looks_like_login_required_page(soup):
             return "login_required"
 
         if not has_article_content and self._contains_any(
@@ -154,20 +151,15 @@ class PageQualityDetector:
         markdown: str,
         text_content: str,
     ) -> str | None:
-        """Return a quality issue detected after parsing HTML into Markdown."""
+        """Return an issue only when parsed content is effectively empty."""
         clean_text = " ".join(text_content.split())
         clean_markdown = markdown.strip()
 
-        if len(clean_text) < self.MIN_TEXT_CONTENT_LENGTH:
+        has_usable_text = len(clean_text) >= self.MIN_PARSED_TEXT_LENGTH
+        has_usable_markdown = len(clean_markdown) >= self.MIN_PARSED_MARKDOWN_LENGTH
+
+        if not has_usable_text and not has_usable_markdown:
             return "low_content"
-
-        if len(clean_markdown) < self.MIN_MARKDOWN_LENGTH:
-            return "low_markdown_quality"
-
-        link_only_score = self._link_only_score(clean_markdown)
-
-        if link_only_score >= 0.85:
-            return "navigation_only"
 
         return None
 
@@ -237,8 +229,6 @@ class PageQualityDetector:
     def _looks_like_login_required_page(
         self,
         soup: BeautifulSoup,
-        _visible_text: str,
-        _normalized_text: str,
     ) -> bool:
         if self._contains_login_form(soup):
             return True
@@ -300,21 +290,6 @@ class PageQualityDetector:
             if self._contains_any(haystack, self.LOGIN_PATTERNS):
                 return True
 
-            has_account_field = form.select_one(
-                "input[name*='email' i], input[name*='username' i], "
-                "input[name*='user' i], input[type='email']"
-            )
-            has_submit = form.select_one(
-                "button[type='submit'], input[type='submit'], button"
-            )
-
-            if (
-                has_account_field is not None
-                and has_submit is not None
-                and self._contains_any(haystack, self.LOGIN_PATTERNS)
-            ):
-                return True
-
         return False
 
     def _looks_like_shell_without_content(
@@ -326,8 +301,12 @@ class PageQualityDetector:
         script_count = len(soup.find_all("script"))
 
         content_nodes = soup.select(
-            "main, article, [role='main'], .content, .documentation, "
-            ".docs-content, .doc-content, .markdown-body, .article-content"
+            "".join(
+                (
+                    "main, article, [role='main'], .content, .documentation, ",
+                    ".docs-content, .doc-content, .markdown-body, .article-content",
+                )
+            )
         )
 
         has_meaningful_content_node = any(
@@ -349,25 +328,6 @@ class PageQualityDetector:
         body_text = body.get_text(" ", strip=True)
 
         return len(body_text) < 40 and script_count > 0
-
-    def _link_only_score(self, markdown: str) -> float:
-        lines = [line.strip() for line in markdown.splitlines() if line.strip()]
-
-        if not lines:
-            return 1.0
-
-        link_like_lines = 0
-
-        for line in lines:
-            if re.fullmatch(r"[-*]?\s*\[[^\]]+\]\([^)]+\)", line):
-                link_like_lines += 1
-                continue
-
-            if re.fullmatch(r"[-*]?\s*https?://\S+", line):
-                link_like_lines += 1
-                continue
-
-        return link_like_lines / len(lines)
 
     def _contains_any(
         self,

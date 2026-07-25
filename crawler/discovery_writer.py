@@ -16,13 +16,7 @@ def host_of(url: str) -> str:
 
 def path_depth(url: str) -> int:
     parsed = urlparse(url)
-    return len(
-        [
-            part
-            for part in parsed.path.strip("/").split("/")
-            if part
-        ]
-    )
+    return len([part for part in parsed.path.strip("/").split("/") if part])
 
 
 def smart_group_title(host: str, group: str) -> str:
@@ -33,12 +27,7 @@ def _build_report_path(seed: str) -> Path:
     report_dir = Path("state/global")
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    seed_key = (
-        host_of(seed)
-        .replace("/", "-")
-        .replace(":", "-")
-        or "site"
-    )
+    seed_key = host_of(seed).replace("/", "-").replace(":", "-") or "site"
 
     return report_dir / f"discovery_coverage_{seed_key}.md"
 
@@ -68,19 +57,13 @@ def _count_block_reasons(
     reason_counts: dict[str, int] = {}
 
     for item in [*blocked, *raw_blocked]:
-        reason_counts[item.reason] = (
-            reason_counts.get(item.reason, 0) + 1
-        )
+        reason_counts[item.reason] = reason_counts.get(item.reason, 0) + 1
 
     return reason_counts
 
 
 def _format_result(item: DiscoveryResult) -> str:
-    return (
-        f"- `{item.url}` "
-        f"score={item.score} "
-        f"reason={item.reason}"
-    )
+    return f"- `{item.url}` score={item.score} reason={item.reason}"
 
 
 def _build_summary_section(
@@ -105,24 +88,15 @@ def _build_summary_section(
         "",
         "## Summary",
         "",
-        (
-            "- Raw candidates discovered: "
-            f"`{len(raw_candidates)}`"
-        ),
+        (f"- Raw candidates discovered: `{len(raw_candidates)}`"),
         f"- Accepted roots: `{len(accepted)}`",
         f"- Review roots: `{len(review)}`",
         f"- Blocked candidates: `{len(blocked)}`",
-        (
-            "- Raw blocked candidates: "
-            f"`{len(raw_blocked)}`"
-        ),
+        (f"- Raw blocked candidates: `{len(raw_blocked)}`"),
         f"- Accepted hosts: `{len(accepted_hosts)}`",
         f"- Review hosts: `{len(review_hosts)}`",
         f"- Blocked hosts: `{len(blocked_hosts)}`",
-        (
-            "- Observed hosts not promoted: "
-            f"`{len(observed_not_promoted)}`"
-        ),
+        (f"- Observed hosts not promoted: `{len(observed_not_promoted)}`"),
     ]
 
 
@@ -157,10 +131,7 @@ def _build_reason_counts_section(
         key=lambda item: (-item[1], item[0]),
     )
 
-    lines.extend(
-        f"- `{reason}`: {count}"
-        for reason, count in sorted_reasons
-    )
+    lines.extend(f"- `{reason}`: {count}" for reason, count in sorted_reasons)
     return lines
 
 
@@ -174,10 +145,7 @@ def _build_observed_hosts_section(
     ]
 
     if observed_not_promoted:
-        lines.extend(
-            f"- `{host}`"
-            for host in observed_not_promoted[:300]
-        )
+        lines.extend(f"- `{host}`" for host in observed_not_promoted[:300])
     else:
         lines.append("_None_")
 
@@ -208,9 +176,7 @@ def _build_coverage_report_lines(
     blocked_hosts = _result_hosts(blocked)
 
     promoted_hosts = accepted_hosts | review_hosts
-    observed_not_promoted = sorted(
-        _raw_hosts(raw_candidates) - promoted_hosts
-    )
+    observed_not_promoted = sorted(_raw_hosts(raw_candidates) - promoted_hosts)
     reason_counts = _count_block_reasons(
         blocked,
         raw_blocked,
@@ -241,17 +207,9 @@ def _build_coverage_report_lines(
             review,
         )
     )
-    lines.extend(
-        _build_reason_counts_section(reason_counts)
-    )
-    lines.extend(
-        _build_observed_hosts_section(
-            observed_not_promoted
-        )
-    )
-    lines.extend(
-        _build_blocked_examples_section(blocked)
-    )
+    lines.extend(_build_reason_counts_section(reason_counts))
+    lines.extend(_build_observed_hosts_section(observed_not_promoted))
+    lines.extend(_build_blocked_examples_section(blocked))
 
     return lines
 
@@ -277,7 +235,7 @@ def write_discovery_coverage_report(
         elapsed=elapsed,
     )
 
-    report_path.write_text(
+    _ = report_path.write_text(
         "\n".join(lines).rstrip() + "\n",
         encoding="utf-8",
     )

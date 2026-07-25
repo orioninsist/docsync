@@ -5,8 +5,9 @@ from __future__ import annotations
 import sqlite3
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Protocol
+from typing import Protocol
 
 from crawler.discovery_result import DiscoveryResult
 from crawler.discovery_scope import (
@@ -34,7 +35,8 @@ DISCOVERY_SCOPE_WIDENING_CONFIRMATIONS = 2
 class DiscoveryScoreResult(Protocol):
     """Structural contract required from discovery URL scorers."""
 
-    score: int
+    @property
+    def score(self) -> int: ...
 
 
 DiscoveryUrlScorer = Callable[[str, str], DiscoveryScoreResult]
@@ -127,12 +129,15 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
             allowed_path_prefix=prefix,
         )
 
-        log(
-            f"       SCOPE {action} "
-            f"previous={previous_prefix or '<none>'} "
-            f"current={prefix} "
-            f"source={source_url}"
+        message = "".join(
+            (
+                f"       SCOPE {action} ",
+                f"previous={previous_prefix or '<none>'} ",
+                f"current={prefix} ",
+                f"source={source_url}",
+            )
         )
+        log(message)
 
     def record_widening_evidence(
         self,
@@ -164,11 +169,14 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
         )
 
         if proposed_prefix is None:
-            log(
-                "       SCOPE unchanged "
-                "reason=insufficient_same_branch_evidence "
-                f"source={source_url}"
+            message = "".join(
+                (
+                    "       SCOPE unchanged ",
+                    "reason=insufficient_same_branch_evidence ",
+                    f"source={source_url}",
+                )
             )
+            log(message)
             return
 
         if self.learned_path_prefix is None:
@@ -185,13 +193,16 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
         )
 
         if merged_prefix is None:
-            log(
-                "       SCOPE unchanged "
-                "reason=unrelated_branch_proposal "
-                f"current={self.learned_path_prefix} "
-                f"proposed={proposed_prefix} "
-                f"source={source_url}"
+            message = "".join(
+                (
+                    "       SCOPE unchanged ",
+                    "reason=unrelated_branch_proposal ",
+                    f"current={self.learned_path_prefix} ",
+                    f"proposed={proposed_prefix} ",
+                    f"source={source_url}",
+                )
             )
+            log(message)
             return
 
         if merged_prefix == self.learned_path_prefix:
@@ -202,14 +213,17 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
             source_url=source_url,
         )
 
-        log(
-            "       SCOPE WIDENING EVIDENCE "
-            f"current={self.learned_path_prefix} "
-            f"proposed={merged_prefix} "
-            f"confirmations={confirmation_count}/"
-            f"{DISCOVERY_SCOPE_WIDENING_CONFIRMATIONS} "
-            f"source={source_url}"
+        message = "".join(
+            (
+                "       SCOPE WIDENING EVIDENCE ",
+                f"current={self.learned_path_prefix} ",
+                f"proposed={merged_prefix} ",
+                f"confirmations={confirmation_count}/",
+                f"{DISCOVERY_SCOPE_WIDENING_CONFIRMATIONS} ",
+                f"source={source_url}",
+            )
         )
+        log(message)
 
         if confirmation_count < DISCOVERY_SCOPE_WIDENING_CONFIRMATIONS:
             return
@@ -245,13 +259,16 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
             )
             return True
         except sqlite3.Error as exc:
-            log(
-                "       DISCOVERY STATE WRITE ERROR "
-                f"type={type(exc).__name__} "
-                f"status={status} "
-                f"url={url} "
-                f"detail={exc}"
+            message = "".join(
+                (
+                    "       DISCOVERY STATE WRITE ERROR ",
+                    f"type={type(exc).__name__} ",
+                    f"status={status} ",
+                    f"url={url} ",
+                    f"detail={exc}",
+                )
             )
+            log(message)
             return False
 
     def record_discovered(self, url: str) -> None:
@@ -311,7 +328,7 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
 
         if not may_use_scope:
             self.add_blocked(clean, scope_reason)
-            self._persist_seen(
+            _ = self._persist_seen(
                 url=clean,
                 depth=depth,
                 status="blocked",
@@ -324,7 +341,7 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
 
         if not policy_result.allowed:
             self.add_blocked(clean, policy_result.reason)
-            self._persist_seen(
+            _ = self._persist_seen(
                 url=clean,
                 depth=depth,
                 status="blocked",
@@ -366,7 +383,7 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
         """Persist queue state without allowing DB errors to crash the run."""
 
         try:
-            discovery_mark_seen(
+            _ = discovery_mark_seen(
                 self.connection,
                 seed_key=self.seed_key,
                 url=url,
@@ -377,13 +394,16 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
             )
             return True
         except sqlite3.Error as exc:
-            log(
-                "       DISCOVERY STATE WRITE ERROR "
-                f"type={type(exc).__name__} "
-                f"status={status} "
-                f"url={url} "
-                f"detail={exc}"
+            message = "".join(
+                (
+                    "       DISCOVERY STATE WRITE ERROR ",
+                    f"type={type(exc).__name__} ",
+                    f"status={status} ",
+                    f"url={url} ",
+                    f"detail={exc}",
+                )
             )
+            log(message)
             return False
 
     def log_progress(self, current_url: str, depth: int) -> None:
@@ -392,17 +412,20 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
         elapsed = max(time.time() - self.started, 1.0)
         speed = self.processed / elapsed
 
-        log(
-            f"       PROGRESS processed={self.processed}/{self.max_pages} "
-            f"queued={len(self.queue)} "
-            f"discovered={len(self.discovered)} "
-            f"good_pages={self.accepted_good} "
-            f"no_new_good={self.no_new_good} "
-            f"blocked={len(self.blocked_results)} "
-            f"depth={depth} "
-            f"scope={self.learned_path_prefix or '<unlearned>'} "
-            f"speed={speed:.2f}/s"
+        message = "".join(
+            (
+                f"       PROGRESS processed={self.processed}/{self.max_pages} ",
+                f"queued={len(self.queue)} ",
+                f"discovered={len(self.discovered)} ",
+                f"good_pages={self.accepted_good} ",
+                f"no_new_good={self.no_new_good} ",
+                f"blocked={len(self.blocked_results)} ",
+                f"depth={depth} ",
+                f"scope={self.learned_path_prefix or '<unlearned>'} ",
+                f"speed={speed:.2f}/s",
+            )
         )
+        log(message)
         log(f"       current={current_url}")
 
     def record_page_quality(
@@ -414,8 +437,7 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
         """Track whether a processed page produced high-value links."""
 
         found_good = any(
-            scorer(self.base_url, candidate).score
-            >= DISCOVERY_MIN_GOOD_SCORE
+            scorer(self.base_url, candidate).score >= DISCOVERY_MIN_GOOD_SCORE
             for candidate in links
         )
 
@@ -435,6 +457,5 @@ class DiscoveryRunState:  # pylint: disable=too-many-instance-attributes
             self.accepted_good >= self.limit
             and self.processed >= quality_floor
             and self.no_new_good >= DISCOVERY_MAX_NO_NEW_GOOD
-            and self.processed
-            >= quality_floor + DISCOVERY_QUALITY_EXTRA_SCAN_PAGES
+            and self.processed >= quality_floor + DISCOVERY_QUALITY_EXTRA_SCAN_PAGES
         )

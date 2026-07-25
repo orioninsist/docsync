@@ -101,7 +101,7 @@ def validate_python_syntax(python_file: Path) -> str | None:
 
     try:
         source = python_file.read_text(encoding="utf-8")
-        compile(source, str(python_file), "exec")
+        _ = compile(source, str(python_file), "exec")
     except (OSError, UnicodeError, SyntaxError) as error:
         return str(error)
 
@@ -170,10 +170,11 @@ def check_source_projects() -> int:
     project_directories = discover_markdown_projects()
 
     if not project_directories:
-        return fail(
+        message = (
             "No dynamically discovered source projects containing "
             "Markdown files were found."
         )
+        return fail(message)
 
     print(f"[OK] Markdown source projects discovered: {len(project_directories)}")
     return 0

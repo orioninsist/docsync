@@ -1,13 +1,15 @@
 """SQLite persistence layer for crawler state."""
+
 # pylint: disable=missing-function-docstring,too-few-public-methods
 
 from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Optional, Sequence, cast
+from typing import cast
 
 from crawler.time_utils import utc_now
 
@@ -34,12 +36,12 @@ class DatabaseManager:
     """Manage crawler SQLite persistence and queue state."""
 
     def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
+        self.db_path: Path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self._lock = threading.RLock()
+        self._lock: threading.RLock = threading.RLock()
 
-        self.connection = sqlite3.connect(
+        self.connection: sqlite3.Connection = sqlite3.connect(
             self.db_path,
             timeout=30.0,
             isolation_level=None,
@@ -54,20 +56,21 @@ class DatabaseManager:
 
     def _configure_connection(self) -> None:
         with self._lock:
-            self.connection.execute("PRAGMA journal_mode=WAL;")
-            self.connection.execute("PRAGMA synchronous=NORMAL;")
-            self.connection.execute("PRAGMA busy_timeout=30000;")
-            self.connection.execute("PRAGMA foreign_keys=ON;")
-            self.connection.execute("PRAGMA temp_store=MEMORY;")
+            _ = self.connection.execute("PRAGMA journal_mode=WAL;")
+            _ = self.connection.execute("PRAGMA synchronous=NORMAL;")
+            _ = self.connection.execute("PRAGMA busy_timeout=30000;")
+            _ = self.connection.execute("PRAGMA foreign_keys=ON;")
+            _ = self.connection.execute("PRAGMA temp_store=MEMORY;")
 
     def _execute_write(self, sql: str, parameters: tuple[object, ...] = ()) -> None:
         with self._lock:
-            self.connection.execute("BEGIN IMMEDIATE;")
+            _ = self.connection.execute("BEGIN IMMEDIATE;")
+
             try:
-                self.connection.execute(sql, parameters)
-                self.connection.execute("COMMIT;")
+                _ = self.connection.execute(sql, parameters)
+                _ = self.connection.execute("COMMIT;")
             except Exception:
-                self.connection.execute("ROLLBACK;")
+                _ = self.connection.execute("ROLLBACK;")
                 raise
 
     def _execute_write_many(
@@ -75,13 +78,15 @@ class DatabaseManager:
         statements: Sequence[tuple[str, tuple[object, ...]]],
     ) -> None:
         with self._lock:
-            self.connection.execute("BEGIN IMMEDIATE;")
+            _ = self.connection.execute("BEGIN IMMEDIATE;")
+
             try:
                 for sql, parameters in statements:
-                    self.connection.execute(sql, parameters)
-                self.connection.execute("COMMIT;")
+                    _ = self.connection.execute(sql, parameters)
+
+                _ = self.connection.execute("COMMIT;")
             except Exception:
-                self.connection.execute("ROLLBACK;")
+                _ = self.connection.execute("ROLLBACK;")
                 raise
 
     def _create_tables(self) -> None:
@@ -135,9 +140,7 @@ class DatabaseManager:
                 (),
             ),
             (
-                "CREATE INDEX IF NOT EXISTS "
-                "idx_pages_redirect_target_hash "
-                "ON pages(redirect_target_hash);",
+                "CREATE INDEX IF NOT EXISTS idx_pages_redirect_target_hash ON pages(redirect_target_hash);",
                 (),
             ),
             (
@@ -153,9 +156,7 @@ class DatabaseManager:
                 (),
             ),
             (
-                "CREATE INDEX IF NOT EXISTS "
-                "idx_url_queue_status_priority "
-                "ON url_queue(status, priority, id);",
+                "CREATE INDEX IF NOT EXISTS idx_url_queue_status_priority ON url_queue(status, priority, id);",
                 (),
             ),
         ]
@@ -168,7 +169,9 @@ class DatabaseManager:
         migrations = {
             "final_url": "ALTER TABLE pages ADD COLUMN final_url TEXT;",
             "final_url_hash": "ALTER TABLE pages ADD COLUMN final_url_hash TEXT;",
-            "redirect_target_hash": "ALTER TABLE pages ADD COLUMN redirect_target_hash TEXT;",
+            "redirect_target_hash": (
+                "ALTER TABLE pages ADD COLUMN redirect_target_hash TEXT;"
+            ),
             "etag": "ALTER TABLE pages ADD COLUMN etag TEXT;",
             "last_modified": "ALTER TABLE pages ADD COLUMN last_modified TEXT;",
         }
@@ -197,15 +200,11 @@ class DatabaseManager:
         statements.extend(
             [
                 (
-                    "CREATE INDEX IF NOT EXISTS "
-                    "idx_url_queue_priority "
-                    "ON url_queue(priority, id);",
+                    "CREATE INDEX IF NOT EXISTS idx_url_queue_priority ON url_queue(priority, id);",
                     (),
                 ),
                 (
-                    "CREATE INDEX IF NOT EXISTS "
-                    "idx_url_queue_status_priority "
-                    "ON url_queue(status, priority, id);",
+                    "CREATE INDEX IF NOT EXISTS idx_url_queue_status_priority ON url_queue(status, priority, id);",
                     (),
                 ),
             ]
@@ -216,9 +215,11 @@ class DatabaseManager:
     def _table_columns(self, table_name: str) -> set[str]:
         with self._lock:
             cursor = self.connection.execute(f"PRAGMA table_info({table_name});")
-            return {str(row["name"]) for row in cursor.fetchall()}
+            rows = cast(list[sqlite3.Row], cursor.fetchall())
 
-    def get_by_url_hash(self, url_hash: str) -> Optional[sqlite3.Row]:
+            return {cast(str, row["name"]) for row in rows}
+
+    def get_by_url_hash(self, url_hash: str) -> sqlite3.Row | None:
         with self._lock:
             cursor = self.connection.execute(
                 """
@@ -231,7 +232,7 @@ class DatabaseManager:
             )
             return cast(sqlite3.Row | None, cursor.fetchone())
 
-    def get_by_final_url_hash(self, final_url_hash: str) -> Optional[sqlite3.Row]:
+    def get_by_final_url_hash(self, final_url_hash: str) -> sqlite3.Row | None:
         with self._lock:
             cursor = self.connection.execute(
                 """
@@ -247,7 +248,7 @@ class DatabaseManager:
     def get_by_redirect_target_hash(
         self,
         redirect_target_hash: str,
-    ) -> Optional[sqlite3.Row]:
+    ) -> sqlite3.Row | None:
         with self._lock:
             cursor = self.connection.execute(
                 """
@@ -260,7 +261,7 @@ class DatabaseManager:
             )
             return cast(sqlite3.Row | None, cursor.fetchone())
 
-    def get_by_content_hash(self, content_hash: str) -> Optional[sqlite3.Row]:
+    def get_by_content_hash(self, content_hash: str) -> sqlite3.Row | None:
         with self._lock:
             cursor = self.connection.execute(
                 """
@@ -273,7 +274,7 @@ class DatabaseManager:
             )
             return cast(sqlite3.Row | None, cursor.fetchone())
 
-    def get_by_canonical_url(self, canonical_url: str) -> Optional[sqlite3.Row]:
+    def get_by_canonical_url(self, canonical_url: str) -> sqlite3.Row | None:
         with self._lock:
             cursor = self.connection.execute(
                 """
@@ -293,12 +294,14 @@ class DatabaseManager:
             return {}
 
         headers: dict[str, str] = {}
+        etag = cast(str | None, row["etag"])
+        last_modified = cast(str | None, row["last_modified"])
 
-        if row["etag"]:
-            headers["If-None-Match"] = str(row["etag"])
+        if etag:
+            headers["If-None-Match"] = etag
 
-        if row["last_modified"]:
-            headers["If-Modified-Since"] = str(row["last_modified"])
+        if last_modified:
+            headers["If-Modified-Since"] = last_modified
 
         return headers
 
@@ -379,7 +382,7 @@ class DatabaseManager:
         now: str,
         content_changed: bool,
     ) -> None:
-        self.connection.execute(
+        _ = self.connection.execute(
             """
             INSERT INTO pages (
                 url,
@@ -421,9 +424,11 @@ class DatabaseManager:
         now: str,
         content_changed: bool,
     ) -> None:
-        last_updated = now if content_changed else existing["last_updated"]
+        last_updated = (
+            now if content_changed else cast(str | None, existing["last_updated"])
+        )
 
-        self.connection.execute(
+        _ = self.connection.execute(
             """
             UPDATE pages
             SET
@@ -466,7 +471,7 @@ class DatabaseManager:
         now = utc_now()
 
         with self._lock:
-            self.connection.execute("BEGIN IMMEDIATE;")
+            _ = self.connection.execute("BEGIN IMMEDIATE;")
 
             try:
                 existing = self._existing_page_by_url_hash(record.url_hash)
@@ -485,10 +490,9 @@ class DatabaseManager:
                         content_changed=content_changed,
                     )
 
-                self.connection.execute("COMMIT;")
-
+                _ = self.connection.execute("COMMIT;")
             except Exception:
-                self.connection.execute("ROLLBACK;")
+                _ = self.connection.execute("ROLLBACK;")
                 raise
 
     def mark_status(self, **page_fields: object) -> None:
@@ -509,10 +513,10 @@ class DatabaseManager:
         priority = self._normalize_priority(priority)
 
         with self._lock:
-            self.connection.execute("BEGIN IMMEDIATE;")
+            _ = self.connection.execute("BEGIN IMMEDIATE;")
 
             try:
-                self.connection.execute(
+                _ = self.connection.execute(
                     """
                     INSERT INTO url_queue (
                         url,
@@ -536,15 +540,13 @@ class DatabaseManager:
                         now,
                     ),
                 )
-                self.connection.execute("COMMIT;")
+                _ = self.connection.execute("COMMIT;")
                 return True
-
             except sqlite3.IntegrityError:
-                self.connection.execute("ROLLBACK;")
+                _ = self.connection.execute("ROLLBACK;")
                 return False
-
             except Exception:
-                self.connection.execute("ROLLBACK;")
+                _ = self.connection.execute("ROLLBACK;")
                 raise
 
     def requeue_url(
@@ -593,7 +595,7 @@ class DatabaseManager:
                 """,
                 (limit,),
             )
-            return list(cursor.fetchall())
+            return cast(list[sqlite3.Row], cursor.fetchall())
 
     def all_queue_url_hashes(self) -> set[str]:
         with self._lock:
@@ -603,7 +605,9 @@ class DatabaseManager:
                 FROM url_queue;
                 """
             )
-            return {str(row["url_hash"]) for row in cursor.fetchall()}
+            rows = cast(list[sqlite3.Row], cursor.fetchall())
+
+            return {cast(str, row["url_hash"]) for row in rows}
 
     def mark_queue_status(self, url_hash: str, status: str) -> None:
         allowed_statuses = {"pending", "processing", "done", "error"}
@@ -635,8 +639,12 @@ class DatabaseManager:
                 WHERE status = 'pending';
                 """
             )
-            row = cursor.fetchone()
-            return int(row["total"] if row else 0)
+            row = cast(sqlite3.Row | None, cursor.fetchone())
+
+            if row is None:
+                return 0
+
+            return cast(int, row["total"])
 
     def queued_count(self) -> int:
         with self._lock:
@@ -646,14 +654,18 @@ class DatabaseManager:
                 FROM url_queue;
                 """
             )
-            row = cursor.fetchone()
-            return int(row["total"] if row else 0)
+            row = cast(sqlite3.Row | None, cursor.fetchone())
+
+            if row is None:
+                return 0
+
+            return cast(int, row["total"])
 
     def reset_interrupted_processing(self) -> int:
         now = utc_now()
 
         with self._lock:
-            self.connection.execute("BEGIN IMMEDIATE;")
+            _ = self.connection.execute("BEGIN IMMEDIATE;")
 
             try:
                 cursor = self.connection.execute(
@@ -664,12 +676,11 @@ class DatabaseManager:
                     """,
                     (now,),
                 )
-                changed = int(cursor.rowcount if cursor.rowcount is not None else 0)
-                self.connection.execute("COMMIT;")
+                changed = cursor.rowcount
+                _ = self.connection.execute("COMMIT;")
                 return changed
-
             except Exception:
-                self.connection.execute("ROLLBACK;")
+                _ = self.connection.execute("ROLLBACK;")
                 raise
 
     def repair_missing_markdown_outputs(self, existing_url_hashes: set[str]) -> int:
@@ -677,7 +688,7 @@ class DatabaseManager:
         repaired = 0
 
         with self._lock:
-            self.connection.execute("BEGIN IMMEDIATE;")
+            _ = self.connection.execute("BEGIN IMMEDIATE;")
 
             try:
                 cursor = self.connection.execute(
@@ -687,16 +698,15 @@ class DatabaseManager:
                     WHERE status = 'done';
                     """
                 )
-
-                rows = cursor.fetchall()
+                rows = cast(list[sqlite3.Row], cursor.fetchall())
 
                 for row in rows:
-                    url_hash = str(row["url_hash"])
+                    url_hash = cast(str, row["url_hash"])
 
                     if url_hash in existing_url_hashes:
                         continue
 
-                    self.connection.execute(
+                    _ = self.connection.execute(
                         """
                         UPDATE url_queue
                         SET status = 'pending', updated_at = ?
@@ -709,11 +719,10 @@ class DatabaseManager:
                     )
                     repaired += 1
 
-                self.connection.execute("COMMIT;")
+                _ = self.connection.execute("COMMIT;")
                 return repaired
-
             except Exception:
-                self.connection.execute("ROLLBACK;")
+                _ = self.connection.execute("ROLLBACK;")
                 raise
 
     def queue_status_counts(self) -> dict[str, int]:
@@ -725,6 +734,7 @@ class DatabaseManager:
                 GROUP BY status;
                 """
             )
+            rows = cast(list[sqlite3.Row], cursor.fetchall())
 
             counts = {
                 "pending": 0,
@@ -733,8 +743,10 @@ class DatabaseManager:
                 "error": 0,
             }
 
-            for row in cursor.fetchall():
-                counts[str(row["status"])] = int(row["total"])
+            for row in rows:
+                status = cast(str, row["status"])
+                total = cast(int, row["total"])
+                counts[status] = total
 
             return counts
 

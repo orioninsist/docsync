@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, TypeAlias, cast
+from typing import TypeAlias, cast
 
 SqlParameter: TypeAlias = str | bytes | int | float | None
 PositionalParameters: TypeAlias = Sequence[SqlParameter]
@@ -63,20 +63,20 @@ def fetch_all(
     parameters: SqlParameters = EMPTY_PARAMETERS,
 ) -> list[sqlite3.Row]:
     cursor = execute_statement(connection, statement, parameters)
-    return cursor.fetchall()
+    return cast(list[sqlite3.Row], cursor.fetchall())
 
 
 def fetch_scalar(
     connection: sqlite3.Connection,
     statement: str,
     parameters: SqlParameters = EMPTY_PARAMETERS,
-) -> Any:
+) -> object:
     row = fetch_one(connection, statement, parameters)
 
     if row is None:
         return None
 
-    return row[0]
+    return cast(object, row[0])
 
 
 def _normalize_statement(statement: str) -> str:

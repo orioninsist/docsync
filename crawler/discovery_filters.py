@@ -6,9 +6,7 @@ from urllib.parse import parse_qsl, urlparse
 
 from crawler.shared.url_policy import BLOCKED_EXTENSIONS, BLOCKED_SCHEMES
 
-DISCOVERY_BLOCKED_FILE_EXTENSIONS: tuple[str, ...] = tuple(
-    extension for extension in BLOCKED_EXTENSIONS if extension != ".xml"
-)
+DISCOVERY_BLOCKED_FILE_EXTENSIONS: tuple[str, ...] = tuple(BLOCKED_EXTENSIONS)
 
 DISCOVERY_BLOCKED_SCHEMES: tuple[str, ...] = tuple(
     f"{scheme}:" for scheme in BLOCKED_SCHEMES

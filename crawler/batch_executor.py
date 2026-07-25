@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import cast
 
 from crawler.config import CrawlerConfig
 from crawler.database import DatabaseManager
 from crawler.progress import RichDashboard
 from crawler.sitemap import SitemapManager
 from crawler.terminal_ui import TerminalUIHandle
-
 
 UrlProcessor = Callable[
     [
@@ -38,10 +38,10 @@ class BatchExecutor:
         process_url: UrlProcessor,
         logger: logging.Logger,
     ) -> None:
-        self._config = config
-        self._database = database
-        self._process_url = process_url
-        self._logger = logger
+        self._config: CrawlerConfig = config
+        self._database: DatabaseManager = database
+        self._process_url: UrlProcessor = process_url
+        self._logger: logging.Logger = logger
 
     async def run(
         self,
@@ -114,9 +114,7 @@ class BatchExecutor:
         batch_page_limit: int,
         batch_number: int,
     ) -> bool:
-        processed_in_batch = (
-            dashboard.processed - processed_at_batch_start
-        )
+        processed_in_batch = dashboard.processed - processed_at_batch_start
 
         if processed_in_batch < batch_page_limit:
             return True
@@ -141,13 +139,9 @@ class BatchExecutor:
         dashboard: RichDashboard,
         processed_at_batch_start: int,
         batch_page_limit: int,
-    ) -> list[Any]:
-        processed_in_batch = (
-            dashboard.processed - processed_at_batch_start
-        )
-        remaining_page_budget = (
-            batch_page_limit - processed_in_batch
-        )
+    ) -> list[sqlite3.Row]:
+        processed_in_batch = dashboard.processed - processed_at_batch_start
+        remaining_page_budget = batch_page_limit - processed_in_batch
 
         if remaining_page_budget <= 0:
             return []
@@ -159,14 +153,14 @@ class BatchExecutor:
         if not pending_rows:
             return []
 
-        return list(pending_rows[:remaining_page_budget])
+        return pending_rows[:remaining_page_budget]
 
     def _refresh_dashboard(
         self,
         *,
         dashboard: RichDashboard,
         live: TerminalUIHandle,
-        pending_rows: list[Any],
+        pending_rows: list[sqlite3.Row],
     ) -> None:
         current_pending = self._database.pending_queue_count()
 
@@ -185,7 +179,7 @@ class BatchExecutor:
     def _build_tasks(
         self,
         *,
-        pending_rows: list[Any],
+        pending_rows: list[sqlite3.Row],
         dashboard: RichDashboard,
         live: TerminalUIHandle,
         sitemap: SitemapManager,
@@ -193,9 +187,9 @@ class BatchExecutor:
         tasks: list[Awaitable[None]] = []
 
         for row in pending_rows:
-            url = str(row["url"])
-            url_hash = str(row["url_hash"])
-            depth = int(row["depth"])
+            url = cast(str, row["url"])
+            url_hash = cast(str, row["url_hash"])
+            depth = cast(int, row["depth"])
 
             self._database.mark_queue_status(
                 url_hash=url_hash,

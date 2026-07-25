@@ -16,6 +16,20 @@ ALLOW_SUFFIX = ".allow.txt"
 SUPPORTED_SUFFIXES = (SEED_SUFFIX, ALLOW_SUFFIX)
 
 
+class DiscoverSitesArgs(argparse.Namespace):
+    """Typed command-line arguments used by the runner."""
+
+    workspace: str | None
+    limit: int
+    show_files: bool
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.workspace = None
+        self.limit = 50
+        self.show_files = False
+
+
 @dataclass(frozen=True, slots=True)
 class SourceWorkspace:
     """A pipeline-visible workspace located below the sources boundary."""
@@ -60,32 +74,33 @@ def positive_integer(value: str) -> int:
     return parsed
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args() -> DiscoverSitesArgs:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description=(
             "Inspect crawler-independent source inventories stored below sources/."
         )
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "workspace",
         nargs="?",
         help=(
             "Source workspace name. When omitted, all available workspaces are listed."
         ),
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--limit",
         type=positive_integer,
         default=50,
         help="Maximum number of URLs to display. Default: 50.",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--show-files",
         action="store_true",
         help="Display seed and allow files used by the selected workspace.",
     )
-    return parser.parse_args()
+    args = DiscoverSitesArgs()
+    return parser.parse_args(namespace=args)
 
 
 def is_supported_control_file(path: Path) -> bool:
@@ -264,11 +279,14 @@ def print_workspace_list(workspaces: tuple[SourceWorkspace, ...]) -> None:
         return
 
     for workspace in workspaces:
-        print(
-            f"{workspace.name:<32} "
-            f"seed={len(workspace.seed_files):>2} "
-            f"allow={len(workspace.allow_files):>2}"
+        message = "".join(
+            (
+                f"{workspace.name:<32} ",
+                f"seed={len(workspace.seed_files):>2} ",
+                f"allow={len(workspace.allow_files):>2}",
+            )
         )
+        print(message)
 
     print()
     print("Next:")
@@ -320,12 +338,13 @@ def print_inventory(
         print(f"{index:>4}  {url}")
 
     hidden_count = len(urls) - len(visible_urls)
+
     if hidden_count > 0:
         print()
         print(f"{hidden_count} additional URL(s) hidden by --limit.")
 
 
-def run(args: argparse.Namespace) -> int:
+def run(args: DiscoverSitesArgs) -> int:
     """Execute the sources-only inventory command."""
     workspaces = discover_workspaces(SOURCES_ROOT)
 

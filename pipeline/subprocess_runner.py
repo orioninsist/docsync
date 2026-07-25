@@ -4,7 +4,7 @@ import os
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
-from typing import Sequence
+from collections.abc import Sequence
 
 
 def _project_root() -> Path:

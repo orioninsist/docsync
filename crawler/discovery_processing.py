@@ -84,10 +84,7 @@ def score_real_discovered_url(
     if candidate_host == base_host:
         score += 1
 
-    if (
-        candidate_host.endswith(f".{base_host}")
-        and candidate_host != base_host
-    ):
+    if candidate_host.endswith(f".{base_host}") and candidate_host != base_host:
         score += 1
 
     if path:
@@ -132,7 +129,7 @@ async def process_queue_item(
     """Process one queued URL and report whether traversal should continue."""
 
     if item.depth > DISCOVERY_MAX_DEFAULT_DEPTH:
-        state.mark_status(
+        _ = state.mark_status(
             item.url,
             "depth_limited",
             "max_depth_reached",
@@ -147,7 +144,7 @@ async def process_queue_item(
         html = await fetch_text(session, item.url)
 
         if not html:
-            state.mark_status(
+            _ = state.mark_status(
                 item.url,
                 "fetch_empty",
                 "no_html_or_blocked_fetch",
@@ -173,13 +170,17 @@ async def process_queue_item(
 
         if state.saturated():
             log(
-                "       Quality saturation reached. "
-                "Stopping discovery because no new "
-                "high-value URLs were found."
+                " ".join(
+                    (
+                        "       Quality saturation reached.",
+                        "Stopping discovery because no new",
+                        "high-value URLs were found.",
+                    )
+                )
             )
             return False
 
-        state.mark_status(
+        _ = state.mark_status(
             item.url,
             "processed",
             f"links_extracted:{len(links)}",
@@ -201,14 +202,18 @@ async def process_queue_item(
         UnicodeError,
         ValueError,
     ) as exc:
-        state.mark_status(
+        _ = state.mark_status(
             item.url,
             "processing_error",
             type(exc).__name__,
         )
         log(
-            f"       PROCESS ERROR type={type(exc).__name__} "
-            f"url={item.url} "
-            f"detail={exc}"
+            " ".join(
+                (
+                    f"       PROCESS ERROR type={type(exc).__name__}",
+                    f"url={item.url}",
+                    f"detail={exc}",
+                )
+            )
         )
         return True

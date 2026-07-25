@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import os
 import stat
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from pipeline.constants import READ_ONLY_MODE, WRITE_MODE
 from pipeline.paths import SOURCES_ROOT
@@ -120,10 +120,11 @@ def _validate_sources_directory_layout(project_directory: Path) -> None:
     if project_directory.parent == sources_root:
         return
 
-    raise DocumentWorkspaceError(
-        "Source project directory must be a direct child of "
-        f"{sources_root}: {project_directory}"
+    message = (
+        f"Source project directory must be a direct child of {sources_root}: "
+        f"{project_directory}"
     )
+    raise DocumentWorkspaceError(message)
 
 
 def _validate_removable_file(path: Path) -> None:

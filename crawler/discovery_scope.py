@@ -20,11 +20,7 @@ def branch_support_count(
 ) -> int:
     """Count unique real paths contained by one candidate branch."""
 
-    return sum(
-        1
-        for path in real_paths
-        if path_is_inside_prefix(path, branch_prefix)
-    )
+    return sum(1 for path in real_paths if path_is_inside_prefix(path, branch_prefix))
 
 
 def infer_scope_prefix_from_real_links(
@@ -94,10 +90,7 @@ def build_discovery_policy(
 
     return SmartScopePolicy(
         start_url=base_url,
-        allowed_path_prefix=(
-            allowed_path_prefix
-            or discovery_path_prefix(base_url)
-        ),
+        allowed_path_prefix=(allowed_path_prefix or discovery_path_prefix(base_url)),
     )
 
 

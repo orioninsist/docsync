@@ -5,7 +5,8 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Sequence
+from collections.abc import Sequence
+from typing import Final
 
 PIPELINE_DIRECTORY: Final = Path(__file__).resolve().parent
 

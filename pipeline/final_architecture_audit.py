@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Sequence
+from typing import Final
 
 PIPELINE_DIRECTORY: Final = Path(__file__).resolve().parent
 
@@ -83,7 +84,6 @@ class ParsedModule:
 
 def main() -> int:
     """Run all final architecture checks."""
-
     modules = load_modules(PIPELINE_DIRECTORY)
     violations = collect_violations(modules)
     print_report(modules, violations)
@@ -93,7 +93,6 @@ def main() -> int:
 
 def load_modules(directory: Path) -> tuple[ParsedModule, ...]:
     """Parse every Python module below the pipeline directory."""
-
     return tuple(
         parse_module(path)
         for path in sorted(directory.rglob("*.py"))
@@ -103,7 +102,6 @@ def load_modules(directory: Path) -> tuple[ParsedModule, ...]:
 
 def parse_module(path: Path) -> ParsedModule:
     """Read and parse one UTF-8 Python source file."""
-
     source = path.read_text(encoding="utf-8")
 
     return ParsedModule(
@@ -117,7 +115,6 @@ def collect_violations(
     modules: Sequence[ParsedModule],
 ) -> tuple[Violation, ...]:
     """Collect every supported architectural violation."""
-
     violations: list[Violation] = []
 
     for module in modules:
@@ -132,7 +129,6 @@ def find_direct_sql_violations(
     module: ParsedModule,
 ) -> tuple[Violation, ...]:
     """Find direct SQLite operations outside approved persistence modules."""
-
     if module.path.name in SQL_ALLOWED_FILE_NAMES:
         return ()
 
@@ -150,7 +146,6 @@ def find_direct_sql_violations(
 
 def is_direct_sql_call(node: ast.Call) -> bool:
     """Return whether a call is a likely direct SQLite operation."""
-
     if not isinstance(node.func, ast.Attribute):
         return False
 
@@ -163,7 +158,6 @@ def is_direct_sql_call(node: ast.Call) -> bool:
 
 def root_receiver_name(node: ast.AST) -> str | None:
     """Resolve the left-most receiver name of an attribute expression."""
-
     current = node
 
     while isinstance(current, ast.Attribute):
@@ -179,7 +173,6 @@ def find_unused_private_definitions(
     module: ParsedModule,
 ) -> tuple[Violation, ...]:
     """Find private top-level definitions with no references in their module."""
-
     reference_counts = collect_name_references(module.tree)
     definitions = top_level_private_definitions(module.tree)
 
@@ -197,7 +190,6 @@ def find_unused_private_definitions(
 
 def collect_name_references(tree: ast.Module) -> Counter[str]:
     """Count loaded names and attribute references in one module."""
-
     counts: Counter[str] = Counter()
 
     for node in ast.walk(tree):
@@ -213,7 +205,6 @@ def top_level_private_definitions(
     tree: ast.Module,
 ) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, ...]:
     """Return non-dunder private definitions declared at module level."""
-
     definition_types = (
         ast.FunctionDef,
         ast.AsyncFunctionDef,
@@ -233,7 +224,6 @@ def find_commented_code(
     module: ParsedModule,
 ) -> tuple[Violation, ...]:
     """Find comments that strongly resemble disabled Python statements."""
-
     violations: list[Violation] = []
 
     for line_number, line in enumerate(module.lines, start=1):
@@ -257,7 +247,6 @@ def find_commented_code(
 
 def normalized_comment_content(line: str) -> str | None:
     """Return normalized comment content or None for non-comment lines."""
-
     stripped = line.lstrip()
 
     if not stripped.startswith("#"):
@@ -269,7 +258,6 @@ def normalized_comment_content(line: str) -> str | None:
 
 def resembles_commented_code(content: str) -> bool:
     """Return whether comment content resembles disabled Python code."""
-
     if content.startswith(COMMENTED_CODE_PREFIXES):
         return True
 
@@ -278,7 +266,6 @@ def resembles_commented_code(content: str) -> bool:
 
 def resembles_assignment(content: str) -> bool:
     """Return whether comment content resembles a simple assignment."""
-
     if "=" not in content:
         return False
 
@@ -294,7 +281,6 @@ def violation_sort_key(
     violation: Violation,
 ) -> tuple[str, int, str]:
     """Return deterministic ordering for violations."""
-
     return (
         violation.path.as_posix(),
         violation.line,
@@ -307,7 +293,6 @@ def print_report(
     violations: Sequence[Violation],
 ) -> None:
     """Print a concise final architecture report."""
-
     print("FINAL PIPELINE ARCHITECTURE AUDIT")
     print("=" * 100)
     print(f"SCANNED MODULES: {len(modules)}")
@@ -322,10 +307,11 @@ def print_report(
 
     for violation in violations:
         relative_path = violation.path.relative_to(PIPELINE_DIRECTORY.parent)
-        print(
+        message = (
             f"{relative_path}:{violation.line}: "
             f"{violation.category}: {violation.detail}"
         )
+        print(message)
 
     print()
     print("RESULT: VIOLATIONS FOUND")

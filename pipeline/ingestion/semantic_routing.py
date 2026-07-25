@@ -75,20 +75,9 @@ class SemanticRoutingRequest:
     def __post_init__(self) -> None:
         """Validate routing input and candidate uniqueness."""
 
-        if not isinstance(self.document, IngestionDocument):
-            raise TypeError("document must be an IngestionDocument")
-
-        if not isinstance(self.candidates, tuple):
-            raise TypeError("candidates must be a tuple")
-
         candidate_identities: set[str] = set()
 
         for candidate in self.candidates:
-            if not isinstance(candidate, IngestionDocument):
-                raise TypeError(
-                    "candidate entries must be IngestionDocument instances",
-                )
-
             if candidate.identity == self.document.identity:
                 raise SemanticRoutingError(
                     "candidates must not contain the routed document",
@@ -125,23 +114,12 @@ class SemanticRoutingResult:
             field_name="route_key",
         )
 
-        if not isinstance(self.category, RoutingCategory):
-            raise TypeError("category must be a RoutingCategory")
-
-        if isinstance(self.priority, bool) or not isinstance(self.priority, int):
+        if isinstance(self.priority, bool):
             raise TypeError("priority must be an integer")
 
         if self.priority < 1:
             raise SemanticRoutingError(
                 "priority must be greater than zero",
-            )
-
-        if not isinstance(self.isolated, bool):
-            raise TypeError("isolated must be a boolean")
-
-        if not isinstance(self.related_document_identities, tuple):
-            raise TypeError(
-                "related_document_identities must be a tuple",
             )
 
         normalized_related = _normalize_related_identities(
@@ -165,30 +143,11 @@ class SemanticRoutingService:
     similarity_service: SemanticSimilarityService
     routing: RoutingConfig
 
-    def __post_init__(self) -> None:
-        """Validate injected routing dependencies."""
-
-        if not isinstance(
-            self.similarity_service,
-            SemanticSimilarityService,
-        ):
-            raise TypeError(
-                "similarity_service must be a SemanticSimilarityService",
-            )
-
-        if not isinstance(self.routing, RoutingConfig):
-            raise TypeError("routing must be a RoutingConfig")
-
     def route(
         self,
         request: SemanticRoutingRequest,
     ) -> SemanticRoutingResult:
         """Classify a document and discover related sibling documents."""
-
-        if not isinstance(request, SemanticRoutingRequest):
-            raise TypeError(
-                "request must be a SemanticRoutingRequest",
-            )
 
         category = classify_document(request.document)
         related_identities = self._find_related_siblings(request)
@@ -234,9 +193,6 @@ class SemanticRoutingService:
 
 def classify_document(document: IngestionDocument) -> RoutingCategory:
     """Return a deterministic category from immutable document content."""
-
-    if not isinstance(document, IngestionDocument):
-        raise TypeError("document must be an IngestionDocument")
 
     normalized_filename = document.source_path.name.casefold()
 
@@ -345,9 +301,6 @@ def _normalize_related_identities(
 
 
 def _require_text(value: str, *, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field_name} must be a string")
-
     normalized = value.strip()
 
     if not normalized:

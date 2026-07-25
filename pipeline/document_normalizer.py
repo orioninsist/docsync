@@ -90,7 +90,7 @@ class DocumentNormalizer:
     def __init__(self, policy: NormalizationPolicy | None = None) -> None:
         """Initialize the normalizer with immutable policy rules."""
 
-        self._policy = policy or NormalizationPolicy()
+        self._policy: NormalizationPolicy = policy or NormalizationPolicy()
 
     @property
     def policy(self) -> NormalizationPolicy:

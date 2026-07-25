@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from html import unescape
-from typing import Any
 from urllib.parse import parse_qs, urlparse
+from xml.etree.ElementTree import Element
 
 from crawler.shared.language_policy import (
     ENGLISH_PATH_HINTS,
@@ -16,10 +17,10 @@ from crawler.shared.language_policy import (
 
 def english_candidates_from_sitemap_url_node(
     *,
-    url_node: Any,
+    url_node: Element,
     fallback_url: str,
     require_english: bool,
-    strip_namespace: Any,
+    strip_namespace: Callable[[str], str],
 ) -> set[str]:
     """Return sitemap URL candidates after English alternate selection."""
 
@@ -41,9 +42,9 @@ def english_candidates_from_sitemap_url_node(
 
 
 def english_alternates(
-    url_node: Any,
+    url_node: Element,
     *,
-    strip_namespace: Any,
+    strip_namespace: Callable[[str], str],
 ) -> tuple[set[str], bool]:
     """Return English alternate hrefs and whether language alternates exist."""
 
@@ -57,7 +58,9 @@ def english_alternates(
         href = english_alternate_href(child)
 
         if href is None:
-            has_language_alternates = is_alternate_link(child)
+            has_language_alternates = has_language_alternates or is_alternate_link(
+                child
+            )
             continue
 
         has_language_alternates = True
@@ -66,14 +69,14 @@ def english_alternates(
     return alternate_urls, has_language_alternates
 
 
-def english_alternate_href(child: Any) -> str | None:
+def english_alternate_href(child: Element) -> str | None:
     """Return href when an alternate sitemap link targets English."""
 
     if not is_alternate_link(child):
         return None
 
-    hreflang = str(child.attrib.get("hreflang", "")).strip().lower()
-    href = str(child.attrib.get("href", "")).strip()
+    hreflang = child.attrib.get("hreflang", "").strip().lower()
+    href = child.attrib.get("href", "").strip()
 
     if hreflang_is_english(hreflang) and href:
         return unescape(href)
@@ -81,11 +84,11 @@ def english_alternate_href(child: Any) -> str | None:
     return None
 
 
-def is_alternate_link(child: Any) -> bool:
+def is_alternate_link(child: Element) -> bool:
     """Return True for sitemap alternate language links."""
 
-    rel = str(child.attrib.get("rel", "")).strip().lower()
-    hreflang = str(child.attrib.get("hreflang", "")).strip().lower()
+    rel = child.attrib.get("rel", "").strip().lower()
+    hreflang = child.attrib.get("hreflang", "").strip().lower()
 
     return rel == "alternate" and bool(hreflang)
 

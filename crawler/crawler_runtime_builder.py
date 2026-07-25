@@ -40,16 +40,16 @@ class CrawlerRuntimeBuilder:
         normalize_english_candidate_url: Callable[[str], str | None],
         logger: logging.Logger,
     ) -> None:
-        self._config = config
-        self._database = database
-        self._robots = robots
-        self._dedup = dedup
-        self._observability = observability
-        self._claim_url_ownership = claim_url_ownership
-        self._normalize_english_candidate_url = (
+        self._config: CrawlerConfig = config
+        self._database: DatabaseManager = database
+        self._robots: RobotsManager = robots
+        self._dedup: DeduplicationEngine = dedup
+        self._observability: CrawlerObservability = observability
+        self._claim_url_ownership: Callable[[str], bool] = claim_url_ownership
+        self._normalize_english_candidate_url: Callable[[str], str | None] = (
             normalize_english_candidate_url
         )
-        self._logger = logger
+        self._logger: logging.Logger = logger
 
     async def build(self) -> CrawlerRunRuntime:
         """Prepare all state required by the crawl execution stage."""
@@ -81,9 +81,7 @@ class CrawlerRuntimeBuilder:
         if not self._config.use_sitemap_discovery:
             return sitemap_urls
 
-        timeout_seconds = (
-            self._config.sitemap_discovery_timeout_seconds
-        )
+        timeout_seconds = self._config.sitemap_discovery_timeout_seconds
 
         self._logger.info(
             "Starting sitemap discovery with timeout=%ss",
@@ -108,10 +106,7 @@ class CrawlerRuntimeBuilder:
                 timeout_seconds,
             )
             print(
-                (
-                    "Sitemap discovery timed out. "
-                    "Falling back to exact start URL."
-                ),
+                ("Sitemap discovery timed out. Falling back to exact start URL."),
                 flush=True,
             )
             return sitemap_urls
@@ -168,8 +163,7 @@ class CrawlerRuntimeBuilder:
                 continue
 
             message = (
-                "Seed URL blocked by robots.txt; it will not be queued: "
-                f"url={seed_url}"
+                f"Seed URL blocked by robots.txt; it will not be queued: url={seed_url}"
             )
             print(message, flush=True)
             self._logger.warning(message)
@@ -185,9 +179,7 @@ class CrawlerRuntimeBuilder:
             if url_hash[:12] in existing_hashes
         }
 
-        repaired = self._database.repair_missing_markdown_outputs(
-            full_hashes
-        )
+        repaired = self._database.repair_missing_markdown_outputs(full_hashes)
 
         if repaired:
             self._logger.info(
@@ -270,16 +262,11 @@ class CrawlerRuntimeBuilder:
             if url is None:
                 self._observability.record_official_rejected(
                     url=raw_url,
-                    reason=(
-                        "non_english_or_invalid_seed_url_before_enqueue"
-                    ),
+                    reason="non_english_or_invalid_seed_url_before_enqueue",
                 )
                 continue
 
-            if (
-                self._database.queued_count()
-                >= self._config.max_queue_size
-            ):
+            if self._database.queued_count() >= self._config.max_queue_size:
                 self._logger.warning(
                     (
                         "Max queue size reached while enqueueing seed URLs: "

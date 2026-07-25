@@ -16,8 +16,6 @@ from typing import Final
 from urllib.parse import urldefrag, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
-from bs4.element import Tag
-
 from markdownify import markdownify as _markdownify
 
 _EMPTY_LINE_PATTERN: Final[re.Pattern[str]] = re.compile(r"\n{3,}")
@@ -158,9 +156,6 @@ def _remove_noise(soup: BeautifulSoup) -> None:
 def _absolutize_links(soup: BeautifulSoup, base_url: str) -> None:
     """Convert relative href/src attributes to absolute parser-safe URLs."""
     for tag in soup.find_all(True):
-        if not isinstance(tag, Tag):
-            continue
-
         for attribute in ("href", "src"):
             value = tag.get(attribute)
             if not isinstance(value, str):

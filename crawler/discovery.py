@@ -9,8 +9,9 @@ module directly.
 
 from __future__ import annotations
 
-from typing import Any
 from urllib.parse import parse_qsl, urlparse
+
+import aiohttp
 
 from crawler.discovery_report import write_discovery_coverage_report
 from crawler.discovery_score import (
@@ -78,7 +79,7 @@ def _redirect_param_targets(raw_url: str) -> list[str]:
 
 
 async def _probe_final_working_root(
-    session: Any,
+    session: aiohttp.ClientSession,
     *,
     seed_url: str,
     raw_url: str,
@@ -86,6 +87,7 @@ async def _probe_final_working_root(
     """Return the promoted root of a reachable URL."""
 
     normalized = normalize_candidate_url(raw_url)
+
     if not normalized:
         return None
 
@@ -105,7 +107,7 @@ async def _probe_final_working_root(
 
 
 async def _probe_redirect_final_roots(
-    session: Any,
+    session: aiohttp.ClientSession,
     *,
     seed_url: str,
     raw_urls: list[str],
@@ -123,6 +125,7 @@ async def _probe_redirect_final_roots(
                 seed_url=seed_url,
                 raw_url=candidate_url,
             )
+
             if root is not None:
                 roots.add(root)
 
@@ -144,12 +147,7 @@ def extract_real_urls_from_html(html: str, base_url: str) -> list[str]:
 def _fallback_discovery_candidates(seed_url: str) -> list[str]:
     """Return the canonical seed when network discovery cannot finish."""
 
-    normalized_seed = normalize_candidate_url(seed_url)
-
-    if normalized_seed is None:
-        return []
-
-    return [normalized_seed]
+    return [normalize_candidate_url(seed_url)]
 
 
 async def discover(
@@ -159,8 +157,6 @@ async def discover(
     include_review: bool = False,
 ) -> tuple[list[DiscoveryResult], list[DiscoveryResult], list[DiscoveryResult]]:
     """Run legacy asynchronous discovery and classify scored candidates."""
-
-    import aiohttp
 
     from crawler.discovery_engine import recursive_bfs_discovery_candidates
 
@@ -193,18 +189,11 @@ async def discover(
         candidates = _fallback_discovery_candidates(seed_url)
         blocked = []
 
-    scored = [
-        score_discovered_url(seed_url, candidate)
-        for candidate in candidates
-    ]
+    scored = [score_discovered_url(seed_url, candidate) for candidate in candidates]
     scored.sort(key=lambda item: (-item.score, item.url))
 
     accepted = [item for item in scored if item.score >= 2]
-    review = [
-        item
-        for item in scored
-        if item.score < 2 and include_review
-    ]
+    review = [item for item in scored if item.score < 2 and include_review]
 
     return accepted[:limit], blocked, review[:limit]
 

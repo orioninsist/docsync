@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
@@ -33,36 +33,82 @@ class RunSummaryDashboard(Protocol):
     @property
     def processed(self) -> int:
         """Return the number of processed URLs."""
+        ...
 
-    downloaded: int
-    skipped: int
-    duplicates: int
-    errors: int
+    @property
+    def downloaded(self) -> int:
+        """Return the number of downloaded URLs."""
+        ...
+
+    @property
+    def skipped(self) -> int:
+        """Return the number of skipped URLs."""
+        ...
+
+    @property
+    def duplicates(self) -> int:
+        """Return the number of duplicate URLs."""
+        ...
+
+    @property
+    def errors(self) -> int:
+        """Return the number of failed URLs."""
+        ...
 
 
 class RunSummaryQueueCounts(Protocol):
     """Queue values needed by the final summary."""
 
-    queued: int
-    done: int
-    pending: int
-    processing: int
-    errors: int
+    @property
+    def queued(self) -> int:
+        """Return the total number of queued URLs."""
+        ...
+
+    @property
+    def done(self) -> int:
+        """Return the number of completed queue items."""
+        ...
+
+    @property
+    def pending(self) -> int:
+        """Return the number of pending queue items."""
+        ...
+
+    @property
+    def processing(self) -> int:
+        """Return the number of processing queue items."""
+        ...
+
+    @property
+    def errors(self) -> int:
+        """Return the number of failed queue items."""
+        ...
 
 
 class RunSummaryPaths(Protocol):
     """Filesystem paths needed by the final summary."""
 
-    output_dir: Path
-    db_path: Path
-    log_file: Path
+    @property
+    def output_dir(self) -> Path:
+        """Return the crawler output directory."""
+        ...
+
+    @property
+    def db_path(self) -> Path:
+        """Return the crawler database path."""
+        ...
+
+    @property
+    def log_file(self) -> Path:
+        """Return the crawler log file path."""
+        ...
 
 
 class TerminalUI:
     """Own all crawler terminal presentation and Rich Live lifecycle."""
 
     def __init__(self, console: Console | None = None) -> None:
-        self._console = console or Console(force_terminal=True)
+        self._console: Console = console or Console(force_terminal=True)
 
     @contextmanager
     def open(
@@ -70,7 +116,7 @@ class TerminalUI:
         dashboard: RichDashboard,
         *,
         refresh_per_second: int,
-    ) -> Iterator[TerminalUIHandle]:
+    ) -> Generator[TerminalUIHandle]:
         """Open one persistent Rich Live display for a crawl operation."""
 
         with self._suspend_console_logging():
@@ -110,9 +156,7 @@ class TerminalUI:
 
         pending_count = queue_status_counts.get("pending", 0)
         estimated_batches = (
-            math.ceil(pending_count / max(max_pages, 1))
-            if pending_count > 0
-            else 0
+            math.ceil(pending_count / max(max_pages, 1)) if pending_count > 0 else 0
         )
 
         lines = [
@@ -122,20 +166,14 @@ class TerminalUI:
             f"Queue pending: {pending_count}",
             f"Queue done: {queue_status_counts.get('done', 0)}",
             f"Queue error: {queue_status_counts.get('error', 0)}",
-            (
-                "Interrupted items restored to pending: "
-                f"{interrupted_items_restored}"
-            ),
+            f"Interrupted items restored to pending: {interrupted_items_restored}",
             (
                 "Missing Markdown outputs restored to pending: "
                 f"{missing_markdown_outputs_restored}"
             ),
             f"Recursive discovery: {recursive_discovery}",
             f"Max pages per batch: {max_pages}",
-            (
-                "Auto continue until complete: "
-                f"{auto_continue_until_complete}"
-            ),
+            f"Auto continue until complete: {auto_continue_until_complete}",
             f"Estimated batches: {estimated_batches}",
             f"Max auto batches: {max_auto_batches}",
             f"Pause between batches: {batch_pause_seconds}s",
@@ -159,10 +197,7 @@ class TerminalUI:
             title="Runtime Progress",
             lines=[
                 "Single-table terminal progress is enabled.",
-                (
-                    "Crawler activity remains inside one persistent "
-                    "Rich Live dashboard."
-                ),
+                "Crawler activity remains inside one persistent Rich Live dashboard.",
             ],
         )
 
@@ -178,10 +213,7 @@ class TerminalUI:
 
         lines = [
             f"This command processed: {dashboard.processed}",
-            (
-                "This command downloaded/updated/restored: "
-                f"{dashboard.downloaded}"
-            ),
+            f"This command downloaded/updated/restored: {dashboard.downloaded}",
             f"This command skipped: {dashboard.skipped}",
             f"This command duplicates: {dashboard.duplicates}",
             f"This command errors: {dashboard.errors}",
@@ -197,16 +229,11 @@ class TerminalUI:
         ]
 
         if queue_counts.pending > 0:
-            remaining_runs = math.ceil(
-                queue_counts.pending / max(max_pages, 1)
-            )
+            remaining_runs = math.ceil(queue_counts.pending / max(max_pages, 1))
             lines.extend(
                 [
                     "STATUS: INCOMPLETE - QUEUE STILL HAS PENDING URLS",
-                    (
-                        "Approximate additional batch count: "
-                        f"{remaining_runs}"
-                    ),
+                    f"Approximate additional batch count: {remaining_runs}",
                     (
                         "If auto_continue_until_complete is true and this "
                         "message still appears, the stop reason is usually "
@@ -280,7 +307,7 @@ class TerminalUI:
         self._console.print()
 
     @contextmanager
-    def _suspend_console_logging(self) -> Iterator[None]:
+    def _suspend_console_logging(self) -> Generator[None]:
         """
         Temporarily detach terminal logging handlers.
 
@@ -288,9 +315,7 @@ class TerminalUI:
         the complete execution history while Rich Live owns the terminal.
         """
 
-        suspended_handlers: list[
-            tuple[logging.Logger, logging.Handler]
-        ] = []
+        suspended_handlers: list[tuple[logging.Logger, logging.Handler]] = []
 
         for logger in self._iter_loggers():
             for handler in tuple(logger.handlers):
@@ -308,9 +333,9 @@ class TerminalUI:
 
     @staticmethod
     def _is_console_handler(handler: logging.Handler) -> bool:
-        return (
-            isinstance(handler, logging.StreamHandler)
-            and not isinstance(handler, logging.FileHandler)
+        return isinstance(handler, logging.StreamHandler) and not isinstance(
+            handler,
+            logging.FileHandler,
         )
 
     @staticmethod

@@ -63,7 +63,7 @@ def extract_links(
 
 def extract_real_urls_from_html(
     html: str,
-    base_url: str,
+    _base_url: str,
     *,
     normalize: NormalizeUrl,
 ) -> list[str]:

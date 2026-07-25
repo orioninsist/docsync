@@ -109,5 +109,3 @@ def normalize_joined_url(base_url: str, candidate_url: str) -> str | None:
     clean_url, _fragment = urldefrag(joined)
 
     return normalize_url(clean_url)
-
-

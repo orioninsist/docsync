@@ -11,9 +11,11 @@ from crawler.config import CrawlerConfig
 
 class RobotsManager:
     def __init__(self, config: CrawlerConfig) -> None:
-        self.config = config
-        self.parser = urllib.robotparser.RobotFileParser()
-        self.robots_url = self._build_robots_url(config.start_url)
+        self.config: CrawlerConfig = config
+        self.parser: urllib.robotparser.RobotFileParser = (
+            urllib.robotparser.RobotFileParser()
+        )
+        self.robots_url: str = self._build_robots_url(config.start_url)
 
         self.sitemaps: list[str] = []
         self.crawl_delay: float | None = None

@@ -7,6 +7,7 @@ import argparse
 import hashlib
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from pipeline.merge_engine import MergePlan, MergeSource, create_merge_plan
 from pipeline.output_writer import (
@@ -39,11 +40,12 @@ def parse_arguments(arguments: Sequence[str] | None = None) -> argparse.Namespac
     parser = argparse.ArgumentParser(
         description="Create deterministic merged Markdown outputs."
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "project_directory",
         type=Path,
         help="Resolved sources/<project_name> directory.",
     )
+
     return parser.parse_args(arguments)
 
 
@@ -60,10 +62,11 @@ def resolve_project_directory(candidate: Path) -> Path:
         raise MergeServiceError(f"Project path is not a directory: {project_directory}")
 
     if project_directory.parent.name != SOURCES_DIRECTORY_NAME:
-        raise MergeServiceError(
-            "Merge input must be a project directory directly under "
+        message = (
+            f"Merge input must be a project directory directly under "
             f"'{SOURCES_DIRECTORY_NAME}': {project_directory}"
         )
+        raise MergeServiceError(message)
 
     return project_directory
 
@@ -116,6 +119,7 @@ def extract_document_title(content: str, fallback: str) -> str:
             return heading
 
     normalized_fallback = fallback.replace("-", " ").replace("_", " ").strip()
+
     return normalized_fallback or "Untitled Document"
 
 
@@ -230,10 +234,11 @@ def build_output_documents(
             try:
                 content = source_content_by_path[source.relative_path]
             except KeyError as error:
-                raise MergeServiceError(
-                    "Merge plan references an unavailable source: "
+                message = (
+                    f"Merge plan references an unavailable source: "
                     f"{source.relative_path}"
-                ) from error
+                )
+                raise MergeServiceError(message) from error
 
             sections.append(
                 render_source_section(
@@ -323,17 +328,18 @@ def print_result(
 def main(arguments: Sequence[str] | None = None) -> int:
     """Run the merge application service from the command line."""
     parsed_arguments = parse_arguments(arguments)
+    project_directory_argument = cast(Path, parsed_arguments.project_directory)
 
     try:
-        project_directory = resolve_project_directory(
-            parsed_arguments.project_directory
-        )
+        project_directory = resolve_project_directory(project_directory_argument)
         result = run_merge_service(project_directory)
     except MergeServiceError as error:
         print(f"ERROR: {error}")
+
         return 1
 
     print_result(project_directory, result)
+
     return 0
 
 
