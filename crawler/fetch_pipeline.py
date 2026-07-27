@@ -9,14 +9,14 @@ from dataclasses import dataclass
 from crawler.config import CrawlerConfig
 from crawler.database import DatabaseManager
 from crawler.dedup import DeduplicationEngine, DedupResult
-from crawler.fetcher import AsyncFetcher, FetchResult
+from crawler.discovery_parts.fetcher import AsyncFetcher, FetchResult
 from crawler.language import LanguageDetector
 from crawler.manifest_history import ManifestHistory
 from crawler.markdown_writer import MarkdownWriter
 from crawler.observability import CrawlerObservability
 from crawler.page_quality import PageQualityAnalyzer
 from crawler.parser import ContentParser, ParsedPage
-from crawler.policy_engine import PolicyDecision, SmartScopePolicy
+from crawler.policy_engine import SmartScopePolicy
 from crawler.progress import RichDashboard
 from crawler.shared.url_normalizer import normalize_url
 from crawler.terminal_ui import TerminalUIHandle
@@ -625,79 +625,6 @@ class FetchPipeline:
             dashboard=dashboard,
             live=live,
         )
-
-    def handle_content_policy(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: FetchResult,
-        parsed: ParsedPage,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> bool:
-        """Evaluate parsed content against the smart scope policy."""
-
-        self._update_dashboard_step(
-            dashboard=dashboard,
-            live=live,
-            step_current=10,
-            step_name="Evaluating content policy",
-            url=url,
-        )
-
-        content_policy = self._policy.evaluate_content(
-            url=result.final_url,
-            title=parsed.title,
-            text=parsed.text_content,
-        )
-
-        if content_policy.decision in {
-            PolicyDecision.SKIP,
-            PolicyDecision.BLOCK,
-        }:
-            self._logger.info(
-                (
-                    "Skipped by smart content policy: "
-                    "url=%s decision=%s reason=%s title=%s"
-                ),
-                result.final_url,
-                content_policy.decision.value,
-                content_policy.reason,
-                parsed.title,
-            )
-
-            self._finish_skipped_page_status(
-                status_update=SkippedPageStatusUpdate(
-                    url=url,
-                    url_hash=url_hash,
-                    status=f"policy_{content_policy.decision.value}",
-                    final_url=result.final_url,
-                    final_url_hash=final_url_hash,
-                    redirect_target_hash=redirect_target_hash,
-                    canonical_url=parsed.canonical_url,
-                    etag=result.etag,
-                    last_modified=result.last_modified,
-                ),
-                dashboard=dashboard,
-                live=live,
-            )
-            return True
-
-        if content_policy.decision == PolicyDecision.REVIEW:
-            self._logger.info(
-                (
-                    "Smart content policy marked page for review "
-                    "but allowed it: url=%s reason=%s title=%s"
-                ),
-                result.final_url,
-                content_policy.reason,
-                parsed.title,
-            )
-
-        return False
 
     def handle_dedup_result(
         self,

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from urllib.parse import parse_qsl, urlparse
-
 from crawler.shared.language_policy import (
     LANGUAGE_QUERY_KEYS,
     is_english_language_value,
@@ -322,48 +320,19 @@ def segment_declares_region(value: str) -> bool:
 
 
 def url_declares_non_english_or_region(url: str) -> str | None:
-    parsed = urlparse(url)
-    host = parsed.netloc.lower().removeprefix("www.")
-    labels = [label for label in host.split(".") if label]
+    """Never infer page language or region from a URL."""
 
-    if labels:
-        tld = labels[-1]
-        if tld in ISO_3166_ALPHA2 and tld not in {"com", "org", "net"}:
-            return f"iso_block_host_tld:{tld}"
-
-        first = normalize_lang_value(labels[0])
-        if first not in SAFE_HOST_PREFIXES and segment_declares_region(first):
-            return f"iso_block_host_label:{first}"
-
-        for label in labels[:-1]:
-            normalized = normalize_lang_value(label)
-            if normalized in SAFE_HOST_PREFIXES:
-                continue
-            if segment_declares_region(normalized):
-                return f"iso_block_host_suffix:{normalized}"
-
-    for raw_part in parsed.path.strip("/").split("/"):
-        part = normalize_lang_value(raw_part)
-        if not part:
-            continue
-        if is_english_value(part):
-            continue
-        if segment_declares_region(part):
-            return f"iso_block_path_segment:{part}"
-
-    for key, value in parse_qsl(parsed.query, keep_blank_values=False):
-        if key.lower().strip() not in LANGUAGE_QUERY_KEYS:
-            continue
-
-        normalized = normalize_lang_value(value)
-        if normalized and not is_english_value(normalized):
-            return f"iso_block_query_language:{normalized}"
+    del url
 
     return None
 
 
 def url_is_english_or_neutral(url: str) -> bool:
-    return url_declares_non_english_or_region(url) is None
+    """Accept every valid URL without making a language decision."""
+
+    del url
+
+    return True
 
 
 __all__ = [

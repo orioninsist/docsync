@@ -18,10 +18,7 @@ from crawler.robots import RobotsManager
 from crawler.shared.url_normalizer import normalize_url as shared_normalize_url
 from crawler.shared.url_policy import BLOCKED_EXTENSIONS as SHARED_BLOCKED_EXTENSIONS
 from crawler.shared.url_policy import TRAP_QUERY_KEYS
-from crawler.sitemap_language import (
-    english_candidates_from_sitemap_url_node,
-    url_declares_non_english,
-)
+from crawler.sitemap_language import english_candidates_from_sitemap_url_node
 
 BLOCKED_PATH_PARTS = (
     "/community",
@@ -597,11 +594,10 @@ class SitemapManager:
 
         return (
             self._has_allowed_scheme_and_host(parsed)
-            and self._policy_allows(url)
+            and self.policy.evaluate_url(url).allowed
             and self._path_scope_allows(parsed.path)
             and not self._path_is_blocked(parsed.path)
             and not self._has_blocked_query(parsed.query)
-            and not self._language_is_blocked(url)
             and not self._has_blocked_extension(parsed.path)
             and not self._has_blocked_query_fragment(parsed.query)
         )
@@ -614,12 +610,6 @@ class SitemapManager:
             parsed.scheme.lower() in {"http", "https"}
             and parsed.netloc.lower() == self.start_netloc
         )
-
-    def _policy_allows(
-        self,
-        url: str,
-    ) -> bool:
-        return self.policy.evaluate_url(url).allowed
 
     def _path_scope_allows(
         self,
@@ -681,12 +671,6 @@ class SitemapManager:
                 keep_blank_values=False,
             )
         )
-
-    def _language_is_blocked(
-        self,
-        url: str,
-    ) -> bool:
-        return self.config.require_english and url_declares_non_english(url)
 
     def _has_blocked_extension(
         self,

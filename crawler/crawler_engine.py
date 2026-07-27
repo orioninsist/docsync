@@ -27,13 +27,13 @@ from crawler.crawler_runtime_builder import (
 )
 from crawler.database import DatabaseManager
 from crawler.dedup import DeduplicationEngine
+from crawler.discovery_parts.fetcher import AsyncFetcher
 from crawler.engine_status import (
     format_unlimited,
     merge_dashboard,
     print_batch_banner,
 )
 from crawler.fetch_pipeline import FetchPipeline
-from crawler.fetcher import AsyncFetcher
 from crawler.global_url_registry import GlobalUrlRegistry
 from crawler.intent_analyzer import IntentAnalyzer
 from crawler.language import LanguageDetector

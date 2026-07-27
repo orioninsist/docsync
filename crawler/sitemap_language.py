@@ -4,15 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from html import unescape
-from urllib.parse import parse_qs, urlparse
 from xml.etree.ElementTree import Element
 
-from crawler.shared.language_policy import (
-    ENGLISH_PATH_HINTS,
-    LANGUAGE_QUERY_KEYS,
-    NON_ENGLISH_PATH_HINTS,
-    NORMALIZED_ENGLISH_QUERY_VALUES,
-)
+from crawler.shared.language_policy import NORMALIZED_ENGLISH_QUERY_VALUES
 
 
 def english_candidates_from_sitemap_url_node(
@@ -35,7 +29,7 @@ def english_candidates_from_sitemap_url_node(
     if alternate_urls:
         return alternate_urls
 
-    if has_language_alternates or url_declares_non_english(fallback_url):
+    if has_language_alternates:
         return set()
 
     return {fallback_url}
@@ -91,52 +85,6 @@ def is_alternate_link(child: Element) -> bool:
     hreflang = child.attrib.get("hreflang", "").strip().lower()
 
     return rel == "alternate" and bool(hreflang)
-
-
-def url_declares_non_english(url: str) -> bool:
-    """Return True when path or query declares a non-English language."""
-
-    parsed = urlparse(url)
-
-    return path_contains_non_english_language_segment(
-        parsed.path.lower(),
-    ) or query_declares_non_english(parsed.query)
-
-
-def query_declares_non_english(query: str) -> bool:
-    """Return True when language query parameters are explicitly non-English."""
-
-    parsed_query = parse_qs(query)
-
-    for key, values in parsed_query.items():
-        if key.lower() not in LANGUAGE_QUERY_KEYS:
-            continue
-
-        if values_declare_non_english(values):
-            return True
-
-    return False
-
-
-def values_declare_non_english(values: list[str]) -> bool:
-    """Return True when any query value is non-empty and not English."""
-
-    return any(
-        (value_lower := value.strip().lower().replace("_", "-"))
-        and value_lower not in NORMALIZED_ENGLISH_QUERY_VALUES
-        for value in values
-    )
-
-
-def path_contains_non_english_language_segment(path: str) -> bool:
-    """Return True when URL path has a non-English language marker."""
-
-    normalized_path = f"/{path.lower().strip('/')}/"
-
-    if any(hint in normalized_path for hint in ENGLISH_PATH_HINTS):
-        return False
-
-    return any(hint in normalized_path for hint in NON_ENGLISH_PATH_HINTS)
 
 
 def hreflang_is_english(hreflang: str) -> bool:

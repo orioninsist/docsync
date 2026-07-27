@@ -89,7 +89,7 @@ def smart_group_title(host: str, group: str) -> str:
     return f"{host} / {group}"
 
 
-def smart_sort_key(item: DiscoveryResult) -> tuple[int, int, str, str]:
+def smart_sort_key(item: DiscoveryResult) -> tuple[int, str, str]:
     host, group = smart_group_key(item.url)
 
     group_rank = {
@@ -103,7 +103,7 @@ def smart_sort_key(item: DiscoveryResult) -> tuple[int, int, str, str]:
         "root": 7,
     }.get(group, 50)
 
-    return -item.score, group_rank, host, item.url
+    return group_rank, host, item.url
 
 
 def write_review_txt(
@@ -153,9 +153,7 @@ def write_review_txt(
             )
 
             for item in blocked_items[:250]:
-                _ = file.write(
-                    f"# {item.url}    # reason: {item.reason} score={item.score}\n"
-                )
+                _ = file.write(f"# {item.url}\n")
 
 
 def print_review(
@@ -176,8 +174,7 @@ def print_review(
 
     if accepted:
         for index, item in enumerate(accepted, start=1):
-            print(f"{index:02d}. score={item.score:<3} {item.url}")
-            print(f"    reason: {item.reason}")
+            print(f"{index:02d}. {item.url}")
     else:
         print("None")
 
@@ -187,8 +184,7 @@ def print_review(
 
     if review:
         for index, item in enumerate(review[:80], start=1):
-            print(f"{index:02d}. score={item.score:<3} {item.url}")
-            print(f"    reason: {item.reason}")
+            print(f"{index:02d}. {item.url}")
     else:
         print("None")
 
@@ -199,7 +195,6 @@ def print_review(
     if blocked:
         for index, item in enumerate(blocked[:80], start=1):
             print(f"{index:02d}. {item.url}")
-            print(f"    reason: {item.reason}")
     else:
         print("None")
 

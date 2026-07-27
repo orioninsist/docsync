@@ -13,9 +13,8 @@ from urllib.parse import parse_qsl, urlparse
 
 import aiohttp
 
-from crawler.discovery_report import write_discovery_coverage_report
+from crawler.discovery_result import DiscoveryResult
 from crawler.discovery_score import (
-    DiscoveryResult,
     promote_discovery_root,
     score_discovered_url,
 )
@@ -24,13 +23,10 @@ from crawler.discovery_url_rules import (
     is_bad_url,
     is_blocked_machine_file,
     is_non_english_query,
-    looks_like_official_host,
     normalize_candidate_url,
     path_parts,
-    root_domain,
-    same_scope,
-    score_url,
 )
+from crawler.discovery_writer import write_discovery_coverage_report
 
 DISCOVERY_CONNECT_TIMEOUT_SECONDS = 10
 DISCOVERY_REQUEST_TIMEOUT_SECONDS = 20
@@ -154,9 +150,8 @@ async def discover(
     seed_url: str,
     *,
     limit: int,
-    include_review: bool = False,
 ) -> tuple[list[DiscoveryResult], list[DiscoveryResult], list[DiscoveryResult]]:
-    """Run legacy asynchronous discovery and classify scored candidates."""
+    """Run legacy asynchronous discovery without score-based classification."""
 
     from crawler.discovery_engine import recursive_bfs_discovery_candidates
 
@@ -189,13 +184,11 @@ async def discover(
         candidates = _fallback_discovery_candidates(seed_url)
         blocked = []
 
-    scored = [score_discovered_url(seed_url, candidate) for candidate in candidates]
-    scored.sort(key=lambda item: (-item.score, item.url))
+    accepted = [
+        score_discovered_url(seed_url, candidate) for candidate in candidates[:limit]
+    ]
 
-    accepted = [item for item in scored if item.score >= 2]
-    review = [item for item in scored if item.score < 2 and include_review]
-
-    return accepted[:limit], blocked, review[:limit]
+    return accepted, blocked, []
 
 
 _promote_discovery_root = promote_discovery_root
@@ -204,7 +197,6 @@ _promote_discovery_root = promote_discovery_root
 __all__ = [
     "DISCOVERY_CONNECT_TIMEOUT_SECONDS",
     "DISCOVERY_REQUEST_TIMEOUT_SECONDS",
-    "DiscoveryResult",
     "HIGH_VALUE_PATH_HINTS",
     "_probe_final_working_root",
     "_probe_redirect_final_roots",
@@ -216,12 +208,8 @@ __all__ = [
     "is_bad_url",
     "is_blocked_machine_file",
     "is_non_english_query",
-    "looks_like_official_host",
     "normalize_candidate_url",
     "path_parts",
-    "root_domain",
-    "same_scope",
     "score_discovered_url",
-    "score_url",
     "write_discovery_coverage_report",
 ]

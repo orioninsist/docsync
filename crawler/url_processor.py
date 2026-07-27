@@ -1,9 +1,8 @@
 """Single-URL processing orchestration for the crawler.
 
 This module coordinates the lifecycle of one URL while delegating fetching,
-validation, parsing, policy evaluation, deduplication, persistence, discovery,
-queue updates, and dashboard updates to the crawler engine's existing
-collaborators.
+validation, parsing, deduplication, persistence, discovery, queue updates, and
+dashboard updates to the crawler engine's existing collaborators.
 
 No crawler-wide run lifecycle or queue-batch logic belongs in this module.
 """
@@ -21,7 +20,7 @@ from crawler.crawler_engine_url_rules import is_hard_blacklisted_url
 from crawler.database import DatabaseManager
 from crawler.dedup import DeduplicationEngine, DedupResult
 from crawler.fetch_pipeline import FetchPipeline
-from crawler.fetcher import FetchResult
+from crawler.discovery_parts.fetcher import FetchResult
 from crawler.observability import CrawlerObservability
 from crawler.parser import ParsedPage
 from crawler.policy_engine import SmartScopePolicy
@@ -345,9 +344,7 @@ class UrlProcessor:
         dashboard: RichDashboard,
         live: TerminalUIHandle,
     ) -> ParsedPage | None:
-        host = self._host
-
-        parsed = host.fetch_pipeline.parse_validated_content(
+        return self._host.fetch_pipeline.parse_validated_content(
             url=url,
             url_hash=url_hash,
             result=result,
@@ -356,23 +353,6 @@ class UrlProcessor:
             dashboard=dashboard,
             live=live,
         )
-        if parsed is None:
-            return None
-
-        should_finish = host.fetch_pipeline.handle_content_policy(
-            url=url,
-            url_hash=url_hash,
-            result=result,
-            parsed=parsed,
-            final_url_hash=final_url_hash,
-            redirect_target_hash=redirect_target_hash,
-            dashboard=dashboard,
-            live=live,
-        )
-        if should_finish:
-            return None
-
-        return parsed
 
     def _deduplicate_content(
         self,

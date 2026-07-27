@@ -1,0 +1,8 @@
+- [x] Step 1: Collect crawler architecture diagnostics
+- [x] Step 2: Verify active legacy/compatibility modules
+- [x] Step 3: Remove reverse discovery dependency
+- [x] Step 4: Redirect discovery_runtime.py from compatibility state wrapper
+- [x] Step 5: Redirect discovery_engine.py from compatibility state wrapper
+- [x] Step 6: Remove discovery_state.py
+- [ ] Step 7: Remove remaining compatibility wrappers
+- [ ] Step 8: Run full crawler regression

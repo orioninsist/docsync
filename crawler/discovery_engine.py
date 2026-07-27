@@ -9,11 +9,11 @@ from crawler.discovery_fetch import (
     robots_sitemaps,
     sitemap_candidates,
 )
+from crawler.discovery_parts.state import open_discovery_db
 from crawler.discovery_paths import normalized_host
 from crawler.discovery_processing import process_queue_item
 from crawler.discovery_result import DiscoveryResult
 from crawler.discovery_runtime import DiscoveryRunState, log
-from crawler.discovery_state import open_discovery_db
 
 DISCOVERY_MAX_ACCEPTED_MULTIPLIER = 10
 DISCOVERY_MAX_DEFAULT_PAGES = 30

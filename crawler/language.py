@@ -4,17 +4,11 @@ from __future__ import annotations
 
 import re
 from typing import ClassVar
-from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from crawler.shared.language_policy import (
-    ENGLISH_PATH_HINTS,
-    LANGUAGE_QUERY_KEYS,
-    NON_ENGLISH_PATH_HINTS,
-    is_english_language_value,
-)
+from crawler.shared.language_policy import is_english_language_value
 
 
 class LanguageDetector:  # pylint: disable=too-few-public-methods
@@ -238,11 +232,10 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
         html: str,
         url: str | None = None,
     ) -> bool:
-        """Return True when the URL and HTML content look English."""
-        soup = BeautifulSoup(html, "html.parser")
+        """Return True when the downloaded HTML content looks English."""
+        del url
 
-        if url and self._url_declares_non_english(url):
-            return False
+        soup = BeautifulSoup(html, "html.parser")
 
         if self._page_declares_non_english(soup):
             return False
@@ -257,42 +250,6 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
 
         return True
 
-    def _url_declares_english(self, url: str) -> bool:
-        """Return True when URL path or query explicitly declares English."""
-        parsed = urlparse(url)
-        query = parse_qs(parsed.query)
-
-        for key, values in query.items():
-            if key.lower() not in LANGUAGE_QUERY_KEYS:
-                continue
-
-            for value in values:
-                if is_english_language_value(value):
-                    return True
-
-        path_lower = parsed.path.lower()
-        return any(hint in path_lower for hint in ENGLISH_PATH_HINTS)
-
-    def _url_declares_non_english(self, url: str) -> bool:
-        """Return True when URL path or query explicitly declares non-English."""
-        parsed = urlparse(url)
-        path_lower = parsed.path.lower()
-
-        if any(hint in path_lower for hint in NON_ENGLISH_PATH_HINTS):
-            return True
-
-        query = parse_qs(parsed.query)
-
-        for key, values in query.items():
-            if key.lower() not in LANGUAGE_QUERY_KEYS:
-                continue
-
-            for value in values:
-                if value.strip() and not is_english_language_value(value):
-                    return True
-
-        return False
-
     def _html_lang_is_english(self, soup: BeautifulSoup) -> bool:
         """Return True when the root html lang attribute is English."""
         html_tag = soup.find("html")
@@ -300,9 +257,7 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
         if not isinstance(html_tag, Tag):
             return False
 
-        lang = str(html_tag.get("lang", "")).strip().lower().replace("_", "-")
-
-        return lang == "en" or lang.startswith("en-")
+        return is_english_language_value(str(html_tag.get("lang", "")))
 
     def _meta_locale_is_english(self, soup: BeautifulSoup) -> bool:
         """Return True when language-related meta tags declare English."""
@@ -312,9 +267,7 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
             if not isinstance(tag, Tag):
                 continue
 
-            content = str(tag.get("content", "")).strip().lower().replace("_", "-")
-
-            if content == "en" or content.startswith("en-"):
+            if is_english_language_value(str(tag.get("content", ""))):
                 return True
 
         return False
@@ -324,9 +277,9 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
         html_tag = soup.find("html")
 
         if isinstance(html_tag, Tag):
-            lang = str(html_tag.get("lang", "")).strip().lower().replace("_", "-")
+            lang = str(html_tag.get("lang", "")).strip()
 
-            if lang and not (lang == "en" or lang.startswith("en-")):
+            if lang and not is_english_language_value(lang):
                 return True
 
         for selector in self.META_LANGUAGE_SELECTORS:
@@ -335,9 +288,9 @@ class LanguageDetector:  # pylint: disable=too-few-public-methods
             if not isinstance(tag, Tag):
                 continue
 
-            content = str(tag.get("content", "")).strip().lower().replace("_", "-")
+            content = str(tag.get("content", "")).strip()
 
-            if content and not (content == "en" or content.startswith("en-")):
+            if content and not is_english_language_value(content):
                 return True
 
         return False

@@ -65,7 +65,10 @@ def discover_python_files() -> tuple[str, ...]:
         raise PreflightFailure(message)
 
     files = tuple(
-        line.strip() for line in completed.stdout.splitlines() if line.strip()
+        path
+        for line in completed.stdout.splitlines()
+        if (path := line.strip())
+        if (PROJECT_ROOT / path).is_file()
     )
 
     if not files:

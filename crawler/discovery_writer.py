@@ -51,20 +51,8 @@ def _raw_hosts(raw_candidates: list[str]) -> set[str]:
     }
 
 
-def _count_block_reasons(
-    blocked: list[DiscoveryResult],
-    raw_blocked: list[DiscoveryResult],
-) -> dict[str, int]:
-    reason_counts: dict[str, int] = {}
-
-    for item in [*blocked, *raw_blocked]:
-        reason_counts[item.reason] = reason_counts.get(item.reason, 0) + 1
-
-    return reason_counts
-
-
 def _format_result(item: DiscoveryResult) -> str:
-    return f"- `{item.url}` score={item.score} reason={item.reason}"
+    return f"- `{item.url}`"
 
 
 def _build_summary_section(
@@ -115,30 +103,6 @@ def _build_result_section(
     return lines
 
 
-def _build_reason_counts_section(
-    reason_counts: dict[str, int],
-) -> list[str]:
-    lines = [
-        "",
-        "## Blocked reason counts",
-        "",
-    ]
-
-    if not reason_counts:
-        lines.append("_None_")
-
-        return lines
-
-    sorted_reasons = sorted(
-        reason_counts.items(),
-        key=lambda item: (-item[1], item[0]),
-    )
-
-    lines.extend(f"- `{reason}`: {count}" for reason, count in sorted_reasons)
-
-    return lines
-
-
 def _build_observed_hosts_section(
     observed_not_promoted: list[str],
 ) -> list[str]:
@@ -181,10 +145,6 @@ def _build_coverage_report_lines(
 
     promoted_hosts = accepted_hosts | review_hosts
     observed_not_promoted = sorted(_raw_hosts(raw_candidates) - promoted_hosts)
-    reason_counts = _count_block_reasons(
-        blocked,
-        raw_blocked,
-    )
 
     lines = _build_summary_section(
         seed=seed,
@@ -211,7 +171,6 @@ def _build_coverage_report_lines(
             review,
         )
     )
-    lines.extend(_build_reason_counts_section(reason_counts))
     lines.extend(_build_observed_hosts_section(observed_not_promoted))
     lines.extend(_build_blocked_examples_section(blocked))
 

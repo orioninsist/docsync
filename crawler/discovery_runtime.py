@@ -9,16 +9,16 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from crawler.discovery_parts.state import (
+    discovery_db_key,
+    discovery_mark_seen,
+    discovery_update_seen_status,
+)
 from crawler.discovery_result import DiscoveryResult
 from crawler.discovery_scope import (
     build_discovery_policy,
     infer_scope_prefix_from_real_links,
     merge_scope_prefixes,
-)
-from crawler.discovery_state import (
-    discovery_db_key,
-    discovery_mark_seen,
-    discovery_update_seen_status,
 )
 from crawler.discovery_types import DiscoveryQueueItem
 from crawler.discovery_url_rules import normalize_candidate_url

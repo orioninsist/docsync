@@ -10,14 +10,11 @@ from crawler.source_manifest import SourceManifest
 SOURCES_ROOT = Path("sources")
 
 
-def _add_best_result(
+def _add_result(
     target: dict[str, DiscoveryResult],
     item: DiscoveryResult,
 ) -> None:
-    existing = target.get(item.url)
-
-    if existing is None or item.score > existing.score:
-        target[item.url] = item
+    _ = target.setdefault(item.url, item)
 
 
 def _split_discovery_results(
@@ -33,17 +30,17 @@ def _split_discovery_results(
 
     accepted = sorted(
         accepted_map.values(),
-        key=lambda item: (-item.score, item.url),
+        key=lambda item: item.url,
     )[:limit]
 
     review = sorted(
         (review_map[url] for url in review_urls),
-        key=lambda item: (-item.score, item.url),
+        key=lambda item: item.url,
     )[:limit]
 
     blocked = sorted(
         (blocked_map[url] for url in blocked_urls),
-        key=lambda item: (-item.score, item.url),
+        key=lambda item: item.url,
     )
 
     return accepted, blocked, review
@@ -143,17 +140,16 @@ async def build_smart_workspace(
         one_accepted, one_blocked, one_review = await discover(
             site,
             limit=limit,
-            include_review=True,
         )
 
         for item in one_accepted:
-            _add_best_result(accepted_map, item)
+            _add_result(accepted_map, item)
 
         for item in one_review:
-            _add_best_result(review_map, item)
+            _add_result(review_map, item)
 
         for item in one_blocked:
-            _add_best_result(blocked_map, item)
+            _add_result(blocked_map, item)
 
     accepted, blocked, review = _split_discovery_results(
         accepted_map=accepted_map,

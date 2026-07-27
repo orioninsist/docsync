@@ -20,7 +20,7 @@ from crawler.global_url_registry import GlobalUrlRegistry
 from crawler.intent_analyzer import IntentAnalyzer
 from crawler.observability import CrawlerObservability
 from crawler.official_graph import OfficialHostGraph
-from crawler.policy_engine import SmartScopePolicy
+from crawler.policy_engine import PolicyResult, SmartScopePolicy
 from crawler.robots import RobotsManager
 from crawler.shared.url_ownership import claim_url_ownership
 from crawler.shared.url_normalizer import (
@@ -264,32 +264,30 @@ class CrawlerDiscoveryService:
         if link is None:
             return None
 
-        url_policy = self.policy.evaluate_url(link)
-
-        if url_policy.allowed:
-            return link
-
-        if self.is_allowed_official_cross_host(
+        decision = self.policy.evaluate_discovered_url(
             link,
             parent_url=parent_url,
             depth=depth,
-        ):
-            return link
+            known_hosts=self.official_graph.known_hosts(),
+            allow_official_cross_host=(self.config.allow_official_cross_host_discovery),
+        )
 
-        self.observability.record_official_rejected(
-            url=link,
-            reason=f"smart_url_policy:{url_policy.reason}",
-        )
-        self.logger.info(
-            (
-                "Smart URL policy rejected discovered URL before enqueue: "
-                "url=%s decision=%s reason=%s"
-            ),
-            link,
-            url_policy.decision.value,
-            url_policy.reason,
-        )
-        return None
+        if not decision.allowed:
+            self._record_scope_rejection(
+                url=link,
+                decision=decision,
+            )
+            return None
+
+        if not self.policy.same_scope(link):
+            self._record_official_scope_allow(
+                url=link,
+                parent_url=parent_url,
+                depth=depth,
+                decision=decision,
+            )
+
+        return link
 
     def extract_official_cross_host_links(
         self,
@@ -373,39 +371,77 @@ class CrawlerDiscoveryService:
         parent_url: str | None = None,
         depth: int = 0,
     ) -> bool:
-        """Return whether the official host graph permits a cross-host URL."""
+        """Return whether the canonical scope policy permits an official URL."""
 
         if not self.config.allow_official_cross_host_discovery:
             return False
 
-        decision = self.official_graph.evaluate_url(
-            url=url,
+        decision = self.policy.evaluate_official_url(
+            url,
             parent_url=parent_url,
             depth=depth,
+            known_hosts=self.official_graph.known_hosts(),
         )
 
-        if decision.allowed:
-            self.observability.record_official_allowed(
+        if not decision.allowed:
+            self.observability.record_official_rejected(
                 url=url,
                 reason=decision.reason,
             )
-            self.logger.info(
-                (
-                    "Official host graph allowed URL: "
-                    "url=%s host=%s confidence=%s reason=%s"
-                ),
-                url,
-                decision.host,
-                decision.confidence,
-                decision.reason,
-            )
-            return True
+            return False
 
+        self._record_official_scope_allow(
+            url=url,
+            parent_url=parent_url,
+            depth=depth,
+            decision=decision,
+        )
+        return True
+
+    def _record_scope_rejection(
+        self,
+        *,
+        url: str,
+        decision: PolicyResult,
+    ) -> None:
         self.observability.record_official_rejected(
+            url=url,
+            reason=f"smart_url_policy:{decision.reason}",
+        )
+        self.logger.info(
+            (
+                "Smart URL policy rejected discovered URL before enqueue: "
+                "url=%s decision=%s reason=%s"
+            ),
+            url,
+            decision.decision.value,
+            decision.reason,
+        )
+
+    def _record_official_scope_allow(
+        self,
+        *,
+        url: str,
+        parent_url: str | None,
+        depth: int,
+        decision: PolicyResult,
+    ) -> None:
+        self.official_graph.learn_host(
+            url=url,
+            parent_url=parent_url,
+            confidence=75,
+            reason=decision.reason,
+            depth=depth,
+        )
+        self.observability.record_official_allowed(
             url=url,
             reason=decision.reason,
         )
-        return False
+        self.logger.info(
+            "Canonical scope policy allowed official URL: url=%s reason=%s",
+            url,
+            decision.reason,
+        )
 
     def _claim_url_ownership(self, url: str) -> bool:
         return claim_url_ownership(
