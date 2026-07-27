@@ -8,10 +8,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from crawler.policy_engine import (
-    HIGH_VALUE_PATH_HINTS as HIGH_VALUE_PATH_HINTS,
-    SmartScopePolicy,
-)
+from crawler.policy_engine import SmartScopePolicy
 from crawler.shared.url_normalizer import normalize_url as shared_normalize_url
 from crawler.shared.url_policy import (
     MEDIA_SOCIAL_HOSTS as MEDIA_SOCIAL_HOSTS,

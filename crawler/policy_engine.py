@@ -10,26 +10,8 @@ from urllib.parse import ParseResult, parse_qs, urlparse
 from crawler.shared.url_policy import (
     BLOCKED_EXTENSIONS,
     BLOCKED_SCHEMES,
-    MEDIA_SOCIAL_HOSTS as SHARED_MEDIA_SOCIAL_HOSTS,
     TRAP_PATH_PARTS,
     TRAP_QUERY_KEYS,
-)
-
-HIGH_VALUE_PATH_HINTS = frozenset(
-    {
-        "api",
-        "developer",
-        "developers",
-        "doc",
-        "docs",
-        "documentation",
-        "guide",
-        "guides",
-        "help",
-        "learn",
-        "reference",
-        "support",
-    }
 )
 
 
@@ -57,7 +39,7 @@ class PolicyResult:
 
 
 class SmartScopePolicy:
-    """Own every deterministic URL, host, path, and cross-host scope decision."""
+    """Own deterministic URL, host, path, and cross-host scope decisions."""
 
     GLOBAL_BLOCKED_SCHEMES: ClassVar[set[str]] = BLOCKED_SCHEMES
 
@@ -75,10 +57,7 @@ class SmartScopePolicy:
         }
     )
 
-    MEDIA_SOCIAL_HOSTS: ClassVar[frozenset[str]] = SHARED_MEDIA_SOCIAL_HOSTS
-
     start_url: str
-    allowed_path_prefix: str
     start_netloc: str
     start_host: str
     start_root_domain: str
@@ -90,8 +69,9 @@ class SmartScopePolicy:
     ) -> None:
         """Initialize the canonical scope from the seed URL."""
 
+        del allowed_path_prefix
+
         self.start_url = start_url
-        self.allowed_path_prefix = allowed_path_prefix or "/"
 
         parsed = urlparse(start_url)
         self.start_netloc = parsed.netloc.lower()
@@ -112,11 +92,6 @@ class SmartScopePolicy:
         if host_result is not None:
             return host_result
 
-        prefix_result = self._prefix_guard_result(parsed.path.lower())
-
-        if prefix_result is not None:
-            return prefix_result
-
         return PolicyResult(PolicyDecision.ALLOW, "url_allowed")
 
     def evaluate_discovered_url(
@@ -130,23 +105,15 @@ class SmartScopePolicy:
     ) -> PolicyResult:
         """Evaluate one discovered URL through the canonical scope decision."""
 
+        del known_hosts
+
         parsed = urlparse(url)
         base_result = self._base_url_guard_result(parsed)
 
         if base_result is not None:
             return base_result
 
-        social_reason = self._media_social_block_reason(parsed.netloc)
-
-        if social_reason:
-            return PolicyResult(PolicyDecision.BLOCK, social_reason)
-
         if self.same_scope(url):
-            prefix_result = self._prefix_guard_result(parsed.path.lower())
-
-            if prefix_result is not None:
-                return prefix_result
-
             return PolicyResult(PolicyDecision.ALLOW, "url_allowed")
 
         if not allow_official_cross_host:
@@ -156,10 +123,8 @@ class SmartScopePolicy:
             )
 
         return self._official_cross_host_result(
-            url=url,
             parent_url=parent_url,
             depth=depth,
-            known_hosts=known_hosts,
         )
 
     def evaluate_official_url(
@@ -170,7 +135,9 @@ class SmartScopePolicy:
         depth: int = 0,
         known_hosts: set[str] | None = None,
     ) -> PolicyResult:
-        """Evaluate a candidate official URL outside the normal seed scope."""
+        """Evaluate a candidate URL outside the normal seed scope."""
+
+        del known_hosts
 
         parsed = urlparse(url)
         base_result = self._base_url_guard_result(parsed)
@@ -178,19 +145,12 @@ class SmartScopePolicy:
         if base_result is not None:
             return base_result
 
-        social_reason = self._media_social_block_reason(parsed.netloc)
-
-        if social_reason:
-            return PolicyResult(PolicyDecision.BLOCK, social_reason)
-
         if self.same_scope(url):
             return PolicyResult(PolicyDecision.ALLOW, "same_scope")
 
         return self._official_cross_host_result(
-            url=url,
             parent_url=parent_url,
             depth=depth,
-            known_hosts=known_hosts,
         )
 
     def same_scope(self, candidate_url: str) -> bool:
@@ -261,15 +221,13 @@ class SmartScopePolicy:
 
         return None
 
+    @staticmethod
     def _official_cross_host_result(
-        self,
         *,
-        url: str,
         parent_url: str | None,
         depth: int,
-        known_hosts: set[str] | None,
     ) -> PolicyResult:
-        """Return the canonical decision for an outside-scope official URL."""
+        """Return the decision for an explicitly enabled cross-host URL."""
 
         if depth > 2:
             return PolicyResult(
@@ -277,36 +235,10 @@ class SmartScopePolicy:
                 "cross_host_depth_limited",
             )
 
-        normalized_known_hosts = {
-            self.normalize_host(host) for host in (known_hosts or set()) if host
-        }
-        candidate_host = self.normalize_host(urlparse(url).netloc)
-
-        if candidate_host in normalized_known_hosts:
-            return PolicyResult(
-                PolicyDecision.ALLOW,
-                "known_official_host",
-            )
-
-        if not self.looks_like_official_host(url):
+        if parent_url is None:
             return PolicyResult(
                 PolicyDecision.BLOCK,
-                "not_official_like",
-            )
-
-        if not self._parent_is_trusted(
-            parent_url=parent_url,
-            known_hosts=normalized_known_hosts,
-        ):
-            return PolicyResult(
-                PolicyDecision.BLOCK,
-                "cross_host_parent_not_trusted",
-            )
-
-        if not self._shares_path_intent(url):
-            return PolicyResult(
-                PolicyDecision.BLOCK,
-                "cross_host_weak_path_intent",
+                "cross_host_parent_missing",
             )
 
         return PolicyResult(
@@ -327,11 +259,6 @@ class SmartScopePolicy:
                 PolicyDecision.BLOCK,
                 "outside_start_domain",
             )
-
-        social_reason = self._media_social_block_reason(netloc)
-
-        if social_reason:
-            return PolicyResult(PolicyDecision.BLOCK, social_reason)
 
         return None
 
@@ -371,17 +298,6 @@ class SmartScopePolicy:
 
         return None
 
-    def _prefix_guard_result(self, path_lower: str) -> PolicyResult | None:
-        """Block URLs outside the requested path prefix."""
-
-        if not self._inside_allowed_prefix(path_lower):
-            return PolicyResult(
-                PolicyDecision.BLOCK,
-                "outside_allowed_prefix",
-            )
-
-        return None
-
     def _query_guard_result(self, query: str) -> PolicyResult | None:
         """Block known crawler-trap query parameters."""
 
@@ -411,21 +327,6 @@ class SmartScopePolicy:
 
         return None
 
-    def _inside_allowed_prefix(self, path: str) -> bool:
-        """Return whether a URL remains under the configured path prefix."""
-
-        allowed = self.allowed_path_prefix.rstrip("/") or "/"
-
-        if allowed == "/":
-            return True
-
-        normalized_path = f"/{path.strip('/')}".lower()
-        allowed_lower = allowed.lower()
-
-        return normalized_path == allowed_lower or normalized_path.startswith(
-            f"{allowed_lower}/",
-        )
-
     @staticmethod
     def _blocked_query_reason(query: str) -> str | None:
         """Return the first deterministic blocked-query reason."""
@@ -442,50 +343,3 @@ class SmartScopePolicy:
                 return f"blocked_query:{key_lower}"
 
         return None
-
-    def _media_social_block_reason(self, netloc: str) -> str | None:
-        """Return a block reason for external media and social hosts."""
-
-        host = self.normalize_host(netloc)
-
-        if host.startswith("m."):
-            host = host[2:]
-
-        if host in self.MEDIA_SOCIAL_HOSTS:
-            return f"blocked_media_social_host:{host}"
-
-        for blocked_host in self.MEDIA_SOCIAL_HOSTS:
-            if host.endswith(f".{blocked_host}"):
-                return f"blocked_media_social_host:{blocked_host}"
-
-        return None
-
-    def _parent_is_trusted(
-        self,
-        *,
-        parent_url: str | None,
-        known_hosts: set[str],
-    ) -> bool:
-        """Return whether the discovery parent belongs to trusted scope."""
-
-        if parent_url is None:
-            return False
-
-        parent_host = self.normalize_host(urlparse(parent_url).netloc)
-
-        return self.same_scope(parent_url) or parent_host in known_hosts
-
-    def _shares_path_intent(self, candidate_url: str) -> bool:
-        """Return whether candidate paths preserve seed documentation intent."""
-
-        seed_parts = self.path_parts(self.start_url)
-
-        if not seed_parts:
-            return True
-
-        candidate_parts = self.path_parts(candidate_url)
-
-        return bool(
-            seed_parts.intersection(candidate_parts)
-            or HIGH_VALUE_PATH_HINTS.intersection(candidate_parts)
-        )

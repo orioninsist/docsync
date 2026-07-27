@@ -14,7 +14,6 @@ from crawler.language import LanguageDetector
 from crawler.manifest_history import ManifestHistory
 from crawler.markdown_writer import MarkdownWriter
 from crawler.observability import CrawlerObservability
-from crawler.page_quality import PageQualityAnalyzer
 from crawler.parser import ContentParser, ParsedPage
 from crawler.policy_engine import SmartScopePolicy
 from crawler.progress import RichDashboard
@@ -72,7 +71,6 @@ class FetchPipeline:
     _dedup: DeduplicationEngine
     _writer: MarkdownWriter
     _policy: SmartScopePolicy
-    _page_quality: PageQualityAnalyzer
     _observability: CrawlerObservability
     _update_dashboard_step: DashboardStepUpdater
     _finish_queue_item: QueueItemFinisher
@@ -90,7 +88,6 @@ class FetchPipeline:
         dedup: DeduplicationEngine,
         writer: MarkdownWriter,
         policy: SmartScopePolicy,
-        page_quality: PageQualityAnalyzer,
         observability: CrawlerObservability,
         update_dashboard_step: DashboardStepUpdater,
         finish_queue_item: QueueItemFinisher,
@@ -110,7 +107,6 @@ class FetchPipeline:
         self._dedup = dedup
         self._writer = writer
         self._policy = policy
-        self._page_quality = page_quality
         self._observability = observability
         self._update_dashboard_step = update_dashboard_step
         self._finish_queue_item = finish_queue_item
@@ -266,7 +262,7 @@ class FetchPipeline:
                 redirect_target_hash,
             )
 
-        fallback_status = self._page_quality.status_for_empty_fetch(result.status_code)
+        fallback_status = "error"
 
         self._finish_empty_refetch_after_not_modified(
             status_update=EmptyRefetchStatusUpdate(
@@ -338,7 +334,7 @@ class FetchPipeline:
         dashboard: RichDashboard,
         live: TerminalUIHandle,
     ) -> bool:
-        """Validate transport and raw HTML quality."""
+        """Reject only fetch responses that contain no HTML."""
 
         self._update_dashboard_step(
             dashboard=dashboard,
@@ -348,38 +344,16 @@ class FetchPipeline:
             url=url,
         )
 
-        transport_status = self._page_quality.detect_transport_quality_issue(
-            result.status_code
-        )
-
-        if not result.html:
-            self._finish_empty_fetch_response(
-                url=url,
-                url_hash=url_hash,
-                result=result,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                status=transport_status or "error",
-                dashboard=dashboard,
-                live=live,
-            )
-            return True
-
-        html_quality_status = self._page_quality.detect_html_quality_issue(
-            html=result.html,
-            status_code=result.status_code,
-        )
-
-        if html_quality_status is None:
+        if result.html:
             return False
 
-        self._finish_html_quality_skip(
+        self._finish_empty_fetch_response(
             url=url,
             url_hash=url_hash,
             result=result,
             final_url_hash=final_url_hash,
             redirect_target_hash=redirect_target_hash,
-            status=html_quality_status,
+            status="error",
             dashboard=dashboard,
             live=live,
         )
@@ -440,45 +414,6 @@ class FetchPipeline:
             url,
         )
 
-    def _finish_html_quality_skip(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: FetchResult,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        status: str,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> None:
-        self._logger.warning(
-            (
-                "Skipped low quality, protected, or login page "
-                "before parsing: url=%s final_url=%s "
-                "http_status=%s reason=%s"
-            ),
-            url,
-            result.final_url,
-            result.status_code,
-            status,
-        )
-
-        self._finish_skipped_page_status(
-            status_update=SkippedPageStatusUpdate(
-                url=url,
-                url_hash=url_hash,
-                status=status,
-                final_url=result.final_url,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                etag=result.etag,
-                last_modified=result.last_modified,
-            ),
-            dashboard=dashboard,
-            live=live,
-        )
-
     def parse_validated_content(
         self,
         *,
@@ -520,31 +455,10 @@ class FetchPipeline:
             )
             return None
 
-        parsed = self._parser.parse(
+        return self._parser.parse(
             html,
             result.final_url,
         )
-
-        parsed_quality_status = self._page_quality.detect_parsed_quality_issue(
-            markdown=parsed.markdown,
-            text_content=parsed.text_content,
-        )
-
-        if parsed_quality_status is None:
-            return parsed
-
-        self._finish_parsed_quality_skip(
-            url=url,
-            url_hash=url_hash,
-            result=result,
-            parsed=parsed,
-            final_url_hash=final_url_hash,
-            redirect_target_hash=redirect_target_hash,
-            status=parsed_quality_status,
-            dashboard=dashboard,
-            live=live,
-        )
-        return None
 
     def _should_skip_non_english(
         self,
@@ -582,43 +496,6 @@ class FetchPipeline:
                 final_url=result.final_url,
                 final_url_hash=final_url_hash,
                 redirect_target_hash=redirect_target_hash,
-                etag=result.etag,
-                last_modified=result.last_modified,
-            ),
-            dashboard=dashboard,
-            live=live,
-        )
-
-    def _finish_parsed_quality_skip(
-        self,
-        *,
-        url: str,
-        url_hash: str,
-        result: FetchResult,
-        parsed: ParsedPage,
-        final_url_hash: str,
-        redirect_target_hash: str | None,
-        status: str,
-        dashboard: RichDashboard,
-        live: TerminalUIHandle,
-    ) -> None:
-        self._logger.warning(
-            "Skipped low quality parsed page: url=%s final_url=%s reason=%s title=%s",
-            url,
-            result.final_url,
-            status,
-            parsed.title,
-        )
-
-        self._finish_skipped_page_status(
-            status_update=SkippedPageStatusUpdate(
-                url=url,
-                url_hash=url_hash,
-                status=status,
-                final_url=result.final_url,
-                final_url_hash=final_url_hash,
-                redirect_target_hash=redirect_target_hash,
-                canonical_url=parsed.canonical_url,
                 etag=result.etag,
                 last_modified=result.last_modified,
             ),

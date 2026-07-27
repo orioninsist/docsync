@@ -40,7 +40,6 @@ from crawler.language import LanguageDetector
 from crawler.markdown_writer import MarkdownWriter
 from crawler.observability import CrawlerObservability
 from crawler.official_graph import OfficialHostGraph
-from crawler.page_quality import PageQualityAnalyzer
 from crawler.parser import ContentParser
 from crawler.policy_engine import SmartScopePolicy
 from crawler.progress import RichDashboard
@@ -99,7 +98,6 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             logger=self.logger,
             config=self.config,
         )
-        self.page_quality: PageQualityAnalyzer = PageQualityAnalyzer()
         self.fetch_pipeline: FetchPipeline = FetchPipeline(
             config=self.config,
             database=self.database,
@@ -109,7 +107,6 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
             dedup=self.dedup,
             writer=self.writer,
             policy=self.policy,
-            page_quality=self.page_quality,
             observability=self.observability,
             update_dashboard_step=self._update_dashboard_step,
             finish_queue_item=self._finish_queue_item,
@@ -584,38 +581,4 @@ class CrawlerEngine:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self.logger.info(
             "Observability report written: %s",
             report_path,
-        )
-
-    def _detect_transport_quality_issue(
-        self,
-        status_code: int | None,
-    ) -> str | None:
-        return self.page_quality.detect_transport_quality_issue(status_code)
-
-    def _status_for_empty_fetch(
-        self,
-        status_code: int | None,
-    ) -> str:
-        return self.page_quality.status_for_empty_fetch(status_code)
-
-    def _detect_html_quality_issue(
-        self,
-        *,
-        html: str,
-        status_code: int | None,
-    ) -> str | None:
-        return self.page_quality.detect_html_quality_issue(
-            html=html,
-            status_code=status_code,
-        )
-
-    def _detect_parsed_quality_issue(
-        self,
-        *,
-        markdown: str,
-        text_content: str,
-    ) -> str | None:
-        return self.page_quality.detect_parsed_quality_issue(
-            markdown=markdown,
-            text_content=text_content,
         )
