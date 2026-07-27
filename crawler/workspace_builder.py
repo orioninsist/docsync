@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crawler.discovery import discover
+from crawler.discovery_public import discover
 from crawler.discovery_result import DiscoveryResult
 from crawler.queue_file import print_review, read_urls_from_txt, write_review_txt
 from crawler.source_manifest import SourceManifest

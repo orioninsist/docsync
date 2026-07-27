@@ -1,8 +1,11 @@
-- [x] Step 1: Collect crawler architecture diagnostics
-- [x] Step 2: Verify active legacy/compatibility modules
-- [x] Step 3: Remove reverse discovery dependency
-- [x] Step 4: Redirect discovery_runtime.py from compatibility state wrapper
-- [x] Step 5: Redirect discovery_engine.py from compatibility state wrapper
-- [x] Step 6: Remove discovery_state.py
-- [ ] Step 7: Remove remaining compatibility wrappers
-- [ ] Step 8: Run full crawler regression
+- [x] Step 1: Collect full crawler diagnostics
+- [x] Step 2: Prove module reachability
+- [x] Step 3: Confirm dead files with zero dynamic-loading paths
+- [x] Step 4: Delete confirmed dead files one by one and verify
+  - [x] Remove crawler/crawler_engine_preliminary_summary.py
+  - [x] Remove crawler/discovery_writer.py
+  - [x] Remove crawler/language_gate.py
+  - [x] Remove crawler/discovery_parts/models.py
+- [x] Step 5: Detect and remove dead symbols and duplicate ownership
+- [x] Step 6: Run full regression
+- [x] Step 7: Review and simplify architecture
