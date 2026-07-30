@@ -164,7 +164,7 @@ class UrlProcessor:
             use_recursive_discovery=use_recursive_discovery,
         )
 
-        parsed = self._parse_and_filter_content(
+        parsed = await self._parse_and_filter_content(
             url=url,
             url_hash=url_hash,
             result=result,
@@ -333,7 +333,7 @@ class UrlProcessor:
             sitemap=sitemap,
         )
 
-    def _parse_and_filter_content(
+    async def _parse_and_filter_content(
         self,
         *,
         url: str,
@@ -344,7 +344,7 @@ class UrlProcessor:
         dashboard: RichDashboard,
         live: TerminalUIHandle,
     ) -> ParsedPage | None:
-        return self._host.fetch_pipeline.parse_validated_content(
+        return await self._host.fetch_pipeline.parse_validated_content(
             url=url,
             url_hash=url_hash,
             result=result,

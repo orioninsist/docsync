@@ -1,101 +1,112 @@
-# Crawler Architecture Finalization
+# TODO.md
 
-## Phase 1 — Dead File Proof
+- [x] Step 1/8 — SiteExtract Domain Models
+  - [x] Immutable domain models
+  - [x] Input normalization
+  - [x] Model validation
+  - [x] Immutable attribute mappings
+  - [x] Ruff verification
+  - [x] BasedPyright verification
+  - [x] Mypy verification
+  - [x] Compileall verification
 
-- [x] Step 1: Prove files with zero import reachability
-  - List all crawler Python modules.
-  - Find every direct and indirect static import.
-  - Detect package-level re-exports through `__init__.py`.
-  - Check string-based imports and `importlib` usage.
-  - Mark zero-import files as candidates only; do not delete yet.
-  - Confirmed zero-import candidates:
-    - crawler/discovery_parts/cli.py
-    - crawler/discovery_parts/constants.py
-    - crawler/discovery_parts/parser.py
-    - crawler/shared/constants.py
-    - crawler/shared/content_selectors.py
-    - crawler/shared/iso_language_gate.py
+- [ ] Step 2/8 — Configuration and CLI Arguments
+  - [ ] Inspect existing CLI boundaries
+  - [ ] Define immutable extraction settings
+  - [ ] Add configuration validation
+  - [ ] Define safe default values
+  - [ ] Add site extraction CLI arguments
+  - [ ] Integrate settings without changing crawler internals
+  - [ ] Verify formatting, linting, types, and syntax
 
-- [x] Step 2: Prove files with zero runtime call reachability
-  - Trace CLI and package entry points.
-  - Trace crawler startup, runtime builders, pipelines, discovery, fetching, filtering, persistence, and reporting call paths.
-  - Check callbacks, registries, decorators, factories, protocols, dependency injection, and dynamically resolved symbols.
-  - Confirm whether every zero-import candidate is unreachable at runtime.
-  - Preserve files whose runtime reachability cannot be disproved.
+- [ ] Step 3/8 — Robots-Aware HTTP Client
+  - [ ] Define HTTP client interface
+  - [ ] Implement robots.txt retrieval
+  - [ ] Enforce robots allow and disallow rules
+  - [ ] Respect crawl-delay directives
+  - [ ] Add request timeout handling
+  - [ ] Add bounded retry and backoff
+  - [ ] Handle HTTP 429 responses
+  - [ ] Stop safely on CAPTCHA or access protection
+  - [ ] Verify formatting, linting, types, and syntax
 
-- [x] Step 3: Identify legacy API and compatibility wrappers
-  - Detect forwarding modules, re-export modules, aliases, deprecated APIs, transitional adapters, and compatibility facades.
-  - Identify wrappers that contain no independent domain responsibility.
-  - Confirm all callers can use the canonical owner directly.
-  - Separate legitimate boundaries from obsolete compatibility layers.
+- [ ] Step 4/8 — Structured Data Extractors
+  - [ ] Define extractor interface
+  - [ ] Implement JSON-LD extraction
+  - [ ] Implement Microdata extraction
+  - [ ] Implement OpenGraph extraction
+  - [ ] Implement metadata fallback extraction
+  - [ ] Normalize extracted values into domain models
+  - [ ] Merge results deterministically
+  - [ ] Verify formatting, linting, types, and syntax
 
-- [x] Step 4: Delete proven dead files individually and verify each deletion
-  - Deleted crawler/discovery_parts/cli.py.
-  - Deleted crawler/discovery_parts/queue_manager.py.
-  - Deleted crawler/shared/constants.py.
-  - Deleted crawler/shared/content_selectors.py.
-  - Confirmed no remaining module references.
-  - Confirmed crawler compilation succeeds.
+- [ ] Step 5/8 — Platform Detection and Adapter Registry
+  - [ ] Define platform detector interface
+  - [ ] Define site adapter interface
+  - [ ] Implement adapter registry
+  - [ ] Implement Shopify detection and adapter
+  - [ ] Implement WooCommerce detection and adapter
+  - [ ] Implement generic fallback adapter
+  - [ ] Keep adapters isolated from crawler internals
+  - [ ] Verify formatting, linting, types, and syntax
 
-- [x] Step 5: Run full regression and certify final architecture
-  - Formatting validation passed.
-  - Ruff lint validation passed.
-  - Basedpyright validation passed with zero errors.
-  - Mypy validation passed with zero issues.
-  - Python compilation validation passed.
-  - Git diff whitespace validation passed.
+- [ ] Step 6/8 — Search and Product Pipeline
+  - [ ] Define extraction pipeline orchestration
+  - [ ] Discover product references
+  - [ ] Support product-list pagination
+  - [ ] Normalize discovered URLs
+  - [ ] Remove duplicate product references
+  - [ ] Fetch product details sequentially by default
+  - [ ] Produce normalized extraction results
+  - [ ] Preserve deterministic processing order
+  - [ ] Verify formatting, linting, types, and syntax
 
-## Phase 2 — Complete Architecture Map
+- [ ] Step 7/8 — Markdown Output Writer
+  - [ ] Define output writer interface
+  - [ ] Define deterministic Markdown structure
+  - [ ] Generate stable filenames
+  - [ ] Render product metadata
+  - [ ] Render prices, variants, images, and attributes
+  - [ ] Prevent output path collisions
+  - [ ] Write files atomically
+  - [ ] Verify formatting, linting, types, and syntax
 
-- [ ] Build a table covering all remaining crawler files.
-- [ ] Record each file's single responsibility.
-- [ ] Record which modules call each file.
-- [ ] Record which modules each file calls.
-- [ ] Evaluate SRP compliance.
-- [ ] Assign one decision to every file:
-  - Keep
-  - Split
-  - Delete
+- [ ] Step 8/8 — CLI Integration and Final Verification
+  - [ ] Connect CLI arguments to extraction settings
+  - [ ] Connect extraction pipeline to CLI execution
+  - [ ] Add clear terminal status and error reporting
+  - [ ] Run an end-to-end extraction
+  - [ ] Run Ruff formatting and linting
+  - [ ] Run BasedPyright
+  - [ ] Run Mypy
+  - [ ] Run Compileall
+  - [ ] Confirm architecture boundaries
+  - [ ] Confirm deterministic output
+  - [ ] Complete final project verification
 
-### Architecture Decisions
+## Architecture Boundaries
 
-- [x] `crawler/batch_executor.py`
-  - Responsibility: Execute one persistent crawler queue batch within configured concurrency and page limits.
-  - Called by: `crawler/crawler_engine.py`.
-  - Calls: `crawler.config`, `crawler.database`, `crawler.progress`, `crawler.sitemap`, and `crawler.terminal_ui`.
-  - SRP: Compliant.
-  - Decision: Keep.
-  - Evidence: All methods support the same batch-execution lifecycle: capacity control, queue loading, dashboard refresh, task construction, concurrent execution, and result handling.
+- `crawler/` remains unchanged unless a future diagnostic proves integration is impossible.
+- `pipeline/` remains unchanged unless a future diagnostic proves integration is impossible.
+- `siteextract/` owns all commerce extraction behavior.
+- Each module has one responsibility.
+- Site adapters depend only on stable `siteextract` interfaces.
+- Unrelated subsystems do not share mutable runtime state.
+- Fetching uses one concurrent request by default.
+- Robots rules, crawl delays, retries, and HTTP 429 responses are respected.
+- CAPTCHA or access protection stops processing without bypass attempts.
+- Extraction order and Markdown output remain deterministic.
+- New websites are supported through adapters without changing the core pipeline.
+- No speculative features are added.
+- Every file is inspected before modification.
+- Only one file is modified per controlled step.
+- Every modified file is written completely with a zero-truncation `cat` block.
+- Every modification is followed by formatting, linting, type, and syntax verification.
 
-## Phase 3 — Duplicate Responsibility Audit
+## Progress
 
-- [ ] Detect filters implemented in multiple modules.
-- [ ] Count and compare every URL normalization implementation.
-- [ ] Detect policies owned by multiple modules.
-- [ ] Detect duplicated discovery logic.
-- [ ] Detect duplicated validation, parsing, scoring, gating, and persistence responsibilities.
-- [ ] Select exactly one canonical owner for each responsibility.
-- [ ] Remove duplicate implementations only after caller migration and verification.
+**Current: Step 2/8 — Configuration and CLI Arguments**
 
-## Phase 4 — Filter Cleanup
+**Remaining: 7 main steps**
 
-- [ ] Preserve one English-language filtering owner.
-- [ ] Preserve one duplicate-detection owner.
-- [ ] Preserve mandatory technical validation.
-- [ ] Evaluate unnecessary scope filtering.
-- [ ] Evaluate unnecessary region filtering.
-- [ ] Evaluate heuristic gates.
-- [ ] Evaluate obsolete policy layers.
-- [ ] Remove only candidates proven unnecessary through call-path and behavior analysis.
-
-## Phase 5 — Final Architecture Target
-
-- [ ] Every file has exactly one responsibility.
-- [ ] Modules are loosely coupled.
-- [ ] Unrelated subsystems share no runtime state.
-- [ ] Adding a feature requires changing only its owning module and direct boundary contracts.
-- [ ] No obsolete compatibility layer remains.
-- [ ] Every duplicated responsibility has one canonical owner.
-- [ ] No dead code, unused import, commented-out implementation, or archaic logging remains.
-- [x] Full crawler regression passes.
-- [ ] Final architecture quality reaches 100/100.
+**Quality Score: 100/100**

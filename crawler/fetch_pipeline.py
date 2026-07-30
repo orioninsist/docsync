@@ -10,13 +10,21 @@ from crawler.config import CrawlerConfig
 from crawler.database import DatabaseManager
 from crawler.dedup import DeduplicationEngine, DedupResult
 from crawler.discovery_parts.fetcher import AsyncFetcher, FetchResult
+from crawler.documentation_framework_detector import (
+    DocumentationFramework,
+    DocumentationFrameworkDetector,
+)
+from crawler.hydration_detector import HydrationDetector, HydrationStatus
 from crawler.language import LanguageDetector
+from crawler.llms_txt_discovery import LlmsTxtDiscovery
 from crawler.manifest_history import ManifestHistory
 from crawler.markdown_writer import MarkdownWriter
 from crawler.observability import CrawlerObservability
+from crawler.openapi_discovery import OpenApiDiscovery
 from crawler.parser import ContentParser, ParsedPage
 from crawler.policy_engine import SmartScopePolicy
 from crawler.progress import RichDashboard
+from crawler.search_index_discovery import SearchIndexDiscovery
 from crawler.shared.url_normalizer import normalize_url
 from crawler.terminal_ui import TerminalUIHandle
 
@@ -65,6 +73,11 @@ class FetchPipeline:
     _config: CrawlerConfig
     _database: DatabaseManager
     _fetcher: AsyncFetcher
+    _hydration_detector: HydrationDetector
+    _framework_detector: DocumentationFrameworkDetector
+    _search_index_discovery: SearchIndexDiscovery
+    _openapi_discovery: OpenApiDiscovery
+    _llms_txt_discovery: LlmsTxtDiscovery
     _parser: ContentParser
     _language: LanguageDetector
     _manifest_history: ManifestHistory | None
@@ -97,6 +110,11 @@ class FetchPipeline:
         self._config = config
         self._database = database
         self._fetcher = fetcher
+        self._hydration_detector = HydrationDetector()
+        self._framework_detector = DocumentationFrameworkDetector()
+        self._search_index_discovery = SearchIndexDiscovery()
+        self._openapi_discovery = OpenApiDiscovery()
+        self._llms_txt_discovery = LlmsTxtDiscovery(config)
         self._parser = parser
         self._language = language
         self._manifest_history = (
@@ -414,7 +432,7 @@ class FetchPipeline:
             url,
         )
 
-    def parse_validated_content(
+    async def parse_validated_content(
         self,
         *,
         url: str,
@@ -439,6 +457,74 @@ class FetchPipeline:
 
         if html is None:
             raise RuntimeError("Validated fetch result unexpectedly contains no HTML")
+
+        hydration = self._hydration_detector.assess(html)
+
+        if hydration.status is not HydrationStatus.STATIC:
+            self._logger.info(
+                "Hydration detected: url=%s status=%s reasons=%s",
+                result.final_url,
+                hydration.status.value,
+                ",".join(hydration.reasons),
+            )
+
+        framework = self._framework_detector.assess(html)
+
+        if framework.framework is not DocumentationFramework.UNKNOWN:
+            self._logger.info(
+                "Documentation framework detected: url=%s framework=%s confidence=%s reasons=%s",
+                result.final_url,
+                framework.framework.value,
+                framework.confidence,
+                ",".join(framework.reasons),
+            )
+
+        search_index = self._search_index_discovery.discover(
+            html=html,
+            base_url=result.final_url,
+        )
+
+        if search_index.primary is not None:
+            self._logger.info(
+                (
+                    "Search index detected: "
+                    "url=%s kind=%s confidence=%s index=%s source=%s"
+                ),
+                result.final_url,
+                search_index.primary.kind.value,
+                search_index.primary.confidence,
+                search_index.primary.url,
+                search_index.primary.source,
+            )
+
+        openapi = self._openapi_discovery.discover(
+            html=html,
+            base_url=result.final_url,
+        )
+
+        if openapi.primary is not None:
+            self._logger.info(
+                (
+                    "OpenAPI resource detected: "
+                    "url=%s kind=%s confidence=%s resource=%s source=%s"
+                ),
+                result.final_url,
+                openapi.primary.kind.value,
+                openapi.primary.confidence,
+                openapi.primary.url,
+                openapi.primary.source,
+            )
+
+        llms = await self._llms_txt_discovery.discover(
+            result.final_url,
+        )
+
+        if llms.primary is not None:
+            self._logger.info(
+                "llms.txt detected: url=%s document=%s",
+                result.final_url,
+                llms.primary.url,
+            )
 
         if self._should_skip_non_english(
             html=html,

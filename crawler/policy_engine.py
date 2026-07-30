@@ -61,6 +61,7 @@ class SmartScopePolicy:
     start_netloc: str
     start_host: str
     start_root_domain: str
+    allowed_path_prefix: str
 
     def __init__(
         self,
@@ -69,14 +70,13 @@ class SmartScopePolicy:
     ) -> None:
         """Initialize the canonical scope from the seed URL."""
 
-        del allowed_path_prefix
-
         self.start_url = start_url
 
         parsed = urlparse(start_url)
         self.start_netloc = parsed.netloc.lower()
         self.start_host = self.normalize_host(parsed.netloc)
         self.start_root_domain = self.root_domain(self.start_host)
+        self.allowed_path_prefix = self._normalize_path_prefix(allowed_path_prefix)
 
     def evaluate_url(self, url: str) -> PolicyResult:
         """Evaluate a normal same-scope crawler URL."""
@@ -91,6 +91,11 @@ class SmartScopePolicy:
 
         if host_result is not None:
             return host_result
+
+        path_scope_result = self._path_scope_guard_result(parsed.path)
+
+        if path_scope_result is not None:
+            return path_scope_result
 
         return PolicyResult(PolicyDecision.ALLOW, "url_allowed")
 
@@ -114,6 +119,11 @@ class SmartScopePolicy:
             return base_result
 
         if self.same_scope(url):
+            path_scope_result = self._path_scope_guard_result(parsed.path)
+
+            if path_scope_result is not None:
+                return path_scope_result
+
             return PolicyResult(PolicyDecision.ALLOW, "url_allowed")
 
         if not allow_official_cross_host:
@@ -146,6 +156,11 @@ class SmartScopePolicy:
             return base_result
 
         if self.same_scope(url):
+            path_scope_result = self._path_scope_guard_result(parsed.path)
+
+            if path_scope_result is not None:
+                return path_scope_result
+
             return PolicyResult(PolicyDecision.ALLOW, "same_scope")
 
         return self._official_cross_host_result(
@@ -201,6 +216,14 @@ class SmartScopePolicy:
             if part.strip()
         }
 
+    @staticmethod
+    def _normalize_path_prefix(path_prefix: str) -> str:
+        """Return a canonical absolute path prefix."""
+
+        normalized = f"/{path_prefix.strip().strip('/')}" if path_prefix else "/"
+
+        return normalized.rstrip("/") or "/"
+
     def _base_url_guard_result(
         self,
         parsed: ParseResult,
@@ -220,6 +243,27 @@ class SmartScopePolicy:
                 return result
 
         return None
+
+    def _path_scope_guard_result(
+        self,
+        path: str,
+    ) -> PolicyResult | None:
+        """Block paths outside the configured seed-path boundary."""
+
+        if self.allowed_path_prefix == "/":
+            return None
+
+        normalized_path = self._normalize_path_prefix(path)
+
+        if normalized_path == self.allowed_path_prefix or normalized_path.startswith(
+            f"{self.allowed_path_prefix}/"
+        ):
+            return None
+
+        return PolicyResult(
+            PolicyDecision.BLOCK,
+            "outside_allowed_path",
+        )
 
     @staticmethod
     def _official_cross_host_result(

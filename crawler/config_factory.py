@@ -43,7 +43,7 @@ def build_auto_config(
         logs_dir=logs_dir,
         require_english=True,
         recursive_discovery=True,
-        use_sitemap_discovery=False,
+        use_sitemap_discovery=True,
         auto_continue_until_complete=True,
         allow_official_cross_host_discovery=(
             should_allow_cross_host_discovery(start_url)

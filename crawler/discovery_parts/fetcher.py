@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from math import ldexp
 from secrets import SystemRandom
 
 import aiohttp
@@ -42,9 +45,13 @@ __all__ = [
     "MEDIA_SOCIAL_HOSTS",
 ]
 
-BLOCKED_STATUS_CODES = frozenset({401, 403, 407, 429, 451})
+PERMANENT_BLOCK_STATUS_CODES = frozenset({401, 403, 407, 451})
+RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 READ_CHUNK_SIZE = 8_192
 EARLY_LANGUAGE_CHECK_BYTES = 16_384
+INITIAL_RETRY_DELAY_SECONDS = 1.0
+MAX_RETRY_DELAY_SECONDS = 60.0
+RETRY_JITTER_RATIO = 0.25
 _JITTER = SystemRandom()
 
 
@@ -88,7 +95,9 @@ class AsyncFetcher:
     """Network-only fetcher with lightweight pre-download filtering."""
 
     def __init__(
-        self, config: CrawlerConfig, logger: logging.Logger | None = None
+        self,
+        config: CrawlerConfig,
+        logger: logging.Logger | None = None,
     ) -> None:
         self.config: CrawlerConfig = config
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
@@ -111,18 +120,22 @@ class AsyncFetcher:
         async with self.semaphore:
             await self._respect_delay()
             result = await self._fetch_with_aiohttp(
-                url, cache_headers=cache_headers or {}
+                url,
+                cache_headers=cache_headers or {},
             )
 
             if result.not_modified:
                 return result
 
-            blocked_without_html = (
-                result.status_code in BLOCKED_STATUS_CODES and not result.html
+            permanently_blocked_without_html = (
+                result.status_code in PERMANENT_BLOCK_STATUS_CODES and not result.html
             )
-            if blocked_without_html:
+            if permanently_blocked_without_html:
                 self.logger.warning(
-                    "HTTP status indicates blocked page; skipping Playwright: url=%s status=%s",
+                    (
+                        "HTTP status indicates a permanent access block; "
+                        "skipping Playwright: url=%s status=%s"
+                    ),
                     url,
                     result.status_code,
                 )
@@ -138,19 +151,25 @@ class AsyncFetcher:
         """Run lightweight URL and HEAD checks without downloading the full body."""
 
         allowed, reason = should_download(
-            url=url, require_english=self.config.require_english
+            url=url,
+            require_english=self.config.require_english,
         )
         if not allowed:
             return ProbeResult(False, url, None, None, None, False, reason)
 
         headers = self._request_headers(cache_headers={})
+
         async with aiohttp.ClientSession(headers=headers) as session:
-            result = await self._preflight_head(session=session, url=url)
+            result = await self._preflight_head(
+                session=session,
+                url=url,
+            )
 
         if result is None:
             return ProbeResult(True, url, None, None, None, False)
 
         result_allowed = result.not_modified or result.status_code is not None
+
         return ProbeResult(
             allowed=result_allowed,
             final_url=result.final_url,
@@ -179,10 +198,17 @@ class AsyncFetcher:
     async def _respect_delay(self) -> None:
         """Sleep between requests using configured polite delay."""
 
-        delay = _JITTER.uniform(self.config.min_delay, self.config.max_delay)
+        delay = _JITTER.uniform(
+            self.config.min_delay,
+            self.config.max_delay,
+        )
         await asyncio.sleep(delay)
 
-    def _request_headers(self, *, cache_headers: dict[str, str]) -> dict[str, str]:
+    def _request_headers(
+        self,
+        *,
+        cache_headers: dict[str, str],
+    ) -> dict[str, str]:
         """Build crawler request headers."""
 
         return {
@@ -200,6 +226,7 @@ class AsyncFetcher:
         """Fetch page with aiohttp and streaming language preflight."""
 
         blocked_result = self._blocked_url_result(url)
+
         if blocked_result is not None:
             return blocked_result
 
@@ -207,14 +234,21 @@ class AsyncFetcher:
         last_result = self._empty_result(url)
 
         async with aiohttp.ClientSession(headers=headers) as session:
-            head_result = await self._preflight_head(session=session, url=url)
+            head_result = await self._preflight_head(
+                session=session,
+                url=url,
+            )
+
             if head_result is not None:
                 return head_result
 
             for attempt in range(1, self.config.max_retries + 1):
                 last_result = await self._attempt_get(
-                    session=session, url=url, attempt=attempt
+                    session=session,
+                    url=url,
+                    attempt=attempt,
                 )
+
                 if self._is_terminal_fetch_result(last_result):
                     return last_result
 
@@ -253,7 +287,12 @@ class AsyncFetcher:
                 self.config.max_retries,
                 url,
             )
-            await asyncio.sleep(1)
+            await self._sleep_before_retry(
+                attempt=attempt,
+                retry_after=None,
+                source_url=url,
+                status_code=None,
+            )
             return self._empty_result(url)
 
     async def _handle_get_response(
@@ -267,29 +306,54 @@ class AsyncFetcher:
 
         metadata = self._response_metadata(response)
         preflight_result = self._reject_response_metadata(
-            source_url=source_url, metadata=metadata
+            source_url=source_url,
+            metadata=metadata,
         )
+
         if preflight_result is not None:
             return preflight_result
 
         if metadata.status_code == 304:
             return self._not_modified_result(metadata)
 
-        if metadata.status_code in BLOCKED_STATUS_CODES:
-            return await self._blocked_status_result(
-                response=response, metadata=metadata
+        if metadata.status_code in PERMANENT_BLOCK_STATUS_CODES:
+            return await self._permanent_block_result(
+                response=response,
+                metadata=metadata,
             )
 
-        if metadata.status_code >= 400:
+        if metadata.status_code in RETRYABLE_STATUS_CODES:
+            retry_after = self._retry_after_seconds(response)
             self.logger.warning(
-                "aiohttp HTTP error on attempt %s/%s: url=%s status=%s final_url=%s",
+                (
+                    "aiohttp received retryable HTTP status on attempt %s/%s: "
+                    "url=%s status=%s final_url=%s retry_after=%s"
+                ),
                 attempt,
                 self.config.max_retries,
                 source_url,
                 metadata.status_code,
                 metadata.final_url,
+                retry_after,
             )
-            await asyncio.sleep(1)
+            await self._sleep_before_retry(
+                attempt=attempt,
+                retry_after=retry_after,
+                source_url=source_url,
+                status_code=metadata.status_code,
+            )
+            return self._metadata_empty_result(metadata)
+
+        if metadata.status_code >= 400:
+            self.logger.warning(
+                (
+                    "aiohttp received non-retryable HTTP error: "
+                    "url=%s status=%s final_url=%s"
+                ),
+                source_url,
+                metadata.status_code,
+                metadata.final_url,
+            )
             return self._metadata_empty_result(metadata)
 
         html = await self._read_text_with_language_preflight(
@@ -297,6 +361,7 @@ class AsyncFetcher:
             url=metadata.final_url,
             content_type=metadata.content_type,
         )
+
         return FetchResult(
             html=html,
             final_url=metadata.final_url,
@@ -306,20 +371,25 @@ class AsyncFetcher:
             not_modified=False,
         )
 
-    async def _blocked_status_result(
+    async def _permanent_block_result(
         self,
         *,
         response: aiohttp.ClientResponse,
         metadata: ResponseMetadata,
     ) -> FetchResult:
-        """Return protected/blocked HTTP status result."""
+        """Return a permanent protected or blocked HTTP status result."""
 
         html = await response.text() if is_html(metadata.content_type) else None
+
         self.logger.warning(
-            "aiohttp detected blocked/protected HTTP status: status=%s final_url=%s",
+            (
+                "aiohttp detected permanent blocked/protected HTTP status: "
+                "status=%s final_url=%s"
+            ),
             metadata.status_code,
             metadata.final_url,
         )
+
         return FetchResult(
             html=html,
             final_url=metadata.final_url,
@@ -327,6 +397,86 @@ class AsyncFetcher:
             etag=metadata.etag,
             last_modified=metadata.last_modified,
             not_modified=False,
+        )
+
+    async def _sleep_before_retry(
+        self,
+        *,
+        attempt: int,
+        retry_after: float | None,
+        source_url: str,
+        status_code: int | None,
+    ) -> None:
+        """Sleep before another attempt using bounded Retry-After or backoff."""
+
+        if attempt >= self.config.max_retries:
+            return
+
+        delay: float | None = retry_after
+
+        if delay is None:
+            exponential_delay: float = ldexp(
+                INITIAL_RETRY_DELAY_SECONDS,
+                attempt - 1,
+            )
+            bounded_delay: float = min(
+                exponential_delay,
+                MAX_RETRY_DELAY_SECONDS,
+            )
+            jitter: float = _JITTER.uniform(
+                0.0,
+                bounded_delay * RETRY_JITTER_RATIO,
+            )
+            delay = bounded_delay + jitter
+
+        delay = min(
+            max(delay, 0.0),
+            MAX_RETRY_DELAY_SECONDS,
+        )
+
+        self.logger.info(
+            ("Waiting before retry: url=%s status=%s attempt=%s/%s delay=%.2fs"),
+            source_url,
+            status_code,
+            attempt,
+            self.config.max_retries,
+            delay,
+        )
+        await asyncio.sleep(delay)
+
+    @staticmethod
+    def _retry_after_seconds(
+        response: aiohttp.ClientResponse,
+    ) -> float | None:
+        """Parse Retry-After as delta seconds or an HTTP date."""
+
+        raw_value = response.headers.get("Retry-After")
+
+        if raw_value is None:
+            return None
+
+        stripped_value = raw_value.strip()
+
+        if not stripped_value:
+            return None
+
+        try:
+            return max(float(stripped_value), 0.0)
+        except ValueError:
+            pass
+
+        try:
+            retry_datetime = parsedate_to_datetime(stripped_value)
+        except TypeError, ValueError, OverflowError:
+            return None
+
+        if retry_datetime.tzinfo is None:
+            retry_datetime = retry_datetime.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        return max(
+            (retry_datetime.astimezone(timezone.utc) - now).total_seconds(),
+            0.0,
         )
 
     async def _preflight_head(
@@ -335,7 +485,7 @@ class AsyncFetcher:
         session: aiohttp.ClientSession,
         url: str,
     ) -> FetchResult | None:
-        """Reject blocked resources using HEAD before body download."""
+        """Reject unsuitable resources using HEAD before body download."""
 
         try:
             async with session.head(
@@ -344,13 +494,17 @@ class AsyncFetcher:
                 allow_redirects=True,
             ) as response:
                 metadata = self._response_metadata(response)
+
                 if metadata.status_code == 304:
                     return self._not_modified_result(metadata)
 
-                if metadata.status_code in {405, 501} or metadata.status_code >= 400:
+                if metadata.status_code >= 400:
                     return None
 
-                return self._reject_response_metadata(source_url=url, metadata=metadata)
+                return self._reject_response_metadata(
+                    source_url=url,
+                    metadata=metadata,
+                )
         except aiohttp.ClientError, asyncio.TimeoutError, OSError:
             self.logger.info(
                 "HEAD preflight unavailable; continuing with streamed GET: url=%s",
@@ -365,7 +519,7 @@ class AsyncFetcher:
         url: str,
         content_type: str,
     ) -> str | None:
-        """Stream text and reject non-English pages before full body read when possible."""
+        """Stream text and reject non-English pages before full body read."""
 
         chunks: list[bytes] = []
         sampled_size = 0
@@ -377,10 +531,15 @@ class AsyncFetcher:
 
             chunks.append(chunk)
             sampled_size += len(chunk)
+
             if checked_language or sampled_size < EARLY_LANGUAGE_CHECK_BYTES:
                 continue
 
-            sample_text = self._decode_response_bytes(response, b"".join(chunks))
+            sample_text = self._decode_response_bytes(
+                response,
+                b"".join(chunks),
+            )
+
             if self._sample_is_blocked_by_language(
                 sample_text,
                 url=url,
@@ -394,15 +553,19 @@ class AsyncFetcher:
 
             checked_language = True
 
-        text = self._decode_response_bytes(response, b"".join(chunks))
+        text = self._decode_response_bytes(
+            response,
+            b"".join(chunks),
+        )
         sample = text[:PREFLIGHT_SAMPLE_BYTES].strip()
+
         if self._sample_is_blocked_by_language(
             sample,
             url=url,
             content_type=content_type,
         ):
             self.logger.info(
-                "Stream preflight skipped non-English page after confirmation: %s",
+                ("Stream preflight skipped non-English page after confirmation: %s"),
                 url,
             )
             return None
@@ -428,15 +591,17 @@ class AsyncFetcher:
         )
 
     def _blocked_url_result(self, url: str) -> FetchResult | None:
-        """Return empty result when URL is blocked before network."""
+        """Return an empty result when URL is blocked before network."""
 
         if not is_blocked_url_before_network(
-            url, require_english=self.config.require_english
+            url,
+            require_english=self.config.require_english,
         ):
             return None
 
         self.logger.info(
-            "Preflight skipped blocked URL before network request: url=%s", url
+            "Preflight skipped blocked URL before network request: url=%s",
+            url,
         )
         return self._empty_result(url)
 
@@ -446,18 +611,19 @@ class AsyncFetcher:
         source_url: str,
         metadata: ResponseMetadata,
     ) -> FetchResult | None:
-        """Return FetchResult when response metadata should reject download."""
+        """Return a result when response metadata should reject download."""
 
         allowed, reason = should_download(
             url=metadata.final_url,
             content_type=metadata.content_type,
             require_english=self.config.require_english,
         )
+
         if allowed:
             return None
 
         self.logger.info(
-            "Preflight skipped response: reason=%s url=%s status=%s final_url=%s",
+            ("Preflight skipped response: reason=%s url=%s status=%s final_url=%s"),
             reason,
             source_url,
             metadata.status_code,
@@ -473,7 +639,9 @@ class AsyncFetcher:
                 return self._context
 
             self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(headless=True)
+            self._browser = await self._playwright.chromium.launch(
+                headless=True,
+            )
             self._context = await self._browser.new_context(
                 user_agent=self.config.user_agent,
                 java_script_enabled=True,
@@ -482,57 +650,114 @@ class AsyncFetcher:
             return self._context
 
     async def _fetch_with_playwright(self, url: str) -> FetchResult:
-        """Fetch JavaScript-rendered HTML only after normal fetch is insufficient."""
+        """Fetch JavaScript-rendered HTML after normal fetching is insufficient."""
 
         blocked_result = self._blocked_url_result(url)
+
         if blocked_result is not None:
             return blocked_result
 
         context = await self._ensure_playwright_context()
         page = await context.new_page()
-        result = await self._read_playwright_page(page=page, url=url)
-        await page.close()
-        return result
 
-    async def _read_playwright_page(self, *, page: Page, url: str) -> FetchResult:
+        try:
+            return await self._read_playwright_page(
+                page=page,
+                url=url,
+            )
+        finally:
+            await page.close()
+
+    async def _read_playwright_page(
+        self,
+        *,
+        page: Page,
+        url: str,
+    ) -> FetchResult:
         """Read one Playwright page and convert it to FetchResult."""
 
         status_code: int | None = None
+
         try:
             response = await page.goto(
                 url,
                 wait_until="domcontentloaded",
                 timeout=self.config.playwright_timeout_ms,
             )
+
             if response is not None:
                 status_code = response.status
 
-            if status_code in BLOCKED_STATUS_CODES:
-                return self._playwright_empty_result(page.url, status_code)
+            if status_code in PERMANENT_BLOCK_STATUS_CODES:
+                return self._playwright_empty_result(
+                    page.url,
+                    status_code,
+                )
+
+            if status_code in RETRYABLE_STATUS_CODES:
+                self.logger.warning(
+                    (
+                        "Playwright received retryable HTTP status after aiohttp "
+                        "retries were exhausted: url=%s status=%s"
+                    ),
+                    page.url,
+                    status_code,
+                )
+                return self._playwright_empty_result(
+                    page.url,
+                    status_code,
+                )
 
             await page.wait_for_timeout(self.config.playwright_extra_wait_ms)
             await self._scroll_page(page=page)
 
             if is_blocked_url_before_network(
-                page.url, require_english=self.config.require_english
+                page.url,
+                require_english=self.config.require_english,
             ):
-                return self._playwright_empty_result(page.url, status_code)
+                return self._playwright_empty_result(
+                    page.url,
+                    status_code,
+                )
 
             html = await page.content()
+
             if self._sample_is_blocked_by_language(
                 html[:PREFLIGHT_SAMPLE_BYTES],
                 url=page.url,
                 content_type="text/html",
             ):
-                return self._playwright_empty_result(page.url, status_code)
+                return self._playwright_empty_result(
+                    page.url,
+                    status_code,
+                )
 
-            return FetchResult(html, page.url, status_code, None, None, False)
+            return FetchResult(
+                html,
+                page.url,
+                status_code,
+                None,
+                None,
+                False,
+            )
         except PlaywrightTimeoutError:
-            self.logger.warning("Playwright timeout: url=%s", url)
-            return self._playwright_empty_result(url, status_code)
+            self.logger.warning(
+                "Playwright timeout: url=%s",
+                url,
+            )
+            return self._playwright_empty_result(
+                url,
+                status_code,
+            )
         except PlaywrightError:
-            self.logger.exception("Playwright fetch failed: url=%s", url)
-            return self._playwright_empty_result(url, status_code)
+            self.logger.exception(
+                "Playwright fetch failed: url=%s",
+                url,
+            )
+            return self._playwright_empty_result(
+                url,
+                status_code,
+            )
 
     async def _scroll_page(self, *, page: Page) -> None:
         """Scroll page to trigger lazy-rendered content."""
@@ -543,40 +768,63 @@ class AsyncFetcher:
 
     @staticmethod
     def _is_terminal_fetch_result(result: FetchResult) -> bool:
-        """Return True when retry loop should stop."""
+        """Return True when the retry loop should stop."""
 
         if result.html is not None or result.not_modified:
             return True
 
-        return result.status_code is not None and result.status_code < 400
+        if result.status_code in RETRYABLE_STATUS_CODES:
+            return False
+
+        return result.status_code is not None
 
     @staticmethod
-    def _decode_response_bytes(response: aiohttp.ClientResponse, raw: bytes) -> str:
+    def _decode_response_bytes(
+        response: aiohttp.ClientResponse,
+        raw: bytes,
+    ) -> str:
         """Decode response bytes with server charset fallback."""
 
-        return raw.decode(response.charset or "utf-8", errors="replace")
+        return raw.decode(
+            response.charset or "utf-8",
+            errors="replace",
+        )
 
     @staticmethod
-    def _response_metadata(response: aiohttp.ClientResponse) -> ResponseMetadata:
+    def _response_metadata(
+        response: aiohttp.ClientResponse,
+    ) -> ResponseMetadata:
         """Extract immutable response metadata."""
 
         return ResponseMetadata(
             final_url=str(response.url),
             status_code=response.status,
-            content_type=response.headers.get("Content-Type", "").lower(),
+            content_type=response.headers.get(
+                "Content-Type",
+                "",
+            ).lower(),
             etag=response.headers.get("ETag"),
             last_modified=response.headers.get("Last-Modified"),
         )
 
     @staticmethod
     def _empty_result(url: str) -> FetchResult:
-        """Return empty fetch result."""
+        """Return an empty fetch result."""
 
-        return FetchResult(None, url, None, None, None, False)
+        return FetchResult(
+            None,
+            url,
+            None,
+            None,
+            None,
+            False,
+        )
 
     @staticmethod
-    def _metadata_empty_result(metadata: ResponseMetadata) -> FetchResult:
-        """Return empty fetch result with response metadata."""
+    def _metadata_empty_result(
+        metadata: ResponseMetadata,
+    ) -> FetchResult:
+        """Return an empty fetch result with response metadata."""
 
         return FetchResult(
             None,
@@ -588,8 +836,10 @@ class AsyncFetcher:
         )
 
     @staticmethod
-    def _not_modified_result(metadata: ResponseMetadata) -> FetchResult:
-        """Return 304 fetch result."""
+    def _not_modified_result(
+        metadata: ResponseMetadata,
+    ) -> FetchResult:
+        """Return an HTTP 304 fetch result."""
 
         return FetchResult(
             None,
@@ -601,7 +851,17 @@ class AsyncFetcher:
         )
 
     @staticmethod
-    def _playwright_empty_result(url: str, status_code: int | None) -> FetchResult:
-        """Return empty Playwright result."""
+    def _playwright_empty_result(
+        url: str,
+        status_code: int | None,
+    ) -> FetchResult:
+        """Return an empty Playwright result."""
 
-        return FetchResult(None, url, status_code, None, None, False)
+        return FetchResult(
+            None,
+            url,
+            status_code,
+            None,
+            None,
+            False,
+        )

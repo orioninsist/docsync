@@ -18,6 +18,7 @@ from crawler.database import DatabaseManager
 from crawler.dedup import DeduplicationEngine
 from crawler.global_url_registry import GlobalUrlRegistry
 from crawler.intent_analyzer import IntentAnalyzer
+from crawler.navigation_graph import NavigationGraphExtractor
 from crawler.observability import CrawlerObservability
 from crawler.official_graph import OfficialHostGraph
 from crawler.policy_engine import PolicyResult, SmartScopePolicy
@@ -109,6 +110,12 @@ class CrawlerDiscoveryService:
             html=html,
             base_url=final_url,
         )
+
+        navigation_graph = NavigationGraphExtractor().extract(
+            html,
+            final_url,
+        )
+        discovered_links.extend(navigation_graph.discovered_urls)
 
         if self.config.allow_official_cross_host_discovery:
             discovered_links.extend(
