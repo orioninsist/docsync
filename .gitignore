@@ -76,6 +76,8 @@ uv-cache/
 .hypothesis/
 .tox/
 .nox/
+tests/__pycache__
+tests/__pycache__/
 
 .coverage
 .coverage.*
