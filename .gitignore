@@ -8,7 +8,7 @@
 # ------------------------------------------------------------------------------
 __pycache__/
 **/__pycache__/
-tools/__pycache__
+
 *.py[cod]
 *$py.class
 .pytest_cache/
@@ -85,14 +85,17 @@ sdist/
 storage
 storage/
 storage/*
-
+logs
+logs/
+logs/*
 # ------------------------------------------------------------------------------
 # Generated crawler output
 # ------------------------------------------------------------------------------
 output/*
 !output/.gitkeep
 
-
+logs/*
+!logs/.gitkeep
 
 data/markdown/*
 !data/markdown/.gitkeep
@@ -132,9 +135,11 @@ state-backups/
 # ------------------------------------------------------------------------------
 # Logs and diagnostics
 # ------------------------------------------------------------------------------
-logs
-logs/*
-logs/
+*.log
+*.log.*
+*.prof
+*.lprof
+*.trace
 
 debug/
 debug-output/
@@ -243,7 +248,8 @@ NOTES.local.md
 !output/
 !output/.gitkeep
 
-
+!logs/
+!logs/.gitkeep
 
 # ------------------------------------------------------------------------------
 # Final protection against accidental backup publication
