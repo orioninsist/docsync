@@ -1,0 +1,247 @@
+# ==============================================================================
+# docsync .gitignore
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Python bytecode and interpreter artifacts
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+
+# ------------------------------------------------------------------------------
+# Python virtual environments
+# ------------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.uv/
+.python-env/
+
+# ------------------------------------------------------------------------------
+# Environment variables and local secrets
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+.secrets/
+
+# ------------------------------------------------------------------------------
+# Python packaging and build artifacts
+# ------------------------------------------------------------------------------
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ------------------------------------------------------------------------------
+# uv and dependency caches
+# ------------------------------------------------------------------------------
+.uv-cache/
+uv-cache/
+
+# Keep the reproducible dependency lock file.
+!uv.lock
+
+# ------------------------------------------------------------------------------
+# Test, coverage, lint, and type-check caches
+# ------------------------------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+.pytest_cache/
+test-results/
+junit.xml
+
+# ------------------------------------------------------------------------------
+# Crawlee runtime storage
+# ------------------------------------------------------------------------------
+storage/
+!storage/.gitkeep
+
+# Crawlee may also use these conventional directories.
+crawlee_storage/
+apify_storage/
+
+# ------------------------------------------------------------------------------
+# Generated crawler output
+# ------------------------------------------------------------------------------
+output/
+!output/.gitkeep
+
+logs/
+!logs/.gitkeep
+*.log
+*.log.*
+
+# Generated Markdown documents.
+data/markdown/*
+!data/markdown/.gitkeep
+
+# Incremental synchronization state.
+data/state/*
+!data/state/.gitkeep
+
+# Generated architecture and audit reports.
+data/architecture-report.json
+data/*-report.json
+data/reports/
+reports/
+
+# Runtime databases and state files.
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.checkpoint
+checkpoint.json
+content_hashes.json
+url_state.json
+
+# ------------------------------------------------------------------------------
+# Playwright artifacts
+# ------------------------------------------------------------------------------
+playwright-report/
+test-results/
+blob-report/
+trace.zip
+*.webm
+*.har
+
+# Browser downloads or local browser caches.
+.ms-playwright/
+playwright/.cache/
+
+# ------------------------------------------------------------------------------
+# Temporary and atomic-write files
+# ------------------------------------------------------------------------------
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+*~
+.tmp/
+temp/
+tmp/
+
+# Atomic replacement files created during interrupted writes.
+.*.tmp
+*.json.tmp
+*.md.tmp
+
+# ------------------------------------------------------------------------------
+# Local backup and migration artifacts
+# ------------------------------------------------------------------------------
+*.backup
+*.backup.*
+*.before_*
+*.before-*
+*.old
+*.old.*
+*.save
+*.save.*
+
+# ------------------------------------------------------------------------------
+# IDE and editor configuration
+# ------------------------------------------------------------------------------
+.idea/
+.vscode/
+*.code-workspace
+.project
+.pydevproject
+.settings/
+.spyproject/
+.ropeproject/
+
+# ------------------------------------------------------------------------------
+# Operating-system metadata
+# ------------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ------------------------------------------------------------------------------
+# Profiling and debugging artifacts
+# ------------------------------------------------------------------------------
+*.prof
+*.lprof
+*.trace
+profile/
+profiles/
+debug/
+debug-output/
+
+# ------------------------------------------------------------------------------
+# Local task and scratch files
+# ------------------------------------------------------------------------------
+TODO.local.md
+NOTES.local.md
+scratch/
+.local/
+.cache/
+
+# ------------------------------------------------------------------------------
+# Preserve source, configuration templates, and directory placeholders
+# ------------------------------------------------------------------------------
+!.env.example
+!.python-version
+!pyproject.toml
+!uv.lock
+!README.md
+!TODO.md
+!main.py
+!src/
+!src/**
+!tests/
+!tests/**
+!tools/
+!tools/**
+!data/
+!data/markdown/
+!data/markdown/.gitkeep
+!data/state/
+!data/state/.gitkeep
