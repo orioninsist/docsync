@@ -1458,3 +1458,78 @@ uv run mypy src tests
 uv run pytest
 uv run python -m compileall -q src tests tools main.py
 ```
+
+
+Evet, birden fazla terminalde aynı anda farklı siteleri indirebilirsin. Ancak her işlem için ayrı `--output-dir` ve `--state-dir` kullanmalısın; aksi halde aynı durum dosyalarına yazma ve çıktı çakışması riski oluşur.
+
+```bash
+# Terminal 1
+cd /mnt/local/areas/docsync
+
+uv run docsync \
+    https://github.com/tmux/tmux/wiki \
+    --output-dir data/markdown/tmux \
+    --state-dir data/state/tmux \
+    --max-requests 3000 \
+    --max-concurrency 2 \
+    --requests-per-minute 20
+```
+
+```bash
+# Terminal 2
+cd /mnt/local/areas/docsync
+
+uv run docsync \
+    https://docs.python.org/3/ \
+    --output-dir data/markdown/python \
+    --state-dir data/state/python \
+    --max-requests 3000 \
+    --max-concurrency 2 \
+    --requests-per-minute 20
+```
+
+```bash
+# Terminal 3
+cd /mnt/local/areas/docsync
+
+uv run docsync \
+    https://docs.github.com/ \
+    --output-dir data/markdown/github-docs \
+    --state-dir data/state/github-docs \
+    --max-requests 3000 \
+    --max-concurrency 2 \
+    --requests-per-minute 20
+```
+
+Do not run concurrent crawls with identical directories such as:
+
+```bash
+--output-dir data/markdown
+--state-dir data/state
+```
+
+Use a unique folder name per website:
+
+```text
+data/
+├── markdown/
+│   ├── tmux/
+│   ├── python/
+│   └── github-docs/
+└── state/
+    ├── tmux/
+    ├── python/
+    └── github-docs/
+```
+
+Each terminal then has its own:
+
+* Rich dashboard
+* request queue
+* incremental state
+* content hashes
+* Markdown output
+* crawl statistics
+
+The total load on your computer and internet connection is shared. For three simultaneous crawls using `--max-concurrency 2`, the machine may run up to roughly six active workers in total. Keep the per-site limits conservative to avoid excessive load.
+

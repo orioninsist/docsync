@@ -37,6 +37,7 @@ from docsync.playwright_rendering import (
     install_resource_blocking,
     render_page_html,
 )
+from docsync.progress_events import CrawlEvent, CrawlEventSink
 from docsync.sitemap import discover_sitemap_urls
 from docsync.url_security import (
     normalize_url,
@@ -117,6 +118,7 @@ async def run_crawler(
     mode: str | None = None,
     headless: bool | None = None,
     browser_type: str | None = None,
+    event_sink: CrawlEventSink | None = None,
 ) -> CrawlStats:
     """Crawl HTML pages and synchronize Markdown output."""
     settings = Settings.from_environment()
@@ -197,6 +199,48 @@ async def run_crawler(
 
     stats = CrawlStats(mode=resolved_mode)
 
+    def emit_event(
+        *,
+        phase: str | None = None,
+        current_url: str | None = None,
+        current_title: str | None = None,
+        queued: int | None = None,
+        discovered: int | None = None,
+        active_requests: int | None = None,
+        site_title: str | None = None,
+    ) -> None:
+        if event_sink is None:
+            return
+
+        event_sink(
+            CrawlEvent(
+                phase=phase,
+                current_url=current_url,
+                current_title=current_title,
+                processed=stats.processed,
+                saved=stats.saved,
+                duplicate_content=stats.duplicate_content,
+                incremental_skipped=stats.incremental_skipped,
+                rejected_urls=stats.rejected_urls,
+                empty_pages=stats.empty_pages,
+                non_english=stats.non_english,
+                failed=stats.failed,
+                queued=queued,
+                discovered=discovered,
+                active_requests=active_requests,
+                sitemap_urls=stats.sitemap_urls,
+                sitemap_files_checked=stats.sitemap_files_checked,
+                sitemap_files_found=stats.sitemap_files_found,
+                sitemap_errors=stats.sitemap_errors,
+                site_title=site_title,
+            )
+        )
+
+    emit_event(
+        phase="Loading state",
+        active_requests=0,
+    )
+
     content_hashes = load_content_hashes(resolved_state_dir)
     url_state = load_url_state(resolved_state_dir)
 
@@ -255,92 +299,129 @@ async def run_crawler(
             respect_robots_txt_file=settings.respect_robots_txt,
         )
 
+    active_requests = 0
+
     @crawler.router.default_handler
     async def request_handler(
         context: BeautifulSoupCrawlingContext | PlaywrightCrawlingContext,
     ) -> None:
+
         await crawl_delay_throttle.wait()
-        stats.processed += 1
 
-        if resolved_mode == "playwright":
-            playwright_context = cast(Any, context)
-            html = await render_page_html(
-                playwright_context.page,
-                url=playwright_context.request.url,
-                logger=playwright_context.log,
-                request_timeout_seconds=settings.request_timeout_seconds,
-                network_idle_timeout_milliseconds=(
-                    rendering_config.network_idle_timeout_milliseconds
-                    if rendering_config is not None
-                    else 10_000
-                ),
+        nonlocal active_requests
+
+        try:
+            active_requests += 1
+            emit_event(
+                phase="Downloading",
+                current_url=context.request.url,
+                active_requests=active_requests,
             )
-            soup = BeautifulSoup(
-                html,
-                "lxml",
+
+            stats.processed += 1
+
+            if resolved_mode == "playwright":
+                playwright_context = cast(Any, context)
+                html = await render_page_html(
+                    playwright_context.page,
+                    url=playwright_context.request.url,
+                    logger=playwright_context.log,
+                    request_timeout_seconds=settings.request_timeout_seconds,
+                    network_idle_timeout_milliseconds=(
+                        rendering_config.network_idle_timeout_milliseconds
+                        if rendering_config is not None
+                        else 10_000
+                    ),
+                )
+                soup = BeautifulSoup(
+                    html,
+                    "lxml",
+                )
+            else:
+                http_context = cast(Any, context)
+                soup = http_context.soup
+
+            title_element = soup.title
+            title = (
+                title_element.get_text(
+                    " ",
+                    strip=True,
+                )
+                if title_element is not None
+                else ""
             )
-        else:
-            http_context = cast(Any, context)
-            soup = http_context.soup
 
-        title_element = soup.title
-        title = (
-            title_element.get_text(
-                " ",
-                strip=True,
+            emit_event(
+                phase="Extracting",
+                current_url=context.request.url,
+                current_title=title,
+                active_requests=active_requests,
+                site_title=(title if stats.processed == 1 and title else None),
             )
-            if title_element is not None
-            else ""
-        )
 
-        document = markdown_exporter.export(
-            url=context.request.url,
-            soup=soup,
-            title=title,
-            language=resolved_language,
-            write=False,
-        )
+            document = markdown_exporter.export(
+                url=context.request.url,
+                soup=soup,
+                title=title,
+                language=resolved_language,
+                write=False,
+            )
 
-        unchanged = content_is_unchanged(
-            url=document.url,
-            digest=document.content_hash,
-            url_state=url_state,
-        )
+            unchanged = content_is_unchanged(
+                url=document.url,
+                digest=document.content_hash,
+                url_state=url_state,
+            )
 
-        if not unchanged:
-            markdown_exporter.write(document)
-            stats.saved += 1
+            if not unchanged:
+                markdown_exporter.write(document)
+                stats.saved += 1
 
-        context.log.info(
-            "Page synchronized: url=%s title=%s output=%s",
-            document.url,
-            document.title or "<no title>",
-            document.output_path,
-        )
+            context.log.info(
+                "Page synchronized: url=%s title=%s output=%s",
+                document.url,
+                document.title or "<no title>",
+                document.output_path,
+            )
 
-        await context.push_data(
-            {
-                "url": document.url,
-                "title": document.title,
-                "language": document.language,
-                "output_path": str(document.output_path),
-                "content_hash": document.content_hash,
-            }
-        )
+            await context.push_data(
+                {
+                    "url": document.url,
+                    "title": document.title,
+                    "language": document.language,
+                    "output_path": str(document.output_path),
+                    "content_hash": document.content_hash,
+                }
+            )
 
-        record_incremental_success(
-            url=document.url,
-            output_path=document.output_path,
-            digest=document.content_hash,
-            hashes=content_hashes,
-            url_state=url_state,
-        )
+            record_incremental_success(
+                url=document.url,
+                output_path=document.output_path,
+                digest=document.content_hash,
+                hashes=content_hashes,
+                url_state=url_state,
+            )
 
-        await context.enqueue_links(
-            strategy="same-origin",
-            include=[scope_pattern],
-            exclude=list(EXCLUDED_URL_PATTERNS),
-        )
+            await context.enqueue_links(
+                strategy="same-origin",
+                include=[scope_pattern],
+                exclude=list(EXCLUDED_URL_PATTERNS),
+            )
+        finally:
+            active_requests = max(
+                0,
+                active_requests - 1,
+            )
+            emit_event(
+                phase="Crawling",
+                current_url=context.request.url,
+                active_requests=active_requests,
+            )
+
+    emit_event(
+        phase="Discovering sitemaps",
+        active_requests=0,
+    )
 
     sitemap_result = await discover_sitemap_urls(
         start_url=normalized_start_url,
@@ -362,6 +443,13 @@ async def run_crawler(
     stats.sitemap_files_found = sitemap_result.sitemap_files_found
     stats.sitemap_errors = len(sitemap_result.errors)
 
+    emit_event(
+        phase="Preparing queue",
+        discovered=len(initial_urls),
+        queued=len(initial_urls),
+        active_requests=0,
+    )
+
     if sitemap_result.errors:
         for sitemap_error in sitemap_result.errors:
             crawler.log.warning(
@@ -378,6 +466,13 @@ async def run_crawler(
         config=incremental_config,
         stats=stats,
         url_state=url_state,
+    )
+
+    emit_event(
+        phase="Ready",
+        discovered=len(initial_urls),
+        queued=len(incremental_urls),
+        active_requests=0,
     )
 
     report_configuration = {
@@ -412,6 +507,12 @@ async def run_crawler(
         )
 
     if not incremental_urls:
+        emit_event(
+            phase="Nothing to crawl",
+            queued=0,
+            discovered=len(initial_urls),
+            active_requests=0,
+        )
         finalize_crawl()
         return stats
 
@@ -420,14 +521,41 @@ async def run_crawler(
         context: BeautifulSoupCrawlingContext | BasicCrawlingContext,
         error: Exception,
     ) -> None:
+        nonlocal active_requests
+
         stats.failed += 1
+        active_requests = max(
+            0,
+            active_requests - 1,
+        )
+
+        emit_event(
+            phase="Request failed",
+            current_url=context.request.url,
+            active_requests=active_requests,
+        )
+
         context.log.error(
             "Request permanently failed: url=%s error=%s",
             context.request.url,
             error,
         )
 
+    emit_event(
+        phase="Crawling",
+        queued=len(incremental_urls),
+        discovered=len(initial_urls),
+        active_requests=0,
+    )
+
     await crawler.run(incremental_urls)
+
+    emit_event(
+        phase="Finalizing",
+        queued=0,
+        discovered=len(initial_urls),
+        active_requests=0,
+    )
 
     finalize_crawl()
     return stats
