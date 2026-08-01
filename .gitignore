@@ -85,17 +85,14 @@ sdist/
 storage
 storage/
 storage/*
-logs
-logs/
-logs/*
+
 # ------------------------------------------------------------------------------
 # Generated crawler output
 # ------------------------------------------------------------------------------
 output/*
 !output/.gitkeep
 
-logs/*
-!logs/.gitkeep
+
 
 data/markdown/*
 !data/markdown/.gitkeep
@@ -135,11 +132,9 @@ state-backups/
 # ------------------------------------------------------------------------------
 # Logs and diagnostics
 # ------------------------------------------------------------------------------
-*.log
-*.log.*
-*.prof
-*.lprof
-*.trace
+logs
+logs/*
+logs/
 
 debug/
 debug-output/
@@ -248,8 +243,7 @@ NOTES.local.md
 !output/
 !output/.gitkeep
 
-!logs/
-!logs/.gitkeep
+
 
 # ------------------------------------------------------------------------------
 # Final protection against accidental backup publication
