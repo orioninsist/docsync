@@ -1,0 +1,1 @@
+"""Docsync test suite."""
