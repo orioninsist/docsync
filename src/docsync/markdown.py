@@ -20,7 +20,6 @@ REMOVE_SELECTORS = (
     "svg",
     "canvas",
     "iframe",
-    "form",
     "button",
     "input",
     "select",

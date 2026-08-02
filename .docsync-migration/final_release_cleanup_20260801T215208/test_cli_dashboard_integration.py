@@ -10,7 +10,6 @@ import pytest
 
 from docsync.cli import main
 from docsync.metrics import CrawlStats
-from docsync.progress_events import CrawlEvent, CrawlEventSink
 from docsync.terminal_ui import CrawlProgressSnapshot, SiteInformation
 
 
@@ -359,20 +358,25 @@ def test_cli_forwards_live_event_sink(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    from docsync.progress_events import CrawlEvent
+
     configure_runtime(
         monkeypatch,
         tmp_path,
     )
 
-    captured_event_sinks: list[CrawlEventSink] = []
+    captured_event_sink: object | None = None
 
     async def fake_run_crawler(
         start_url: str,
-        event_sink: CrawlEventSink | None = None,
+        event_sink: object | None = None,
         **_: Any,
     ) -> CrawlStats:
-        assert event_sink is not None
-        captured_event_sinks.append(event_sink)
+        nonlocal captured_event_sink
+
+        captured_event_sink = event_sink
+
+        assert callable(event_sink)
 
         event_sink(
             CrawlEvent(
@@ -414,7 +418,7 @@ def test_cli_forwards_live_event_sink(
     )
 
     assert result == 0
-    assert len(captured_event_sinks) == 1
+    assert callable(captured_event_sink)
 
     dashboard = FakeDashboard.instances[0]
 
@@ -434,6 +438,8 @@ def test_cli_finalization_resets_active_requests_and_queue(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    from docsync.progress_events import CrawlEvent
+
     configure_runtime(
         monkeypatch,
         tmp_path,
@@ -441,10 +447,10 @@ def test_cli_finalization_resets_active_requests_and_queue(
 
     async def fake_run_crawler(
         start_url: str,
-        event_sink: CrawlEventSink | None = None,
+        event_sink: object | None = None,
         **_: Any,
     ) -> CrawlStats:
-        assert event_sink is not None
+        assert callable(event_sink)
 
         event_sink(
             CrawlEvent(

@@ -29,18 +29,36 @@ def _request_handler() -> ast.AsyncFunctionDef:
     )
 
 
-def test_request_handler_keeps_delay_as_first_operation() -> None:
+def test_request_handler_uses_official_request_manager_throttling() -> None:
     handler = _request_handler()
-    first_statement = handler.body[0]
+    source = CRAWLER_PATH.read_text(encoding="utf-8")
 
-    assert isinstance(first_statement, ast.Expr)
-    assert isinstance(first_statement.value, ast.Await)
-    assert isinstance(first_statement.value.value, ast.Call)
-    assert isinstance(
-        first_statement.value.value.func,
-        ast.Attribute,
-    )
-    assert first_statement.value.value.func.attr == "wait"
+    executable_statements = list(handler.body)
+
+    if (
+        executable_statements
+        and isinstance(executable_statements[0], ast.Expr)
+        and isinstance(executable_statements[0].value, ast.Constant)
+        and isinstance(executable_statements[0].value.value, str)
+    ):
+        executable_statements = executable_statements[1:]
+
+    assert executable_statements
+    assert isinstance(executable_statements[0], ast.Nonlocal)
+
+    assert "ThrottlingRequestManager(" in source
+    assert "request_manager=request_manager" in source
+    assert "async def open_run_request_queue(" in source
+    assert "request_manager_opener=open_run_request_queue" in source
+    assert 'alias="docsync-main"' in source
+    assert "MemoryStorageClient" in source
+    assert "storage_client=crawler_storage_client" in source
+    assert "request_manager_opener=open_run_request_queue" in source
+    assert "request_manager_opener=RequestQueue.open" not in source
+    assert "request_manager_opener=RequestQueue.open" not in source
+
+    assert "CrawlDelayThrottle(" not in source
+    assert "await crawl_delay_throttle.wait()" not in source
 
 
 def test_request_handler_uses_exception_safe_cleanup() -> None:

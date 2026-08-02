@@ -24,6 +24,22 @@ SITEMAP_MAX_PAYLOAD_BYTES = 20 * 1024 * 1024
 SITEMAP_USER_AGENT = "docsync/0.1 (+safe documentation crawler)"
 
 
+class SitemapResponseError(ValueError):
+    """Base exception for invalid sitemap HTTP responses."""
+
+
+class SitemapHtmlResponseError(SitemapResponseError):
+    """Raised when a sitemap endpoint returns HTML instead of sitemap data."""
+
+
+class SitemapCompressionError(SitemapResponseError):
+    """Raised when a sitemap compression contract is invalid."""
+
+
+class SitemapXmlError(SitemapResponseError):
+    """Raised when sitemap XML is malformed or unsupported."""
+
+
 @dataclass(slots=True)
 class SitemapDiscoveryResult:
     """Bounded sitemap-discovery outcome."""
@@ -34,15 +50,75 @@ class SitemapDiscoveryResult:
     errors: list[str] = field(default_factory=list)
 
 
+def _payload_looks_like_html(payload: bytes) -> bool:
+    """Return whether a response payload appears to contain HTML."""
+
+    prefix = payload[:4096].lstrip().lower()
+
+    return (
+        prefix.startswith(
+            (
+                b"<!doctype html",
+                b"<html",
+            )
+        )
+        or b"<html" in prefix
+        or b"<head" in prefix
+        or b"<body" in prefix
+    )
+
+
+def _validate_sitemap_payload(
+    payload: bytes,
+    *,
+    url: str,
+) -> None:
+    """Reject empty and clearly non-sitemap response payloads."""
+
+    if not payload.strip():
+        raise SitemapResponseError(f"Empty sitemap response: {url}")
+
+    if _payload_looks_like_html(payload):
+        raise SitemapHtmlResponseError(
+            f"Sitemap endpoint returned HTML instead of XML or gzip data: {url}"
+        )
+
+
 def decode_sitemap_payload(payload: bytes, url: str) -> str:
-    """Decode plain or gzip-compressed sitemap content."""
+    """Decode and validate plain or gzip-compressed sitemap content."""
 
     validated_url = validated_http_url(url)
+    _validate_sitemap_payload(
+        payload,
+        url=validated_url,
+    )
 
-    if validated_url.lower().endswith(".gz") or payload[:2] == b"\x1f\x8b":
-        payload = gzip.decompress(payload)
+    url_declares_gzip = validated_url.lower().endswith(".gz")
+    payload_is_gzip = payload[:2] == b"\x1f\x8b"
 
-    return payload.decode("utf-8", errors="replace")
+    if url_declares_gzip and not payload_is_gzip:
+        raise SitemapCompressionError(
+            f"Sitemap URL ends with .gz but response is not gzip-compressed: "
+            f"{validated_url}"
+        )
+
+    if payload_is_gzip:
+        try:
+            payload = gzip.decompress(payload)
+        except (OSError, EOFError) as error:
+            raise SitemapCompressionError(
+                f"Invalid gzip sitemap response: {validated_url}"
+            ) from error
+
+        _validate_sitemap_payload(
+            payload,
+            url=validated_url,
+        )
+
+    return payload.decode(
+        "utf-8",
+        errors="strict",
+    )
 
 
 def extract_robots_sitemaps(
@@ -138,7 +214,18 @@ def sitemap_xml_locations(
 ) -> tuple[str, list[str]]:
     """Parse sitemap-index or URL-set locations safely."""
 
-    root = ET.fromstring(xml_text)
+    normalized_text = xml_text.lstrip()
+
+    if normalized_text.lower().startswith(
+        "<!doctype html"
+    ) or normalized_text.lower().startswith("<html"):
+        raise SitemapHtmlResponseError("Sitemap content is HTML instead of XML.")
+
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception as error:
+        raise SitemapXmlError(f"Malformed sitemap XML: {error}") from error
+
     root_name = root.tag.rsplit("}", 1)[-1].lower()
 
     locations: list[str] = []
@@ -158,7 +245,7 @@ def sitemap_xml_locations(
     if root_name == "urlset":
         return "urlset", locations
 
-    raise ValueError(f"Unsupported sitemap root element: {root_name}")
+    raise SitemapXmlError(f"Unsupported sitemap root element: {root_name}")
 
 
 def discover_sitemap_urls_sync(

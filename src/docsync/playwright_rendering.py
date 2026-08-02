@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
+
+from playwright.async_api import async_playwright
 
 BLOCKED_RESOURCE_TYPES: Final[frozenset[str]] = frozenset(
     {
@@ -275,3 +278,69 @@ def normalized_blocked_resource_types(
     """Normalize a user-provided resource-blocking sequence."""
 
     return frozenset(value.strip().lower() for value in values if value.strip())
+
+
+async def render_url_html(
+    url: str,
+    *,
+    headless: bool,
+    browser_type: str,
+    request_timeout_seconds: int,
+    network_idle_timeout_milliseconds: int = (
+        DEFAULT_NETWORK_IDLE_TIMEOUT_MILLISECONDS
+    ),
+    blocked_resource_types: frozenset[str] = BLOCKED_RESOURCE_TYPES,
+    browser_arguments: tuple[str, ...] = DEFAULT_BROWSER_ARGUMENTS,
+) -> str:
+    """Render one URL in an isolated browser for HTTP-mode fallback."""
+
+    if request_timeout_seconds <= 0:
+        raise ValueError("request_timeout_seconds must be greater than zero")
+
+    if network_idle_timeout_milliseconds <= 0:
+        raise ValueError("network_idle_timeout_milliseconds must be greater than zero")
+
+    normalized_browser_type = browser_type.strip().lower()
+
+    if normalized_browser_type not in {
+        "chromium",
+        "firefox",
+        "webkit",
+    }:
+        raise ValueError("browser_type must be chromium, firefox, or webkit")
+
+    async with async_playwright() as playwright:
+        launcher = getattr(
+            playwright,
+            normalized_browser_type,
+        )
+
+        browser = await launcher.launch(
+            headless=headless,
+            args=list(browser_arguments),
+        )
+
+        try:
+            page = await browser.new_page()
+
+            await install_resource_blocking(
+                page,
+                blocked_resource_types=blocked_resource_types,
+            )
+
+            await page.goto(
+                url,
+                wait_until="domcontentloaded",
+                timeout=request_timeout_seconds * 1000,
+            )
+
+            with suppress(Exception):
+                await page.wait_for_load_state(
+                    "networkidle",
+                    timeout=network_idle_timeout_milliseconds,
+                )
+
+            rendered_html: str = await page.content()
+            return rendered_html
+        finally:
+            await browser.close()

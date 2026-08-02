@@ -163,20 +163,28 @@ def test_export_default_still_writes(
 
 
 def test_crawler_prepares_markdown_without_immediate_write() -> None:
-    calls = _calls(CRAWLER_PATH, "export")
+    tree = _tree(CRAWLER_PATH)
 
     matching = [
-        call
-        for call in calls
-        if any(
-            keyword.arg == "write"
-            and isinstance(keyword.value, ast.Constant)
-            and keyword.value.value is False
-            for keyword in call.keywords
-        )
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "export"
     ]
 
-    assert len(matching) == 1
+    assert len(matching) == 2
+
+    for export_call in matching:
+        write_keywords = [
+            keyword for keyword in export_call.keywords if keyword.arg == "write"
+        ]
+
+        assert len(write_keywords) == 1
+
+        write_value = write_keywords[0].value
+        assert isinstance(write_value, ast.Constant)
+        assert write_value.value is False
 
 
 def test_crawler_checks_content_before_writing() -> None:

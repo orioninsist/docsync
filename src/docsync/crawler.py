@@ -7,7 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 from re import Pattern
 from typing import Any, Final, cast
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from crawlee import ConcurrencySettings
@@ -18,9 +18,11 @@ from crawlee.crawlers import (
     PlaywrightCrawler,
     PlaywrightCrawlingContext,
 )
+from crawlee.request_loaders import ThrottlingRequestManager
+from crawlee.storage_clients import MemoryStorageClient
+from crawlee.storages import RequestQueue
 
 from docsync.config import Settings
-from docsync.crawl_delay import CrawlDelayThrottle, crawl_delay_seconds_from_environment
 from docsync.incremental import (
     content_is_unchanged,
     filter_incremental_urls,
@@ -36,6 +38,7 @@ from docsync.playwright_rendering import (
     PlaywrightRenderingConfig,
     install_resource_blocking,
     render_page_html,
+    render_url_html,
 )
 from docsync.progress_events import CrawlEvent, CrawlEventSink
 from docsync.sitemap import discover_sitemap_urls
@@ -104,6 +107,53 @@ def build_scope_pattern(start_url: str) -> Pattern[str]:
         )
 
     return re.compile(expression, re.IGNORECASE)
+
+
+def extract_in_scope_links(
+    *,
+    soup: BeautifulSoup,
+    base_url: str,
+    scope_pattern: Pattern[str],
+) -> list[str]:
+    """Extract normalized, unique, crawlable links from one parsed DOM."""
+
+    validated_base_url = validated_http_url(base_url)
+    normalized_base_url = normalize_url(validated_base_url)
+    discovered_urls: list[str] = []
+    seen_urls: set[str] = set()
+
+    for anchor in soup.select("a[href]"):
+        href = anchor.get("href")
+
+        if not isinstance(href, str) or not href.strip():
+            continue
+
+        try:
+            candidate_url = normalize_url(
+                urljoin(
+                    validated_base_url,
+                    href.strip(),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+
+        if candidate_url == normalized_base_url:
+            continue
+
+        if scope_pattern.search(candidate_url) is None:
+            continue
+
+        if any(pattern.search(candidate_url) for pattern in EXCLUDED_URL_PATTERNS):
+            continue
+
+        if candidate_url in seen_urls:
+            continue
+
+        seen_urls.add(candidate_url)
+        discovered_urls.append(candidate_url)
+
+    return discovered_urls
 
 
 async def run_crawler(
@@ -244,13 +294,46 @@ async def run_crawler(
     content_hashes = load_content_hashes(resolved_state_dir)
     url_state = load_url_state(resolved_state_dir)
 
-    crawl_delay_throttle = CrawlDelayThrottle(
-        delay_seconds=crawl_delay_seconds_from_environment(),
-    )
     markdown_exporter = MarkdownExporter(resolved_output_dir)
 
     normalized_start_url = normalize_start_url(start_url)
     scope_pattern = build_scope_pattern(normalized_start_url)
+
+    start_hostname = urlsplit(normalized_start_url).hostname
+
+    if not start_hostname:
+        raise ValueError(
+            f"Unable to determine hostname from start URL: {normalized_start_url}"
+        )
+
+    crawler_storage_client = MemoryStorageClient()
+
+    request_queue = await RequestQueue.open(
+        alias="docsync-main",
+        storage_client=crawler_storage_client,
+    )
+
+    async def open_run_request_queue(
+        *,
+        alias: str | None = None,
+        storage_client: Any = None,
+        configuration: Any = None,
+    ) -> RequestQueue:
+        """Open a process-local request queue for domain throttling."""
+
+        return await RequestQueue.open(
+            alias=alias or "docsync-domain",
+            storage_client=(
+                storage_client if storage_client is not None else crawler_storage_client
+            ),
+            configuration=configuration,
+        )
+
+    request_manager = ThrottlingRequestManager(
+        inner=request_queue,
+        domains=[start_hostname],
+        request_manager_opener=open_run_request_queue,
+    )
 
     concurrency_settings = ConcurrencySettings(
         min_concurrency=1,
@@ -272,6 +355,8 @@ async def run_crawler(
             request_timeout_seconds=settings.request_timeout_seconds,
         )
         crawler = PlaywrightCrawler(
+            request_manager=request_manager,
+            storage_client=crawler_storage_client,
             concurrency_settings=concurrency_settings,
             max_request_retries=DEFAULT_MAX_REQUEST_RETRIES,
             max_requests_per_crawl=resolved_max_requests,
@@ -292,6 +377,8 @@ async def run_crawler(
         crawler.pre_navigation_hook(install_browser_controls)
     else:
         crawler = BeautifulSoupCrawler(
+            request_manager=request_manager,
+            storage_client=crawler_storage_client,
             concurrency_settings=concurrency_settings,
             max_request_retries=DEFAULT_MAX_REQUEST_RETRIES,
             max_requests_per_crawl=resolved_max_requests,
@@ -305,9 +392,6 @@ async def run_crawler(
     async def request_handler(
         context: BeautifulSoupCrawlingContext | PlaywrightCrawlingContext,
     ) -> None:
-
-        await crawl_delay_throttle.wait()
-
         nonlocal active_requests
 
         try:
@@ -318,7 +402,7 @@ async def run_crawler(
                 active_requests=active_requests,
             )
 
-            stats.processed += 1
+            used_browser_fallback = False
 
             if resolved_mode == "playwright":
                 playwright_context = cast(Any, context)
@@ -356,16 +440,149 @@ async def run_crawler(
                 current_url=context.request.url,
                 current_title=title,
                 active_requests=active_requests,
-                site_title=(title if stats.processed == 1 and title else None),
+                site_title=(title if stats.processed == 0 and title else None),
             )
 
-            document = markdown_exporter.export(
-                url=context.request.url,
+            discovered_urls = extract_in_scope_links(
                 soup=soup,
-                title=title,
-                language=resolved_language,
-                write=False,
+                base_url=context.request.url,
+                scope_pattern=scope_pattern,
             )
+
+            if resolved_mode == "playwright":
+                if discovered_urls:
+                    browser_context = cast(
+                        Any,
+                        context,
+                    )
+                    await browser_context.add_requests(
+                        discovered_urls,
+                    )
+            else:
+                await context.enqueue_links(
+                    strategy="same-origin",
+                    include=[scope_pattern],
+                    exclude=list(EXCLUDED_URL_PATTERNS),
+                )
+
+            discovered_link_count = len(discovered_urls)
+
+            try:
+                document = markdown_exporter.export(
+                    url=context.request.url,
+                    soup=soup,
+                    title=title,
+                    language=resolved_language,
+                    write=False,
+                )
+            except ValueError as error:
+                empty_markdown_error = str(error).startswith(
+                    "No meaningful Markdown content found:"
+                )
+
+                if (
+                    empty_markdown_error
+                    and discovered_link_count > 0
+                    and resolved_mode == "playwright"
+                ):
+                    stats.empty_pages += 1
+                    stats.processed += 1
+
+                    context.log.info(
+                        "Discovery-only page processed: "
+                        "url=%s discovered_links=%s renderer=playwright",
+                        context.request.url,
+                        discovered_link_count,
+                    )
+                    return
+
+                if resolved_mode != "http" or not empty_markdown_error:
+                    raise
+
+                context.log.warning(
+                    "HTTP extraction returned no meaningful content; "
+                    "retrying with Playwright: %s",
+                    context.request.url,
+                )
+
+                fallback_config = PlaywrightRenderingConfig(
+                    headless=resolved_headless,
+                    browser_type=resolved_browser_type,
+                    request_timeout_seconds=settings.request_timeout_seconds,
+                )
+
+                fallback_html = await render_url_html(
+                    context.request.url,
+                    headless=fallback_config.headless,
+                    browser_type=fallback_config.browser_type,
+                    request_timeout_seconds=(fallback_config.request_timeout_seconds),
+                    network_idle_timeout_milliseconds=(
+                        fallback_config.network_idle_timeout_milliseconds
+                    ),
+                    blocked_resource_types=(fallback_config.blocked_resource_types),
+                    browser_arguments=(fallback_config.browser_arguments),
+                )
+
+                soup = BeautifulSoup(
+                    fallback_html,
+                    "lxml",
+                )
+                used_browser_fallback = True
+
+                title_element = soup.title
+                title = (
+                    title_element.get_text(
+                        " ",
+                        strip=True,
+                    )
+                    if title_element is not None
+                    else ""
+                )
+
+                fallback_urls = extract_in_scope_links(
+                    soup=soup,
+                    base_url=context.request.url,
+                    scope_pattern=scope_pattern,
+                )
+
+                if fallback_urls:
+                    fallback_context = cast(
+                        Any,
+                        context,
+                    )
+                    await fallback_context.add_requests(
+                        fallback_urls,
+                    )
+
+                discovered_link_count = len(fallback_urls)
+
+                try:
+                    document = markdown_exporter.export(
+                        url=context.request.url,
+                        soup=soup,
+                        title=title,
+                        language=resolved_language,
+                        write=False,
+                    )
+                except ValueError as fallback_error:
+                    fallback_empty_error = str(fallback_error).startswith(
+                        "No meaningful Markdown content found:"
+                    )
+
+                    if fallback_empty_error and discovered_link_count > 0:
+                        stats.empty_pages += 1
+                        stats.processed += 1
+
+                        context.log.info(
+                            "Discovery-only page processed: "
+                            "url=%s discovered_links=%s "
+                            "renderer=playwright-fallback",
+                            context.request.url,
+                            discovered_link_count,
+                        )
+                        return
+
+                    raise
 
             unchanged = content_is_unchanged(
                 url=document.url,
@@ -391,6 +608,7 @@ async def run_crawler(
                     "language": document.language,
                     "output_path": str(document.output_path),
                     "content_hash": document.content_hash,
+                    "browser_fallback": used_browser_fallback,
                 }
             )
 
@@ -402,11 +620,7 @@ async def run_crawler(
                 url_state=url_state,
             )
 
-            await context.enqueue_links(
-                strategy="same-origin",
-                include=[scope_pattern],
-                exclude=list(EXCLUDED_URL_PATTERNS),
-            )
+            stats.processed += 1
         finally:
             active_requests = max(
                 0,
@@ -489,6 +703,9 @@ async def run_crawler(
         "mode": resolved_mode,
         "headless": resolved_headless,
         "browser_type": resolved_browser_type,
+        "request_manager": "ThrottlingRequestManager",
+        "request_storage": "MemoryStorageClient",
+        "throttled_domains": [start_hostname],
     }
 
     def finalize_crawl() -> None:

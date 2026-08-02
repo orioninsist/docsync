@@ -200,5 +200,17 @@ def test_existing_crawler_limits_are_preserved() -> None:
 def test_crawl_delay_remains_runtime_wired() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
-    assert "CrawlDelayThrottle(" in source
-    assert "await crawl_delay_throttle.wait()" in source
+    assert "ThrottlingRequestManager(" in source
+    assert "request_manager=request_manager" in source
+    assert "async def open_run_request_queue(" in source
+    assert "request_manager_opener=open_run_request_queue" in source
+    assert 'alias="docsync-main"' in source
+    assert "MemoryStorageClient" in source
+    assert "storage_client=crawler_storage_client" in source
+    assert "request_manager_opener=open_run_request_queue" in source
+    assert "request_manager_opener=RequestQueue.open" not in source
+    assert "request_manager_opener=RequestQueue.open" not in source
+    assert "domains=[start_hostname]" in source
+
+    assert "CrawlDelayThrottle(" not in source
+    assert "await crawl_delay_throttle.wait()" not in source

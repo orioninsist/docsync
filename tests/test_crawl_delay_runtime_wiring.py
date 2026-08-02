@@ -1,172 +1,116 @@
-"""Runtime wiring contracts for crawl-delay throttling."""
+"""Runtime wiring contracts for Crawlee throttling."""
 
 from __future__ import annotations
 
 import ast
-import os
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
-
-from docsync.crawl_delay import (
-    CRAWL_DELAY_ENVIRONMENT_VARIABLE,
-    crawl_delay_seconds_from_environment,
-)
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
 
 
-def _crawler_tree() -> ast.Module:
-    return ast.parse(CRAWLER_PATH.read_text(encoding="utf-8"))
+def _source() -> str:
+    return CRAWLER_PATH.read_text(encoding="utf-8")
 
 
-def _run_crawler_node() -> ast.AsyncFunctionDef:
-    for node in ast.walk(_crawler_tree()):
+def _tree() -> ast.Module:
+    return ast.parse(
+        _source(),
+        filename=str(CRAWLER_PATH),
+    )
+
+
+def _run_crawler() -> ast.AsyncFunctionDef:
+    for node in _tree().body:
         if isinstance(node, ast.AsyncFunctionDef) and node.name == "run_crawler":
             return node
 
-    raise AssertionError("async run_crawler() was not found")
+    raise AssertionError("run_crawler() was not found")
 
 
-def _request_handler_node() -> ast.AsyncFunctionDef:
-    run_crawler = _run_crawler_node()
+def _call_name(call: ast.Call) -> str:
+    if isinstance(call.func, ast.Name):
+        return call.func.id
 
-    for node in ast.walk(run_crawler):
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "request_handler":
-            return node
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
 
-    raise AssertionError("nested async request_handler() was not found")
-
-
-def test_default_crawl_delay_is_zero() -> None:
-    with patch.dict(os.environ, {}, clear=True):
-        assert crawl_delay_seconds_from_environment() == 0.0
+    return ""
 
 
-@pytest.mark.parametrize(
-    ("raw_value", "expected"),
-    [
-        ("0", 0.0),
-        ("0.25", 0.25),
-        ("1", 1.0),
-        (" 2.5 ", 2.5),
-    ],
-)
-def test_valid_crawl_delay_environment_values(
-    raw_value: str,
-    expected: float,
-) -> None:
-    with patch.dict(
-        os.environ,
-        {CRAWL_DELAY_ENVIRONMENT_VARIABLE: raw_value},
-        clear=True,
-    ):
-        assert crawl_delay_seconds_from_environment() == pytest.approx(expected)
+def test_official_throttling_manager_is_imported() -> None:
+    source = _source()
+
+    assert ("from crawlee.request_loaders import ThrottlingRequestManager") in source
+    assert "from crawlee.storages import RequestQueue" in source
 
 
-@pytest.mark.parametrize(
-    "raw_value",
-    [
-        "-0.01",
-        "invalid",
-        "nan",
-        "inf",
-        "-inf",
-        "",
-    ],
-)
-def test_invalid_crawl_delay_environment_values_are_rejected(
-    raw_value: str,
-) -> None:
-    with (
-        patch.dict(
-            os.environ,
-            {CRAWL_DELAY_ENVIRONMENT_VARIABLE: raw_value},
-            clear=True,
-        ),
-        pytest.raises(
-            ValueError,
-            match="must be a finite non-negative number",
-        ),
-    ):
-        crawl_delay_seconds_from_environment()
+def test_request_queue_is_opened_inside_run_crawler() -> None:
+    calls = [node for node in ast.walk(_run_crawler()) if isinstance(node, ast.Call)]
+
+    assert any(
+        isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "RequestQueue"
+        and call.func.attr == "open"
+        for call in calls
+    )
 
 
-def test_run_crawler_constructs_shared_throttle() -> None:
-    run_crawler = _run_crawler_node()
+def test_throttling_manager_wraps_request_queue() -> None:
+    source = _source()
 
-    constructors = [
+    assert "request_manager = ThrottlingRequestManager(" in source
+    assert "inner=request_queue" in source
+    assert "domains=[start_hostname]" in source
+    assert "async def open_run_request_queue(" in source
+    assert "request_manager_opener=open_run_request_queue" in source
+    assert 'alias="docsync-main"' in source
+    assert "MemoryStorageClient" in source
+    assert "storage_client=crawler_storage_client" in source
+    assert "request_manager_opener=open_run_request_queue" in source
+    assert "request_manager_opener=RequestQueue.open" not in source
+    assert "request_manager_opener=RequestQueue.open" not in source
+
+
+def test_http_and_playwright_share_throttling_manager() -> None:
+    run_crawler = _run_crawler()
+
+    crawler_calls = [
         node
         for node in ast.walk(run_crawler)
         if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "CrawlDelayThrottle"
+        and _call_name(node)
+        in {
+            "BeautifulSoupCrawler",
+            "PlaywrightCrawler",
+        }
     ]
 
-    assert len(constructors) == 1
+    assert len(crawler_calls) == 2
 
-    constructor = constructors[0]
-    delay_keywords = [
-        keyword for keyword in constructor.keywords if keyword.arg == "delay_seconds"
-    ]
+    for crawler_call in crawler_calls:
+        request_manager_keywords = [
+            keyword
+            for keyword in crawler_call.keywords
+            if keyword.arg == "request_manager"
+        ]
 
-    assert len(delay_keywords) == 1
-    assert isinstance(delay_keywords[0].value, ast.Call)
-    assert isinstance(delay_keywords[0].value.func, ast.Name)
-    assert delay_keywords[0].value.func.id == "crawl_delay_seconds_from_environment"
-
-
-def test_request_handler_waits_before_other_runtime_operations() -> None:
-    request_handler = _request_handler_node()
-
-    executable_statements = list(request_handler.body)
-
-    if (
-        executable_statements
-        and isinstance(executable_statements[0], ast.Expr)
-        and isinstance(executable_statements[0].value, ast.Constant)
-        and isinstance(executable_statements[0].value.value, str)
-    ):
-        executable_statements = executable_statements[1:]
-
-    assert executable_statements
-
-    first_statement = executable_statements[0]
-    assert isinstance(first_statement, ast.Expr)
-    assert isinstance(first_statement.value, ast.Await)
-
-    awaited_call = first_statement.value.value
-    assert isinstance(awaited_call, ast.Call)
-    assert isinstance(awaited_call.func, ast.Attribute)
-    assert awaited_call.func.attr == "wait"
-    assert isinstance(awaited_call.func.value, ast.Name)
-    assert awaited_call.func.value.id == "crawl_delay_throttle"
+        assert len(request_manager_keywords) == 1
+        value = request_manager_keywords[0].value
+        assert isinstance(value, ast.Name)
+        assert value.id == "request_manager"
 
 
-def test_throttle_is_scoped_to_single_crawl_execution() -> None:
-    tree = _crawler_tree()
-    run_crawler = _run_crawler_node()
+def test_legacy_handler_wait_is_removed() -> None:
+    source = _source()
 
-    module_level_constructors = [
-        node
-        for node in tree.body
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        and any(
-            isinstance(child, ast.Call)
-            and isinstance(child.func, ast.Name)
-            and child.func.id == "CrawlDelayThrottle"
-            for child in ast.walk(node)
-        )
-    ]
+    assert "await crawl_delay_throttle.wait()" not in source
+    assert "crawl_delay_throttle = CrawlDelayThrottle(" not in source
 
-    assert module_level_constructors == []
 
-    nested_handlers = [
-        node
-        for node in ast.walk(run_crawler)
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "request_handler"
-    ]
+def test_runtime_report_identifies_request_manager() -> None:
+    source = _source()
 
-    assert len(nested_handlers) == 1
+    assert '"request_manager": "ThrottlingRequestManager"' in source
+    assert '"throttled_domains": [start_hostname]' in source

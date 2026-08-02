@@ -154,37 +154,3 @@ exclude_dirs = [
     "dist",
 ]
 skips = ["B101"]
-
-[tool.uv.build-backend]
-source-exclude = [
-    "*.before_*",
-    "*.backup",
-    "*.backup.*",
-    "*.bak",
-    "*.orig",
-    "*.rej",
-    "**/*.before_*",
-    "**/*.backup",
-    "**/*.backup.*",
-    "**/*.bak",
-    "**/*.orig",
-    "**/*.rej",
-    ".docsync-migration/**",
-    "docsync_architecture_audit.txt",
-]
-wheel-exclude = [
-    "*.before_*",
-    "*.backup",
-    "*.backup.*",
-    "*.bak",
-    "*.orig",
-    "*.rej",
-    "**/*.before_*",
-    "**/*.backup",
-    "**/*.backup.*",
-    "**/*.bak",
-    "**/*.orig",
-    "**/*.rej",
-    ".docsync-migration/**",
-    "docsync_architecture_audit.txt",
-]

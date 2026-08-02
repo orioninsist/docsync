@@ -13,7 +13,7 @@ from typing import Protocol
 
 from docsync.url_security import normalize_url
 
-DEFAULT_REFRESH_HOURS = 24
+DEFAULT_REFRESH_HOURS = 0
 
 STATE_DIR = Path("storage/docsync")
 CONTENT_HASH_FILENAME = "content_hashes.json"
