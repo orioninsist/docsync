@@ -1,0 +1,277 @@
+# ==============================================================================
+# docsync
+# Public repository ignore rules
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Python bytecode and caches
+# ------------------------------------------------------------------------------
+__pycache__/
+**/__pycache__/
+
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+test-results/
+junit.xml
+
+# ------------------------------------------------------------------------------
+# Virtual environments and dependency caches
+# ------------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.uv/
+.uv-cache/
+uv-cache/
+.python-env/
+
+# Keep the reproducible lock file.
+!uv.lock
+
+# ------------------------------------------------------------------------------
+# Secrets and local environment configuration
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+secrets/
+.secrets/
+
+# Common cloud and service credentials.
+credentials.json
+service-account.json
+service_account.json
+client_secret*.json
+*.credentials
+*.secret
+
+# ------------------------------------------------------------------------------
+# Packaging and build artifacts
+# ------------------------------------------------------------------------------
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+*.egg-info/
+*.egg
+.installed.cfg
+MANIFEST
+wheels/
+sdist/
+
+# ------------------------------------------------------------------------------
+# Crawlee runtime storage
+# ------------------------------------------------------------------------------
+storage
+storage/
+storage/*
+logs
+logs/
+logs/*
+# ------------------------------------------------------------------------------
+# Generated crawler output
+# ------------------------------------------------------------------------------
+output/*
+!output/.gitkeep
+
+logs/*
+!logs/.gitkeep
+
+data/markdown/*
+!data/markdown/.gitkeep
+
+data/state/*
+!data/state/.gitkeep
+
+data/launcher-validation/
+data/module-validation/
+data/architecture-report.json
+data/*-report.json
+data/reports/
+reports/
+
+# ------------------------------------------------------------------------------
+# Runtime databases and synchronization state
+# ------------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+*.checkpoint
+checkpoint.json
+content_hashes.json
+url_state.json
+
+# ------------------------------------------------------------------------------
+# Crawlee datasets, queues, and key-value records
+# ------------------------------------------------------------------------------
+datasets/
+request_queues/
+key_value_stores/
+state-backups/
+
+# ------------------------------------------------------------------------------
+# Logs and diagnostics
+# ------------------------------------------------------------------------------
+*.log
+*.log.*
+*.prof
+*.lprof
+*.trace
+
+debug/
+debug-output/
+profile/
+profiles/
+
+# ------------------------------------------------------------------------------
+# Playwright artifacts
+# ------------------------------------------------------------------------------
+playwright-report/
+blob-report/
+trace.zip
+*.webm
+*.har
+.ms-playwright/
+playwright/.cache/
+
+# ------------------------------------------------------------------------------
+# Temporary, backup, migration, and editor files
+# ------------------------------------------------------------------------------
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+*~
+
+.*.tmp
+*.json.tmp
+*.md.tmp
+
+*.backup
+*.backup.*
+*.before_*
+*.before-*
+*.old
+*.old.*
+*.save
+*.save.*
+
+.tmp/
+temp/
+tmp/
+scratch/
+.local/
+.cache/
+
+# ------------------------------------------------------------------------------
+# IDE and operating-system metadata
+# ------------------------------------------------------------------------------
+.idea/
+.vscode/
+*.code-workspace
+.project
+.pydevproject
+.settings/
+.spyproject/
+.ropeproject/
+
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ------------------------------------------------------------------------------
+# Local notes
+# ------------------------------------------------------------------------------
+TODO.local.md
+NOTES.local.md
+
+# ------------------------------------------------------------------------------
+# Canonical public project files
+# ------------------------------------------------------------------------------
+!.env.example
+!.python-version
+!README.md
+!TODO.md
+!main.py
+!pyproject.toml
+!uv.lock
+
+!src/
+!src/**
+!tests/
+!tests/**
+!tools/
+!tools/**
+
+!data/
+!data/markdown/
+!data/markdown/.gitkeep
+!data/state/
+!data/state/.gitkeep
+
+!storage/
+!storage/.gitkeep
+
+!output/
+!output/.gitkeep
+
+!logs/
+!logs/.gitkeep
+
+# ------------------------------------------------------------------------------
+# Final protection against accidental backup publication
+# ------------------------------------------------------------------------------
+**/*.backup
+**/*.backup.*
+**/*.before_*
+**/*.before-*
+**/*.old
+**/*.old.*
+**/*.save
+**/*.save.*
+**/*.bak
+**/*.orig
+**/*.rej
+*.pyc
+*.pyo
+
+
+
+data/
+data/*
+
+# Local docsync development artifacts
+.docsync-*/
