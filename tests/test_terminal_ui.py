@@ -119,8 +119,8 @@ def test_dashboard_plain_text_contains_core_sections(
 
     assert "DOCSYNC" in rendered
     assert "Target" in rendered
-    assert "Progress" in rendered
-    assert "Statistics" in rendered
+    assert "Crawl summary" in rendered
+    assert "Average speed" in rendered
     assert "Current activity" in rendered
     assert "Storage" in rendered
     assert "github.com" in rendered

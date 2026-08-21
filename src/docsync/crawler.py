@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from re import Pattern
@@ -59,6 +60,21 @@ class _IncrementalRuntimeConfig:
     ) -> None:
         self.refresh_hours = refresh_hours
         self.force_refresh = force_refresh
+
+
+def _silence_crawlee_runtime_logs() -> None:
+    """Disable Crawlee internal terminal logging."""
+
+    for logger_name in (
+        "crawlee",
+        "crawlee._autoscaling",
+        "BeautifulSoupCrawler",
+        "PlaywrightCrawler",
+    ):
+        logger = logging.getLogger(logger_name)
+        logger.handlers.clear()
+        logger.setLevel(logging.WARNING)
+        logger.propagate = False
 
 
 DEFAULT_MAX_REQUEST_RETRIES: Final[int] = 2
@@ -332,6 +348,8 @@ async def run_crawler(
     request_manager = runtime.request_manager
     concurrency_settings = runtime.concurrency_settings
     request_handler_timeout = runtime.request_handler_timeout
+
+    _silence_crawlee_runtime_logs()
 
     rendering_config: PlaywrightRenderingConfig | None = None
     crawler: Any
@@ -718,7 +736,7 @@ async def run_crawler(
 
     if sitemap_result.errors:
         for sitemap_error in sitemap_result.errors:
-            crawler.log.warning(
+            crawler.log.debug(
                 "Sitemap discovery error: %s",
                 sitemap_error,
             )

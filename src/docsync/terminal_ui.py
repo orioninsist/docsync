@@ -188,14 +188,86 @@ class DashboardRenderer:
         if snapshot.finished:
             return self.render_completion(snapshot)
 
-        return Group(
-            self._render_header(snapshot),
-            self._render_site_table(snapshot),
-            self._render_progress(snapshot),
-            self._render_statistics(snapshot),
-            self._render_current_activity(snapshot),
-            self._render_paths(snapshot),
+        return self._render_plain_dashboard(snapshot)
+
+    def _render_plain_dashboard(
+        self,
+        snapshot: CrawlProgressSnapshot,
+    ) -> Text:
+        """Render live fixed terminal dashboard."""
+
+        terminal_outcomes = max(
+            snapshot.completed_requests,
+            snapshot.processed,
+            1,
         )
+
+        successful_outcomes = (
+            snapshot.saved + snapshot.duplicate_content + snapshot.incremental_skipped
+        )
+
+        success_rate = min(
+            100.0,
+            successful_outcomes / terminal_outcomes * 100.0,
+        )
+
+        lines = [
+            "DOCSYNC",
+            "",
+            "Crawl summary",
+            f"Processed: {snapshot.processed}",
+            f"Saved: {snapshot.saved}",
+            f"Skipped total: {
+                (
+                    snapshot.duplicate_content
+                    + snapshot.incremental_skipped
+                    + snapshot.rejected_urls
+                    + snapshot.empty_pages
+                    + snapshot.non_english
+                )
+            }",
+            f"Failed: {snapshot.failed}",
+            f"Success rate: {success_rate:.1f}%",
+            f"Elapsed: {_format_duration(snapshot.elapsed_seconds)}",
+            f"Average speed: {snapshot.average_requests_per_minute:.1f} requests/min",
+            f"Configured RPM: {snapshot.requests_per_minute}",
+            f"Concurrency: {snapshot.max_concurrency} workers",
+            "",
+            "Current activity",
+            f"Phase: {snapshot.phase}",
+            f"URL: {snapshot.current_url or '-'}",
+            f"Title: {snapshot.current_title or '-'}",
+            "",
+            "Site information",
+            f"Target: {snapshot.site.start_url}",
+            f"Domain: {snapshot.site.domain}",
+            f"Language: {snapshot.site.language}",
+            f"Mode: {snapshot.site.mode}",
+            f"Browser: {snapshot.site.browser_type}",
+            f"Headless: {_boolean_mark(snapshot.site.headless)}",
+            f"Sitemap URLs: {snapshot.site.sitemap_urls}",
+            (
+                f"Sitemaps: {snapshot.site.sitemap_files_found} found / "
+                f"{snapshot.site.sitemap_files_checked} checked / "
+                f"{snapshot.site.sitemap_errors} errors"
+            ),
+            "",
+            "Discovery",
+            f"Discovered: {snapshot.discovered}",
+            "",
+            "Counters",
+            f"Duplicate content: {snapshot.duplicate_content}",
+            f"Incremental skipped: {snapshot.incremental_skipped}",
+            f"Non English: {snapshot.non_english}",
+            f"Rejected URLs: {snapshot.rejected_urls}",
+            f"Empty pages: {snapshot.empty_pages}",
+            "",
+            "Storage",
+            f"Output: {snapshot.output_dir}",
+            f"State: {snapshot.state_dir}",
+        ]
+
+        return Text("\n".join(lines))
 
     def render_completion(
         self,
@@ -203,7 +275,7 @@ class DashboardRenderer:
     ) -> RenderableType:
         """Render a detailed and stable completion report."""
 
-        status_text, border_style = self._completion_status(snapshot)
+        status_text, _border_style = self._completion_status(snapshot)
 
         skipped_total = (
             snapshot.duplicate_content
@@ -388,26 +460,42 @@ class DashboardRenderer:
         )
 
         return Group(
-            self._render_header(snapshot),
-            Panel(
-                crawl_summary,
-                title=f"[bold]{status_text}[/bold]",
-                subtitle="[dim]Crawl summary[/dim]",
-                border_style=border_style,
-                padding=(1, 2),
+            Text("DOCSYNC"),
+            Text(""),
+            Text(status_text),
+            Text(""),
+            Text("Crawl summary"),
+            Text(f"Processed: {snapshot.processed}"),
+            Text(f"Saved: {snapshot.saved}"),
+            Text(f"Skipped total: {skipped_total}"),
+            Text(f"Failed: {snapshot.failed}"),
+            Text(f"Success rate: {success_rate:.1f}%"),
+            Text(f"Elapsed: {_format_duration(snapshot.elapsed_seconds)}"),
+            Text(
+                f"Average speed: {snapshot.average_requests_per_minute:.1f} requests/min"
             ),
-            Panel(
-                site_summary,
-                title="[bold]Site information[/bold]",
-                border_style="blue",
-                padding=(0, 1),
+            Text(f"Configured RPM: {snapshot.requests_per_minute}"),
+            Text(f"Concurrency: {snapshot.max_concurrency} workers"),
+            Text(""),
+            Text("Site information"),
+            Text(f"Target: {snapshot.site.start_url}"),
+            Text(f"Domain: {snapshot.site.domain}"),
+            Text(f"Title: {snapshot.site.title}"),
+            Text(f"Language: {snapshot.site.language}"),
+            Text(f"Sitemap URLs: {snapshot.site.sitemap_urls}"),
+            Text(
+                f"Sitemaps: {snapshot.site.sitemap_files_found} found / "
+                f"{snapshot.site.sitemap_files_checked} checked / "
+                f"{snapshot.site.sitemap_errors} errors"
             ),
-            Panel(
-                storage_summary,
-                title="[bold]Output and state[/bold]",
-                border_style="cyan",
-                padding=(0, 1),
-            ),
+            Text(f"Mode: {snapshot.site.mode}"),
+            Text(f"Browser: {snapshot.site.browser_type or 'unknown'}"),
+            Text(f"Headless: {_boolean_mark(snapshot.site.headless)}"),
+            Text(""),
+            Text("Output and state"),
+            Text(f"Output: {snapshot.output_dir}"),
+            Text(f"State: {snapshot.state_dir}"),
+            Text(f"Discovered: {snapshot.discovered}"),
         )
 
     @staticmethod
@@ -658,8 +746,8 @@ class CrawlDashboard:
         self._renderer = DashboardRenderer()
         self._snapshot = snapshot
         self._started_monotonic = monotonic()
-        self._refresh_per_second = refresh_per_second
         self._live: Live | None = None
+        self._refresh_per_second = refresh_per_second
         self._lock = threading.RLock()
 
     @property
@@ -688,7 +776,7 @@ class CrawlDashboard:
                 refresh_per_second=self._refresh_per_second,
                 transient=False,
                 screen=False,
-                vertical_overflow="visible",
+                vertical_overflow="crop",
             )
             self._live.start(refresh=True)
 
@@ -807,7 +895,7 @@ def build_console(
 ) -> Console:
     """Create the canonical docsync Rich console."""
 
-    resolved_stream = stream or sys.stderr
+    resolved_stream = stream or sys.stdout
 
     return Console(
         file=resolved_stream,

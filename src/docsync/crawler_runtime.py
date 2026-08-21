@@ -7,9 +7,9 @@ from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
-from crawlee import ConcurrencySettings
+from crawlee import ConcurrencySettings, service_locator
 from crawlee.request_loaders import ThrottlingRequestManager
-from crawlee.storage_clients import MemoryStorageClient
+from crawlee.storage_clients import MemoryStorageClient, StorageClient
 from crawlee.storages import RequestQueue
 
 
@@ -17,7 +17,7 @@ from crawlee.storages import RequestQueue
 class CrawleeRuntime:
     """Runtime components shared by docsync Crawlee consumers."""
 
-    storage_client: MemoryStorageClient
+    storage_client: StorageClient
     request_manager: ThrottlingRequestManager[RequestQueue]
     concurrency_settings: ConcurrencySettings
     request_handler_timeout: timedelta
@@ -32,7 +32,11 @@ async def build_crawlee_runtime(
 ) -> CrawleeRuntime:
     """Build one process-local Crawlee request runtime."""
 
+    service_locator.storage_instance_manager.clear_cache()
+
     storage_client = MemoryStorageClient()
+    runtime_storage_client = storage_client
+
     runtime_id = uuid4().hex
 
     request_queue = await RequestQueue.open(
@@ -46,15 +50,12 @@ async def build_crawlee_runtime(
         storage_client: Any = None,
         configuration: Any = None,
     ) -> RequestQueue:
-        return await RequestQueue.open(
-            alias=f"docsync-domain-{runtime_id}-{uuid4().hex}",
-            storage_client=(
-                storage_client if storage_client is not None else runtime_storage_client
-            ),
-            configuration=configuration,
-        )
+        queue_storage_client = storage_client or runtime_storage_client
 
-    runtime_storage_client = storage_client
+        return await RequestQueue.open(
+            alias=alias or f"docsync-domain-{runtime_id}-{uuid4().hex}",
+            storage_client=queue_storage_client,
+        )
 
     request_manager = ThrottlingRequestManager(
         inner=request_queue,

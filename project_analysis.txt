@@ -1,0 +1,1050 @@
+=== TREE ===
+./.env.example
+./.git/COMMIT_EDITMSG
+./.git/config
+./.git/description
+./.git/FETCH_HEAD
+./.git/HEAD
+./.git/hooks/applypatch-msg.sample
+./.git/hooks/commit-msg.sample
+./.git/hooks/fsmonitor-watchman.sample
+./.git/hooks/post-update.sample
+./.git/hooks/pre-applypatch.sample
+./.git/hooks/pre-commit.sample
+./.git/hooks/pre-merge-commit.sample
+./.git/hooks/prepare-commit-msg.sample
+./.git/hooks/pre-push.sample
+./.git/hooks/pre-rebase.sample
+./.git/hooks/pre-receive.sample
+./.git/hooks/push-to-checkout.sample
+./.git/hooks/sendemail-validate.sample
+./.git/hooks/update.sample
+./.gitignore
+./.git/index
+./.git/info/exclude
+./.git/logs/HEAD
+./.git/ORIG_HEAD
+./LICENSE
+./logs/developers_google_search_20260811_155600.txt
+./logs/developers_google_search_stack_20260811_160009.txt
+./logs/.gitkeep
+./logs/tmux_dashboard_live.log
+./logs/tmux_dashboard_live.normalized.log
+./logs/tmux_dashboard_redirected.log
+./logs/tmux_dashboard_redirected.normalized.log
+./logs/tmux_dashboard_validation_summary.txt
+./main.py
+./.mypy_cache/3.13/cache.0.db
+./.mypy_cache/3.13/cache.10.db
+./.mypy_cache/3.13/cache.11.db
+./.mypy_cache/3.13/cache.12.db
+./.mypy_cache/3.13/cache.13.db
+./.mypy_cache/3.13/cache.14.db
+./.mypy_cache/3.13/cache.15.db
+./.mypy_cache/3.13/cache.1.db
+./.mypy_cache/3.13/cache.2.db
+./.mypy_cache/3.13/cache.3.db
+./.mypy_cache/3.13/cache.4.db
+./.mypy_cache/3.13/cache.5.db
+./.mypy_cache/3.13/cache.6.db
+./.mypy_cache/3.13/cache.7.db
+./.mypy_cache/3.13/cache.8.db
+./.mypy_cache/3.13/cache.9.db
+./.mypy_cache/CACHEDIR.TAG
+./.mypy_cache/.gitignore
+./project_analysis.txt
+./__pycache__/main.cpython-313.pyc
+./pyproject.toml
+./.pytest_cache/CACHEDIR.TAG
+./.pytest_cache/.gitignore
+./.pytest_cache/README.md
+./.python-version
+./README.md
+./.ruff_cache/0.16.1/10207204898730649675
+./.ruff_cache/0.16.1/10419061630325554851
+./.ruff_cache/0.16.1/11025375098349991354
+./.ruff_cache/0.16.1/11031910372747590421
+./.ruff_cache/0.16.1/1123050294587303251
+./.ruff_cache/0.16.1/11905771993171869642
+./.ruff_cache/0.16.1/13201202506584586807
+./.ruff_cache/0.16.1/14429507792870992115
+./.ruff_cache/0.16.1/14981852687034539262
+./.ruff_cache/0.16.1/15030063402317908343
+./.ruff_cache/0.16.1/15050755783165351039
+./.ruff_cache/0.16.1/16150219959178667547
+./.ruff_cache/0.16.1/16419495464811091838
+./.ruff_cache/0.16.1/16586949765152173967
+./.ruff_cache/0.16.1/1713492423280323306
+./.ruff_cache/0.16.1/17824670882108540944
+./.ruff_cache/0.16.1/18188925249891751708
+./.ruff_cache/0.16.1/3563568314781042096
+./.ruff_cache/0.16.1/3923820005574809287
+./.ruff_cache/0.16.1/4089097715948847436
+./.ruff_cache/0.16.1/4277527289975357599
+./.ruff_cache/0.16.1/4574342740753780076
+./.ruff_cache/0.16.1/4736428397243077633
+./.ruff_cache/0.16.1/4867554460802264798
+./.ruff_cache/0.16.1/5236435830280337860
+./.ruff_cache/0.16.1/5265836763295236621
+./.ruff_cache/0.16.1/5433517233504736982
+./.ruff_cache/0.16.1/5608516372650047143
+./.ruff_cache/0.16.1/5907245499558986446
+./.ruff_cache/0.16.1/6195933679423463931
+./.ruff_cache/0.16.1/668098235305367105
+./.ruff_cache/0.16.1/7205106040275703433
+./.ruff_cache/0.16.1/8172864995460459492
+./.ruff_cache/0.16.1/8218601295019434331
+./.ruff_cache/0.16.1/8602088641242342783
+./.ruff_cache/0.16.1/8824334039894659579
+./.ruff_cache/0.16.1/8838934718717232104
+./.ruff_cache/0.16.1/9657303513612029836
+./.ruff_cache/0.16.1/9894462276037438878
+./.ruff_cache/0.16.2/3923820005574809287
+./.ruff_cache/CACHEDIR.TAG
+./.ruff_cache/.gitignore
+./src/docsync/cli.py
+./src/docsync/config.py
+./src/docsync/crawl_delay.py
+./src/docsync/crawler.py
+./src/docsync/crawler_runtime.py
+./src/docsync/crawler_runtime.py.bak
+./src/docsync/duplicates.py
+./src/docsync/incremental.py
+./src/docsync/__init__.py
+./src/docsync/inventory.py
+./src/docsync/language.py
+./src/docsync/logging_config.py
+./src/docsync/__main__.py
+./src/docsync/main.py
+./src/docsync/markdown.py
+./src/docsync/metrics.py
+./src/docsync/playwright_rendering.py
+./src/docsync/progress_events.py
+./src/docsync/sitemap.py
+./src/docsync/terminal_ui.py
+./src/docsync/url_security.py
+./tests/__init__.py
+./tests/__pycache__/__init__.cpython-313.pyc
+./tests/__pycache__/__init__.cpython-314.pyc
+./tests/__pycache__/test_atomic_write_repeated_execution.cpython-313.pyc
+./tests/__pycache__/test_atomic_write_repeated_execution.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_authoritative_discovery_queue.cpython-313.pyc
+./tests/__pycache__/test_authoritative_discovery_queue.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_automatic_browser_fallback.cpython-313.pyc
+./tests/__pycache__/test_automatic_browser_fallback.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_behavioral_core.cpython-313.pyc
+./tests/__pycache__/test_behavioral_core.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_behavioral_duplicates.cpython-313.pyc
+./tests/__pycache__/test_behavioral_duplicates.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_behavioral_markdown.cpython-313.pyc
+./tests/__pycache__/test_behavioral_markdown.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_browser_mode_configuration.cpython-313.pyc
+./tests/__pycache__/test_browser_mode_configuration.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_cli_dashboard_integration.cpython-313.pyc
+./tests/__pycache__/test_cli_dashboard_integration.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_cli_requests_per_minute.cpython-313.pyc
+./tests/__pycache__/test_cli_requests_per_minute.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_crawl_delay.cpython-313.pyc
+./tests/__pycache__/test_crawl_delay.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_crawl_delay_inventory.cpython-313.pyc
+./tests/__pycache__/test_crawl_delay_inventory.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_crawl_delay_inventory.cpython-314-pytest-9.0.3.pyc
+./tests/__pycache__/test_crawl_delay_runtime_wiring.cpython-313.pyc
+./tests/__pycache__/test_crawl_delay_runtime_wiring.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_crawler_browser_dispatch.cpython-313.pyc
+./tests/__pycache__/test_crawler_browser_dispatch.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_crawler_metrics_wiring.cpython-313.pyc
+./tests/__pycache__/test_crawler_metrics_wiring.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_crawler_progress_cleanup.cpython-313.pyc
+./tests/__pycache__/test_crawler_progress_cleanup.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_crawler_progress_event_wiring.cpython-313.pyc
+./tests/__pycache__/test_crawler_progress_event_wiring.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_default_update_detection.cpython-313.pyc
+./tests/__pycache__/test_default_update_detection.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_discovered_request_queue.cpython-313.pyc
+./tests/__pycache__/test_discovered_request_queue.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_discovery_only_hub_pages.cpython-313.pyc
+./tests/__pycache__/test_discovery_only_hub_pages.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_duplicate_lifecycle_runtime_wiring.cpython-313.pyc
+./tests/__pycache__/test_duplicate_lifecycle_runtime_wiring.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_effective_url_link_resolution.cpython-313.pyc
+./tests/__pycache__/test_effective_url_link_resolution.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_english_only_url_policy.cpython-313.pyc
+./tests/__pycache__/test_english_only_url_policy.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_final_fallback_regressions.cpython-313.pyc
+./tests/__pycache__/test_final_fallback_regressions.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_form_and_processed_regressions.cpython-313.pyc
+./tests/__pycache__/test_form_and_processed_regressions.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_incremental_configuration.cpython-313.pyc
+./tests/__pycache__/test_incremental_configuration.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_incremental.cpython-313.pyc
+./tests/__pycache__/test_incremental.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_incremental_crawler_wiring.cpython-313.pyc
+./tests/__pycache__/test_incremental_crawler_wiring.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_incremental_export_state_wiring.cpython-313.pyc
+./tests/__pycache__/test_incremental_export_state_wiring.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_incremental_sync_runtime_wiring.cpython-313.pyc
+./tests/__pycache__/test_incremental_sync_runtime_wiring.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_inventory.cpython-313.pyc
+./tests/__pycache__/test_inventory.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_inventory.cpython-314-pytest-9.0.3.pyc
+./tests/__pycache__/test_inventory_progress.cpython-313.pyc
+./tests/__pycache__/test_inventory_progress.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_inventory_progress.cpython-314-pytest-9.0.3.pyc
+./tests/__pycache__/test_isolated_request_queue.cpython-313.pyc
+./tests/__pycache__/test_isolated_request_queue.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_language_independent_link_discovery.cpython-313.pyc
+./tests/__pycache__/test_language_independent_link_discovery.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_language_independent_link_discovery.cpython-314-pytest-9.0.3.pyc
+./tests/__pycache__/test_language_subdomain_false_positive.cpython-313.pyc
+./tests/__pycache__/test_language_subdomain_false_positive.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_main_entrypoint.cpython-313.pyc
+./tests/__pycache__/test_main_entrypoint.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_metrics_reporting.cpython-313.pyc
+./tests/__pycache__/test_metrics_reporting.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_playwright_rendering.cpython-313.pyc
+./tests/__pycache__/test_playwright_rendering.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_progress_events.cpython-313.pyc
+./tests/__pycache__/test_progress_events.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_project_smoke.cpython-313.pyc
+./tests/__pycache__/test_project_smoke.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_relative_directory_scope.cpython-313.pyc
+./tests/__pycache__/test_relative_directory_scope.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_request_rate_limit.cpython-313.pyc
+./tests/__pycache__/test_request_rate_limit.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_retry_backoff_runtime_wiring.cpython-313.pyc
+./tests/__pycache__/test_retry_backoff_runtime_wiring.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_robots_runtime.cpython-313.pyc
+./tests/__pycache__/test_robots_runtime.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_sitemap.cpython-313.pyc
+./tests/__pycache__/test_sitemap.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_sitemap_response_validation.cpython-313.pyc
+./tests/__pycache__/test_sitemap_response_validation.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_sqlite_resource_lifecycle.cpython-313.pyc
+./tests/__pycache__/test_sqlite_resource_lifecycle.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_terminal_ui.cpython-313.pyc
+./tests/__pycache__/test_terminal_ui.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_throttling_request_manager.cpython-313.pyc
+./tests/__pycache__/test_throttling_request_manager.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_unchanged_markdown_wiring.cpython-313.pyc
+./tests/__pycache__/test_unchanged_markdown_wiring.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/test_url_security.cpython-313.pyc
+./tests/__pycache__/test_url_security.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/verify_duplicate_detection.cpython-313.pyc
+./tests/__pycache__/verify_duplicate_detection.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/verify_incremental_sync.cpython-313.pyc
+./tests/__pycache__/verify_incremental_sync.cpython-313-pytest-9.1.1.pyc
+./tests/__pycache__/verify_javascript_rendering.cpython-313.pyc
+./tests/__pycache__/verify_javascript_rendering.cpython-313-pytest-9.1.1.pyc
+./tests/test_atomic_write_repeated_execution.py
+./tests/test_authoritative_discovery_queue.py
+./tests/test_automatic_browser_fallback.py
+./tests/test_behavioral_core.py
+./tests/test_behavioral_duplicates.py
+./tests/test_behavioral_markdown.py
+./tests/test_browser_mode_configuration.py
+./tests/test_cli_dashboard_integration.py
+./tests/test_cli_requests_per_minute.py
+./tests/test_crawl_delay_inventory.py
+./tests/test_crawl_delay.py
+./tests/test_crawl_delay_runtime_wiring.py
+./tests/test_crawler_browser_dispatch.py
+./tests/test_crawler_metrics_wiring.py
+./tests/test_crawler_progress_cleanup.py
+./tests/test_crawler_progress_event_wiring.py
+./tests/test_default_update_detection.py
+./tests/test_discovery_only_hub_pages.py
+./tests/test_duplicate_lifecycle_runtime_wiring.py
+./tests/test_effective_url_link_resolution.py
+./tests/test_english_only_url_policy.py
+./tests/test_final_fallback_regressions.py
+./tests/test_form_and_processed_regressions.py
+./tests/test_form_and_processed_regressions.py.before_discovery_only_test_fix.20260802_012631.bak
+./tests/test_incremental_configuration.py
+./tests/test_incremental_crawler_wiring.py
+./tests/test_incremental_export_state_wiring.py
+./tests/test_incremental.py
+./tests/test_incremental_sync_runtime_wiring.py
+./tests/test_inventory_progress.py
+./tests/test_inventory.py
+./tests/test_isolated_request_queue.py
+./tests/test_language_independent_link_discovery.py
+./tests/test_language_subdomain_false_positive.py
+./tests/test_main_entrypoint.py
+./tests/test_metrics_reporting.py
+./tests/test_playwright_rendering.py
+./tests/test_progress_events.py
+./tests/test_project_smoke.py
+./tests/test_relative_directory_scope.py
+./tests/test_request_rate_limit.py
+./tests/test_retry_backoff_runtime_wiring.py
+./tests/test_robots_runtime.py
+./tests/test_sitemap.py
+./tests/test_sitemap_response_validation.py
+./tests/test_sqlite_resource_lifecycle.py
+./tests/test_terminal_ui.py
+./tests/test_throttling_request_manager.py
+./tests/test_unchanged_markdown_wiring.py
+./tests/test_url_security.py
+./tests/verify_duplicate_detection.py
+./tests/verify_incremental_sync.py
+./tests/verify_javascript_rendering.py
+./tools/inspect_bandit_context.py
+./tools/inspect_behavioral_test_targets.py
+./tools/inspect_project.py
+./tools/project_audit.py
+./tools/__pycache__/inspect_bandit_context.cpython-313.pyc
+./tools/__pycache__/inspect_behavioral_test_targets.cpython-313.pyc
+./tools/__pycache__/inspect_project.cpython-313.pyc
+./tools/__pycache__/project_audit.cpython-313.pyc
+./tools/__pycache__/run_full_validation.cpython-313.pyc
+./tools/__pycache__/safe_crawl_test.cpython-313.pyc
+./tools/__pycache__/update_readme_architecture.cpython-313.pyc
+./tools/run_full_validation.py
+./tools/safe_crawl_test.py
+./tools/update_readme_architecture.py
+./uv.lock
+./.venv/bin/activate
+./.venv/bin/activate.bat
+./.venv/bin/activate.csh
+./.venv/bin/activate.fish
+./.venv/bin/activate.nu
+./.venv/bin/activate.ps1
+./.venv/bin/activate_this.py
+./.venv/bin/bandit
+./.venv/bin/bandit-baseline
+./.venv/bin/bandit-config-generator
+./.venv/bin/cffi-gen-src
+./.venv/bin/coverage
+./.venv/bin/coverage3
+./.venv/bin/coverage-3.13
+./.venv/bin/crawlee
+./.venv/bin/curl-cffi
+./.venv/bin/deactivate.bat
+./.venv/bin/dmypy
+./.venv/bin/docsync
+./.venv/bin/dotenv
+./.venv/bin/httpx
+./.venv/bin/idna
+./.venv/bin/markdownify
+./.venv/bin/markdown-it
+./.venv/bin/mypy
+./.venv/bin/mypyc
+./.venv/bin/normalizer
+./.venv/bin/playwright
+./.venv/bin/pydoc.bat
+./.venv/bin/pygmentize
+./.venv/bin/py.test
+./.venv/bin/pytest
+./.venv/bin/ruff
+./.venv/bin/stubgen
+./.venv/bin/stubtest
+./.venv/bin/tldextract
+./.venv/CACHEDIR.TAG
+./.venv/.gitignore
+./.venv/.lock
+./.venv/pyvenv.cfg
+=== PYPROJECT ===
+[project]
+name = "docsync"
+version = "0.1.0"
+description = "Crawl documentation websites, extract normalized Markdown, and maintain incremental synchronization state."
+readme = "README.md"
+authors = [
+    { name = "murat", email = "74824857+orioninsist@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "crawlee[beautifulsoup,curl-impersonate,playwright]==1.9.1",
+    "defusedxml>=0.7.1",
+    "httpx>=0.28.1",
+    "langdetect>=1.0.9",
+    "libcst>=1.9.0",
+    "lingua-language-detector>=2.2.0",
+    "markdownify>=1.2.3",
+    "rich>=15.0.0",
+]
+
+[project.scripts]
+docsync = "docsync.cli:main"
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "bandit>=1.8",
+    "mypy>=1.17",
+    "pytest>=8.4",
+    "pytest-cov>=6.2",
+    "ruff>=0.12",
+]
+
+# DOCSYNC QUALITY CONFIGURATION
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+extend-exclude = [
+    "backups",
+    ".venv",
+    "data",
+    "logs",
+    "metrics",
+    "storage",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "B",
+    "UP",
+    "SIM",
+    "C4",
+    "PIE",
+    "RET",
+    "RUF",
+]
+ignore = [
+    "E501",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["docsync"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.13"
+files = [
+    "src",
+    "main.py",
+    "src/docsync",
+    "tools",
+    "tests",
+]
+exclude = [
+    "^backups/",
+    "^data/",
+    "^logs/",
+    "^metrics/",
+    "^storage/",
+]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+warn_unreachable = true
+check_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
+pretty = true
+namespace_packages = true
+explicit_package_bases = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = [
+    "test_*.py",
+    "*_test.py",
+    "verify_*.py",
+]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+    "--tb=short",
+]
+markers = [
+    "live: tests that access external websites",
+    "slow: tests that require extended execution time",
+    "javascript: tests that require browser rendering",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/docsync"]
+omit = [
+    "src/docsync/__main__.py",
+    "tests/*",
+    "backups/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+precision = 2
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
+[tool.bandit]
+exclude_dirs = [
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+skips = ["B101"]
+
+[tool.uv.build-backend]
+source-exclude = [
+    "*.before_*",
+    "*.backup",
+    "*.backup.*",
+    "*.bak",
+    "*.orig",
+    "*.rej",
+    "**/*.before_*",
+    "**/*.backup",
+    "**/*.backup.*",
+    "**/*.bak",
+    "**/*.orig",
+    "**/*.rej",
+    ".docsync-migration/**",
+    "docsync_architecture_audit.txt",
+]
+wheel-exclude = [
+    "*.before_*",
+    "*.backup",
+    "*.backup.*",
+    "*.bak",
+    "*.orig",
+    "*.rej",
+    "**/*.before_*",
+    "**/*.backup",
+    "**/*.backup.*",
+    "**/*.bak",
+    "**/*.orig",
+    "**/*.rej",
+    ".docsync-migration/**",
+    "docsync_architecture_audit.txt",
+]
+=== IMPORTS ===
+src/docsync/config.py:3:from __future__ import annotations
+src/docsync/config.py:5:import os
+src/docsync/config.py:6:from dataclasses import dataclass
+src/docsync/config.py:7:from pathlib import Path
+src/docsync/config.py:8:from typing import Final, Literal, cast
+src/docsync/config.py:10:from docsync.url_security import validated_http_url
+src/docsync/cli.py:1:from __future__ import annotations
+src/docsync/cli.py:3:import argparse
+src/docsync/cli.py:4:import asyncio
+src/docsync/cli.py:5:import inspect
+src/docsync/cli.py:6:import os
+src/docsync/cli.py:7:from collections.abc import Awaitable, Sequence
+src/docsync/cli.py:8:from pathlib import Path
+src/docsync/cli.py:9:from typing import Any
+src/docsync/cli.py:11:from docsync.config import Settings
+src/docsync/cli.py:12:from docsync.crawler import run_crawler
+src/docsync/cli.py:13:from docsync.inventory import run_inventory
+src/docsync/cli.py:14:from docsync.metrics import CrawlStats
+src/docsync/cli.py:15:from docsync.progress_events import CrawlEvent
+src/docsync/cli.py:16:from docsync.terminal_ui import (
+src/docsync/inventory.py:3:from __future__ import annotations
+src/docsync/inventory.py:5:import asyncio
+src/docsync/inventory.py:6:import json
+src/docsync/inventory.py:7:from dataclasses import asdict, dataclass
+src/docsync/inventory.py:8:from pathlib import Path
+src/docsync/inventory.py:9:from urllib.parse import urlsplit
+src/docsync/inventory.py:11:from crawlee.crawlers import (
+src/docsync/inventory.py:16:from crawlee.errors import (
+src/docsync/inventory.py:22:from docsync.crawler import (
+src/docsync/inventory.py:27:from docsync.crawler_runtime import build_crawlee_runtime
+src/docsync/inventory.py:28:from docsync.language import (
+src/docsync/inventory.py:32:from docsync.sitemap import discover_sitemap_urls
+src/docsync/inventory.py:33:from docsync.url_security import (
+src/docsync/crawler.py:3:from __future__ import annotations
+src/docsync/crawler.py:5:import re
+src/docsync/crawler.py:6:from pathlib import Path
+src/docsync/crawler.py:7:from re import Pattern
+src/docsync/crawler.py:8:from typing import Any, Final, cast
+src/docsync/crawler.py:9:from urllib.parse import urljoin, urlsplit
+src/docsync/crawler.py:11:from bs4 import BeautifulSoup
+src/docsync/crawler.py:12:from crawlee.crawlers import (
+src/docsync/crawler.py:20:from docsync.config import Settings
+src/docsync/crawler.py:21:from docsync.crawler_runtime import build_crawlee_runtime
+src/docsync/crawler.py:22:from docsync.incremental import (
+src/docsync/crawler.py:31:from docsync.language import (
+src/docsync/crawler.py:35:from docsync.markdown import MarkdownExporter
+src/docsync/crawler.py:36:from docsync.metrics import CrawlStats, write_crawl_report
+src/docsync/crawler.py:37:from docsync.playwright_rendering import (
+src/docsync/crawler.py:43:from docsync.progress_events import CrawlEvent, CrawlEventSink
+src/docsync/crawler.py:44:from docsync.sitemap import discover_sitemap_urls
+src/docsync/crawler.py:45:from docsync.url_security import (
+src/docsync/main.py:3:from __future__ import annotations
+src/docsync/main.py:5:import asyncio
+src/docsync/main.py:6:import sys
+src/docsync/main.py:8:from docsync.config import Settings
+src/docsync/main.py:9:from docsync.crawler import run_crawler
+src/docsync/main.py:10:from docsync.logging_config import configure_logging
+src/docsync/main.py:11:from docsync.metrics import CrawlStats
+src/docsync/incremental.py:3:from __future__ import annotations
+src/docsync/incremental.py:5:import hashlib
+src/docsync/incremental.py:6:import json
+src/docsync/incremental.py:7:import os
+src/docsync/incremental.py:8:import tempfile
+src/docsync/incremental.py:9:from collections.abc import Iterable
+src/docsync/incremental.py:10:from datetime import UTC, datetime, timedelta
+src/docsync/incremental.py:11:from pathlib import Path
+src/docsync/incremental.py:12:from typing import Protocol
+src/docsync/incremental.py:14:from docsync.url_security import normalize_url
+src/docsync/language.py:1:from __future__ import annotations
+src/docsync/language.py:3:import re
+src/docsync/language.py:4:from dataclasses import dataclass
+src/docsync/language.py:5:from urllib.parse import parse_qsl, urlparse
+src/docsync/language.py:7:from bs4 import BeautifulSoup
+src/docsync/language.py:8:from lingua import Language, LanguageDetector, LanguageDetectorBuilder
+src/docsync/playwright_rendering.py:3:from __future__ import annotations
+src/docsync/playwright_rendering.py:5:from collections.abc import Awaitable, Callable, Mapping, Sequence
+src/docsync/playwright_rendering.py:6:from contextlib import suppress
+src/docsync/playwright_rendering.py:7:from dataclasses import dataclass
+src/docsync/playwright_rendering.py:8:from typing import Any, Final, Protocol
+src/docsync/playwright_rendering.py:10:from playwright.async_api import async_playwright
+src/docsync/progress_events.py:3:from __future__ import annotations
+src/docsync/progress_events.py:5:from dataclasses import dataclass
+src/docsync/progress_events.py:6:from typing import Protocol
+src/docsync/url_security.py:3:from __future__ import annotations
+src/docsync/url_security.py:5:import re
+src/docsync/url_security.py:6:from collections.abc import Collection
+src/docsync/url_security.py:7:from email.message import Message
+src/docsync/url_security.py:8:from pathlib import PurePosixPath
+src/docsync/url_security.py:9:from typing import Any
+src/docsync/url_security.py:10:from urllib import error as urllib_error
+src/docsync/url_security.py:11:from urllib import request as urllib_request
+src/docsync/url_security.py:12:from urllib.parse import (
+src/docsync/metrics.py:3:from __future__ import annotations
+src/docsync/metrics.py:5:import json
+src/docsync/metrics.py:6:from collections.abc import Mapping
+src/docsync/metrics.py:7:from dataclasses import dataclass, field
+src/docsync/metrics.py:8:from datetime import UTC, datetime
+src/docsync/metrics.py:9:from pathlib import Path
+src/docsync/metrics.py:10:from typing import Any, Final
+src/docsync/markdown.py:1:from __future__ import annotations
+src/docsync/markdown.py:3:import hashlib
+src/docsync/markdown.py:4:import json
+src/docsync/markdown.py:5:import re
+src/docsync/markdown.py:6:import unicodedata
+src/docsync/markdown.py:7:from dataclasses import dataclass
+src/docsync/markdown.py:8:from datetime import UTC, datetime
+src/docsync/markdown.py:9:from pathlib import Path
+src/docsync/markdown.py:10:from urllib.parse import urlparse
+src/docsync/markdown.py:12:from bs4 import BeautifulSoup, Tag
+src/docsync/markdown.py:13:from markdownify import markdownify
+src/docsync/crawler_runtime.py:3:from __future__ import annotations
+src/docsync/crawler_runtime.py:5:from dataclasses import dataclass
+src/docsync/crawler_runtime.py:6:from datetime import timedelta
+src/docsync/crawler_runtime.py:7:from typing import Any
+src/docsync/crawler_runtime.py:8:from uuid import uuid4
+src/docsync/crawler_runtime.py:10:from crawlee import ConcurrencySettings
+src/docsync/crawler_runtime.py:11:from crawlee.request_loaders import ThrottlingRequestManager
+src/docsync/crawler_runtime.py:12:from crawlee.storage_clients import MemoryStorageClient
+src/docsync/crawler_runtime.py:13:from crawlee.storages import RequestQueue
+src/docsync/duplicates.py:1:from __future__ import annotations
+src/docsync/duplicates.py:3:import sqlite3
+src/docsync/duplicates.py:4:from collections.abc import Iterator
+src/docsync/duplicates.py:5:from contextlib import contextmanager
+src/docsync/duplicates.py:6:from dataclasses import dataclass
+src/docsync/duplicates.py:7:from pathlib import Path
+src/docsync/logging_config.py:3:from __future__ import annotations
+src/docsync/logging_config.py:5:import logging
+src/docsync/logging_config.py:6:from pathlib import Path
+src/docsync/crawler_runtime.py.bak:3:from __future__ import annotations
+src/docsync/crawler_runtime.py.bak:5:from dataclasses import dataclass
+src/docsync/crawler_runtime.py.bak:6:from datetime import timedelta
+src/docsync/crawler_runtime.py.bak:7:from typing import Any
+src/docsync/crawler_runtime.py.bak:8:from uuid import uuid4
+src/docsync/crawler_runtime.py.bak:10:from crawlee import ConcurrencySettings
+src/docsync/crawler_runtime.py.bak:11:from crawlee.request_loaders import ThrottlingRequestManager
+src/docsync/crawler_runtime.py.bak:12:from crawlee.storage_clients import MemoryStorageClient
+src/docsync/crawler_runtime.py.bak:13:from crawlee.storages import RequestQueue
+src/docsync/terminal_ui.py:3:from __future__ import annotations
+src/docsync/terminal_ui.py:5:import sys
+src/docsync/terminal_ui.py:6:import threading
+src/docsync/terminal_ui.py:7:from dataclasses import dataclass, field, replace
+src/docsync/terminal_ui.py:8:from datetime import UTC, datetime
+src/docsync/terminal_ui.py:9:from io import StringIO
+src/docsync/terminal_ui.py:10:from pathlib import Path
+src/docsync/terminal_ui.py:11:from time import monotonic
+src/docsync/terminal_ui.py:12:from typing import Any, Final, TextIO
+src/docsync/terminal_ui.py:13:from urllib.parse import urlsplit
+src/docsync/terminal_ui.py:15:from rich.console import Console, Group, RenderableType
+src/docsync/terminal_ui.py:16:from rich.live import Live
+src/docsync/terminal_ui.py:17:from rich.panel import Panel
+src/docsync/terminal_ui.py:18:from rich.progress import (
+src/docsync/terminal_ui.py:27:from rich.table import Table
+src/docsync/terminal_ui.py:28:from rich.text import Text
+src/docsync/crawl_delay.py:3:from __future__ import annotations
+src/docsync/crawl_delay.py:5:import asyncio
+src/docsync/crawl_delay.py:6:import inspect
+src/docsync/crawl_delay.py:7:import math
+src/docsync/crawl_delay.py:8:import os
+src/docsync/crawl_delay.py:9:import time
+src/docsync/crawl_delay.py:10:from collections.abc import Awaitable, Callable
+src/docsync/crawl_delay.py:11:from dataclasses import dataclass, field
+src/docsync/crawl_delay.py:12:from typing import Protocol
+src/docsync/__main__.py:1:from __future__ import annotations
+src/docsync/__main__.py:3:from docsync.cli import main
+src/docsync/sitemap.py:3:from __future__ import annotations
+src/docsync/sitemap.py:5:import asyncio
+src/docsync/sitemap.py:6:import gzip
+src/docsync/sitemap.py:7:from dataclasses import dataclass, field
+src/docsync/sitemap.py:8:from urllib.parse import urljoin, urlsplit
+src/docsync/sitemap.py:9:from urllib.request import Request
+src/docsync/sitemap.py:11:from defusedxml import ElementTree as ET
+src/docsync/sitemap.py:13:from docsync.language import is_explicitly_non_english_url
+src/docsync/sitemap.py:14:from docsync.url_security import (
+main.py:1:from __future__ import annotations
+main.py:3:from docsync.cli import main
+tests/test_effective_url_link_resolution.py:3:from __future__ import annotations
+tests/test_effective_url_link_resolution.py:5:from bs4 import BeautifulSoup
+tests/test_effective_url_link_resolution.py:7:from docsync.crawler import (
+tests/test_robots_runtime.py:3:from __future__ import annotations
+tests/test_robots_runtime.py:5:import ast
+tests/test_robots_runtime.py:6:import dataclasses
+tests/test_robots_runtime.py:7:import inspect
+tests/test_robots_runtime.py:8:from pathlib import Path
+tests/test_robots_runtime.py:9:from typing import Any
+tests/test_robots_runtime.py:11:from docsync.config import Settings
+tests/test_incremental_crawler_wiring.py:3:from __future__ import annotations
+tests/test_incremental_crawler_wiring.py:5:import ast
+tests/test_incremental_crawler_wiring.py:6:from pathlib import Path
+tests/test_duplicate_lifecycle_runtime_wiring.py:1:from __future__ import annotations
+tests/test_duplicate_lifecycle_runtime_wiring.py:3:import ast
+tests/test_duplicate_lifecycle_runtime_wiring.py:4:from pathlib import Path
+tests/test_incremental_sync_runtime_wiring.py:1:import ast
+tests/test_incremental_sync_runtime_wiring.py:2:from pathlib import Path
+tests/test_atomic_write_repeated_execution.py:1:from __future__ import annotations
+tests/test_atomic_write_repeated_execution.py:3:import json
+tests/test_atomic_write_repeated_execution.py:4:from pathlib import Path
+tests/test_atomic_write_repeated_execution.py:5:from typing import Any
+tests/test_atomic_write_repeated_execution.py:7:import pytest
+tests/test_atomic_write_repeated_execution.py:9:import docsync.incremental as incremental
+tests/test_atomic_write_repeated_execution.py:10:from docsync.markdown import MarkdownExporter
+tests/test_final_fallback_regressions.py:3:from __future__ import annotations
+tests/test_final_fallback_regressions.py:5:import ast
+tests/test_final_fallback_regressions.py:6:from email.message import Message
+tests/test_final_fallback_regressions.py:7:from pathlib import Path
+tests/test_final_fallback_regressions.py:8:from urllib.error import HTTPError
+tests/test_final_fallback_regressions.py:10:import pytest
+tests/test_final_fallback_regressions.py:12:from docsync.sitemap import SitemapDiscoveryResult, discover_sitemap_urls_sync
+tests/test_inventory_progress.py:1:from __future__ import annotations
+tests/test_inventory_progress.py:3:from docsync.inventory import (
+tests/verify_duplicate_detection.py:1:from __future__ import annotations
+tests/verify_duplicate_detection.py:3:import hashlib
+tests/verify_duplicate_detection.py:4:import re
+tests/verify_duplicate_detection.py:5:import shutil
+tests/verify_duplicate_detection.py:6:import socket
+tests/verify_duplicate_detection.py:7:import subprocess  # nosec B404 - subprocess module is required for controlled local tooling
+tests/verify_duplicate_detection.py:8:import sys
+tests/verify_duplicate_detection.py:9:import tempfile
+tests/verify_duplicate_detection.py:10:import threading
+tests/verify_duplicate_detection.py:11:import time
+tests/verify_duplicate_detection.py:12:from dataclasses import dataclass
+tests/verify_duplicate_detection.py:13:from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+tests/verify_duplicate_detection.py:14:from pathlib import Path
+tests/verify_duplicate_detection.py:15:from typing import Final
+tests/test_default_update_detection.py:3:from __future__ import annotations
+tests/test_default_update_detection.py:5:from dataclasses import dataclass, field
+tests/test_default_update_detection.py:6:from datetime import UTC, datetime
+tests/test_default_update_detection.py:8:from docsync.config import DEFAULT_REFRESH_HOURS, Settings
+tests/test_default_update_detection.py:9:from docsync.incremental import (
+tests/test_cli_requests_per_minute.py:3:from __future__ import annotations
+tests/test_cli_requests_per_minute.py:5:import os
+tests/test_cli_requests_per_minute.py:7:import pytest
+tests/test_cli_requests_per_minute.py:9:from docsync.cli import _apply_environment_overrides, build_parser
+tests/test_url_security.py:1:from __future__ import annotations
+tests/test_url_security.py:3:from email.message import Message
+tests/test_url_security.py:4:from urllib.error import HTTPError
+tests/test_url_security.py:6:import pytest
+tests/test_url_security.py:8:from docsync.url_security import (
+tests/test_sqlite_resource_lifecycle.py:1:from __future__ import annotations
+tests/test_sqlite_resource_lifecycle.py:3:import gc
+tests/test_sqlite_resource_lifecycle.py:4:import warnings
+tests/test_sqlite_resource_lifecycle.py:5:from pathlib import Path
+tests/test_sqlite_resource_lifecycle.py:7:from docsync.duplicates import DuplicateRegistry
+tests/test_crawler_progress_event_wiring.py:3:from __future__ import annotations
+tests/test_crawler_progress_event_wiring.py:5:import ast
+tests/test_crawler_progress_event_wiring.py:6:from pathlib import Path
+tests/test_retry_backoff_runtime_wiring.py:3:from __future__ import annotations
+tests/test_retry_backoff_runtime_wiring.py:5:import ast
+tests/test_retry_backoff_runtime_wiring.py:6:from pathlib import Path
+tests/test_retry_backoff_runtime_wiring.py:7:from typing import Final
+tests/test_metrics_reporting.py:3:from __future__ import annotations
+tests/test_metrics_reporting.py:5:import json
+tests/test_metrics_reporting.py:6:from datetime import UTC, datetime
+tests/test_metrics_reporting.py:7:from pathlib import Path
+tests/test_metrics_reporting.py:9:import pytest
+tests/test_metrics_reporting.py:11:from docsync.metrics import (
+tests/test_language_subdomain_false_positive.py:3:from __future__ import annotations
+tests/test_language_subdomain_false_positive.py:5:from bs4 import BeautifulSoup
+tests/test_language_subdomain_false_positive.py:7:from docsync.crawler import (
+tests/test_language_subdomain_false_positive.py:11:from docsync.language import (
+tests/test_inventory.py:1:from __future__ import annotations
+tests/test_inventory.py:3:import asyncio
+tests/test_inventory.py:4:import json
+tests/test_inventory.py:5:from collections.abc import AsyncIterator
+tests/test_inventory.py:6:from contextlib import asynccontextmanager
+tests/test_inventory.py:7:from pathlib import Path
+tests/test_inventory.py:8:from typing import Any
+tests/test_inventory.py:9:from unittest.mock import MagicMock
+tests/test_inventory.py:11:import httpx
+tests/test_inventory.py:12:from crawlee import Request
+tests/test_inventory.py:13:from crawlee.crawlers import BeautifulSoupCrawler
+tests/test_inventory.py:14:from crawlee.http_clients import HttpCrawlingResult
+tests/test_inventory.py:15:from crawlee.http_clients._base import HttpClient, HttpResponse
+tests/test_inventory.py:17:from docsync.inventory import (
+tests/test_inventory.py:21:from docsync.sitemap import SitemapDiscoveryResult
+tests/test_main_entrypoint.py:3:from __future__ import annotations
+tests/test_main_entrypoint.py:5:import runpy
+tests/test_main_entrypoint.py:6:from pathlib import Path
+tests/test_main_entrypoint.py:7:from unittest.mock import AsyncMock, MagicMock, patch
+tests/test_main_entrypoint.py:9:from docsync.config import Settings
+tests/test_main_entrypoint.py:10:from docsync.main import main, run
+tests/test_behavioral_markdown.py:1:from __future__ import annotations
+tests/test_behavioral_markdown.py:3:import hashlib
+tests/test_behavioral_markdown.py:4:from pathlib import Path
+tests/test_behavioral_markdown.py:6:import pytest
+tests/test_behavioral_markdown.py:7:from bs4 import BeautifulSoup
+tests/test_behavioral_markdown.py:9:from docsync.markdown import MarkdownExporter
+tests/test_form_and_processed_regressions.py:3:from __future__ import annotations
+tests/test_form_and_processed_regressions.py:5:import ast
+tests/test_form_and_processed_regressions.py:6:from pathlib import Path
+tests/test_form_and_processed_regressions.py:8:from bs4 import BeautifulSoup
+tests/test_form_and_processed_regressions.py:10:from docsync.markdown import MarkdownExporter
+tests/test_progress_events.py:3:from __future__ import annotations
+tests/test_progress_events.py:5:from docsync.progress_events import CrawlEvent
+tests/test_english_only_url_policy.py:3:from __future__ import annotations
+tests/test_english_only_url_policy.py:5:from pathlib import Path
+tests/test_english_only_url_policy.py:7:import pytest
+tests/test_english_only_url_policy.py:8:from bs4 import BeautifulSoup
+tests/test_english_only_url_policy.py:10:from docsync.crawler import (
+tests/test_english_only_url_policy.py:14:from docsync.language import (
+tests/test_english_only_url_policy.py:18:from docsync.sitemap import (
+tests/test_playwright_rendering.py:3:from __future__ import annotations
+tests/test_playwright_rendering.py:5:import asyncio
+tests/test_playwright_rendering.py:6:from dataclasses import dataclass, field
+tests/test_playwright_rendering.py:7:from typing import Any
+tests/test_playwright_rendering.py:9:import pytest
+tests/test_playwright_rendering.py:11:from docsync.playwright_rendering import (
+tests/test_unchanged_markdown_wiring.py:1:from __future__ import annotations
+tests/test_unchanged_markdown_wiring.py:3:import ast
+tests/test_unchanged_markdown_wiring.py:4:from pathlib import Path
+tests/test_unchanged_markdown_wiring.py:5:from unittest.mock import Mock
+tests/test_unchanged_markdown_wiring.py:7:from bs4 import BeautifulSoup
+tests/test_unchanged_markdown_wiring.py:9:from docsync.incremental import content_is_unchanged
+tests/test_unchanged_markdown_wiring.py:10:from docsync.markdown import MarkdownExporter
+tests/test_terminal_ui.py:3:from __future__ import annotations
+tests/test_terminal_ui.py:5:from dataclasses import replace
+tests/test_terminal_ui.py:6:from pathlib import Path
+tests/test_terminal_ui.py:8:import pytest
+tests/test_terminal_ui.py:9:from rich.console import Console
+tests/test_terminal_ui.py:11:from docsync.terminal_ui import (
+tests/verify_incremental_sync.py:1:from __future__ import annotations
+tests/verify_incremental_sync.py:3:import hashlib
+tests/verify_incremental_sync.py:4:import re
+tests/verify_incremental_sync.py:5:import shutil
+tests/verify_incremental_sync.py:6:import socket
+tests/verify_incremental_sync.py:7:import subprocess  # nosec B404 - subprocess module is required for controlled local tooling
+tests/verify_incremental_sync.py:8:import sys
+tests/verify_incremental_sync.py:9:import tempfile
+tests/verify_incremental_sync.py:10:import threading
+tests/verify_incremental_sync.py:11:import time
+tests/verify_incremental_sync.py:12:import uuid
+tests/verify_incremental_sync.py:13:from dataclasses import dataclass
+tests/verify_incremental_sync.py:14:from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+tests/verify_incremental_sync.py:15:from pathlib import Path
+tests/verify_incremental_sync.py:16:from typing import Final
+tests/test_behavioral_core.py:1:from __future__ import annotations
+tests/test_behavioral_core.py:3:import gzip
+tests/test_behavioral_core.py:4:import json
+tests/test_behavioral_core.py:5:import urllib.error
+tests/test_behavioral_core.py:6:from pathlib import Path
+tests/test_behavioral_core.py:7:from types import SimpleNamespace
+tests/test_behavioral_core.py:8:from typing import Any
+tests/test_behavioral_core.py:10:import pytest
+tests/test_behavioral_core.py:12:import docsync.incremental as incremental
+tests/test_behavioral_core.py:13:from docsync.markdown import MarkdownExporter
+tests/test_behavioral_core.py:14:from docsync.metrics import CrawlStats
+tests/test_behavioral_core.py:15:from docsync.sitemap import (
+tests/test_behavioral_core.py:20:from docsync.url_security import (
+tests/test_crawler_progress_cleanup.py:3:from __future__ import annotations
+tests/test_crawler_progress_cleanup.py:5:import ast
+tests/test_crawler_progress_cleanup.py:6:from pathlib import Path
+tests/test_crawl_delay_runtime_wiring.py:3:from __future__ import annotations
+tests/test_crawl_delay_runtime_wiring.py:5:import ast
+tests/test_crawl_delay_runtime_wiring.py:6:from pathlib import Path
+tests/test_authoritative_discovery_queue.py:3:from __future__ import annotations
+tests/test_authoritative_discovery_queue.py:5:from pathlib import Path
+tests/test_project_smoke.py:1:from __future__ import annotations
+tests/test_project_smoke.py:3:import ast
+tests/test_project_smoke.py:4:import py_compile
+tests/test_project_smoke.py:5:import tomllib
+tests/test_project_smoke.py:6:from pathlib import Path
+tests/test_project_smoke.py:8:import pytest
+tests/test_isolated_request_queue.py:3:from __future__ import annotations
+tests/test_isolated_request_queue.py:5:import asyncio
+tests/test_isolated_request_queue.py:7:from crawlee.request_loaders import ThrottlingRequestManager
+tests/test_isolated_request_queue.py:8:from crawlee.storage_clients import MemoryStorageClient
+tests/test_isolated_request_queue.py:9:from crawlee.storages import RequestQueue
+tests/test_isolated_request_queue.py:11:from docsync.crawler_runtime import build_crawlee_runtime
+tests/test_language_independent_link_discovery.py:3:from __future__ import annotations
+tests/test_language_independent_link_discovery.py:5:import ast
+tests/test_language_independent_link_discovery.py:6:from pathlib import Path
+tests/test_crawler_metrics_wiring.py:3:from __future__ import annotations
+tests/test_crawler_metrics_wiring.py:5:import ast
+tests/test_crawler_metrics_wiring.py:6:from pathlib import Path
+tests/test_crawler_metrics_wiring.py:7:from typing import Final
+tests/test_crawler_browser_dispatch.py:1:from __future__ import annotations
+tests/test_crawler_browser_dispatch.py:3:import ast
+tests/test_crawler_browser_dispatch.py:4:from pathlib import Path
+tests/test_throttling_request_manager.py:3:from __future__ import annotations
+tests/test_throttling_request_manager.py:5:import asyncio
+tests/test_throttling_request_manager.py:6:from datetime import timedelta
+tests/test_throttling_request_manager.py:7:from typing import Any, cast
+tests/test_throttling_request_manager.py:9:from crawlee.request_loaders import ThrottlingRequestManager
+tests/test_browser_mode_configuration.py:3:from __future__ import annotations
+tests/test_browser_mode_configuration.py:5:import argparse
+tests/test_browser_mode_configuration.py:6:import ast
+tests/test_browser_mode_configuration.py:7:import os
+tests/test_browser_mode_configuration.py:8:from pathlib import Path
+tests/test_browser_mode_configuration.py:9:from typing import Final
+tests/test_browser_mode_configuration.py:11:import pytest
+tests/test_browser_mode_configuration.py:13:from docsync.cli import (
+tests/test_browser_mode_configuration.py:18:from docsync.config import Settings
+tests/test_sitemap.py:1:from __future__ import annotations
+tests/test_sitemap.py:3:import gzip
+tests/test_sitemap.py:4:from email.message import Message
+tests/test_sitemap.py:5:from io import BytesIO
+tests/test_sitemap.py:6:from urllib.error import HTTPError
+tests/test_sitemap.py:8:import pytest
+tests/test_sitemap.py:10:from docsync.sitemap import (
+tests/test_incremental_configuration.py:3:from __future__ import annotations
+tests/test_incremental_configuration.py:5:import inspect
+tests/test_incremental_configuration.py:7:import pytest
+tests/test_incremental_configuration.py:9:from docsync.cli import build_parser
+tests/test_incremental_configuration.py:10:from docsync.config import (
+tests/test_incremental_configuration.py:15:from docsync.crawler import run_crawler
+tests/verify_javascript_rendering.py:1:from __future__ import annotations
+tests/verify_javascript_rendering.py:3:import hashlib
+tests/verify_javascript_rendering.py:4:import http.server
+tests/verify_javascript_rendering.py:5:import os
+tests/verify_javascript_rendering.py:6:import re
+tests/verify_javascript_rendering.py:7:import shutil
+tests/verify_javascript_rendering.py:8:import socket
+tests/verify_javascript_rendering.py:9:import subprocess  # nosec B404 - subprocess module is required for controlled local tooling
+tests/verify_javascript_rendering.py:10:import tempfile
+tests/verify_javascript_rendering.py:11:import threading
+tests/verify_javascript_rendering.py:12:import time
+tests/verify_javascript_rendering.py:13:from pathlib import Path
+tests/verify_javascript_rendering.py:14:from typing import Final
+tests/test_automatic_browser_fallback.py:3:from __future__ import annotations
+tests/test_automatic_browser_fallback.py:5:import ast
+tests/test_automatic_browser_fallback.py:6:from pathlib import Path
+tests/test_cli_dashboard_integration.py:3:from __future__ import annotations
+tests/test_cli_dashboard_integration.py:5:from dataclasses import replace
+tests/test_cli_dashboard_integration.py:6:from pathlib import Path
+tests/test_cli_dashboard_integration.py:7:from typing import Any, ClassVar
+tests/test_cli_dashboard_integration.py:9:import pytest
+tests/test_cli_dashboard_integration.py:11:from docsync.cli import main
+tests/test_cli_dashboard_integration.py:12:from docsync.metrics import CrawlStats
+tests/test_cli_dashboard_integration.py:13:from docsync.progress_events import CrawlEvent, CrawlEventSink
+tests/test_cli_dashboard_integration.py:14:from docsync.terminal_ui import CrawlProgressSnapshot, SiteInformation
+tests/test_discovery_only_hub_pages.py:3:from __future__ import annotations
+tests/test_discovery_only_hub_pages.py:5:from pathlib import Path
+tests/test_discovery_only_hub_pages.py:7:from bs4 import BeautifulSoup
+tests/test_discovery_only_hub_pages.py:9:from docsync.crawler import (
+tests/test_incremental.py:3:from __future__ import annotations
+tests/test_incremental.py:5:import json
+tests/test_incremental.py:6:from dataclasses import dataclass, field
+tests/test_incremental.py:7:from datetime import UTC, datetime, timedelta
+tests/test_incremental.py:8:from pathlib import Path
+tests/test_incremental.py:10:import pytest
+tests/test_incremental.py:12:import docsync.incremental as incremental
+tests/test_sitemap_response_validation.py:3:from __future__ import annotations
+tests/test_sitemap_response_validation.py:5:import gzip
+tests/test_sitemap_response_validation.py:7:import pytest
+tests/test_sitemap_response_validation.py:9:from docsync.sitemap import (
+tests/test_form_and_processed_regressions.py.before_discovery_only_test_fix.20260802_012631.bak:3:from __future__ import annotations
+tests/test_form_and_processed_regressions.py.before_discovery_only_test_fix.20260802_012631.bak:5:import ast
+tests/test_form_and_processed_regressions.py.before_discovery_only_test_fix.20260802_012631.bak:6:from pathlib import Path
+tests/test_form_and_processed_regressions.py.before_discovery_only_test_fix.20260802_012631.bak:8:from bs4 import BeautifulSoup
+tests/test_form_and_processed_regressions.py.before_discovery_only_test_fix.20260802_012631.bak:10:from docsync.markdown import MarkdownExporter
+tests/test_crawl_delay_inventory.py:3:from __future__ import annotations
+tests/test_crawl_delay_inventory.py:5:import ast
+tests/test_crawl_delay_inventory.py:6:from pathlib import Path
+tests/test_incremental_export_state_wiring.py:1:from __future__ import annotations
+tests/test_incremental_export_state_wiring.py:3:import ast
+tests/test_incremental_export_state_wiring.py:4:import json
+tests/test_incremental_export_state_wiring.py:5:from pathlib import Path
+tests/test_incremental_export_state_wiring.py:7:import pytest
+tests/test_incremental_export_state_wiring.py:9:import docsync.incremental as incremental
+tests/test_behavioral_duplicates.py:1:from __future__ import annotations
+tests/test_behavioral_duplicates.py:3:import sqlite3
+tests/test_behavioral_duplicates.py:4:from pathlib import Path
+tests/test_behavioral_duplicates.py:6:import pytest
+tests/test_behavioral_duplicates.py:8:from docsync.duplicates import DuplicateRegistry
+tests/test_crawl_delay.py:3:from __future__ import annotations
+tests/test_crawl_delay.py:5:import asyncio
+tests/test_crawl_delay.py:6:from dataclasses import dataclass, field
+tests/test_crawl_delay.py:8:import pytest
+tests/test_crawl_delay.py:10:from docsync.crawl_delay import CrawlDelayThrottle
+tests/test_request_rate_limit.py:3:from __future__ import annotations
+tests/test_request_rate_limit.py:5:import ast
+tests/test_request_rate_limit.py:6:import asyncio
+tests/test_request_rate_limit.py:7:from pathlib import Path
+tests/test_request_rate_limit.py:9:import pytest
+tests/test_request_rate_limit.py:11:from docsync.config import (
+tests/test_request_rate_limit.py:17:from docsync.crawler_runtime import build_crawlee_runtime
+tests/test_relative_directory_scope.py:1:from __future__ import annotations
+tests/test_relative_directory_scope.py:3:from bs4 import BeautifulSoup
+tests/test_relative_directory_scope.py:5:from docsync.crawler import (
+=== CRAWLEE REFERENCES ===
+src/docsync/cli.py:181:        return asyncio.run(_await_crawler_result(result))
+src/docsync/cli.py:375:        report = asyncio.run(
+src/docsync/cli.py:410:        result = asyncio.run(_await_crawler_result(result))
+src/docsync/inventory.py:11:from crawlee.crawlers import (
+src/docsync/inventory.py:16:from crawlee.errors import (
+src/docsync/inventory.py:27:from docsync.crawler_runtime import build_crawlee_runtime
+src/docsync/inventory.py:314:    runtime = await build_crawlee_runtime(
+src/docsync/inventory.py:442:    await crawler.run(initial_urls)
+src/docsync/crawler.py:12:from crawlee.crawlers import (
+src/docsync/crawler.py:21:from docsync.crawler_runtime import build_crawlee_runtime
+src/docsync/crawler.py:324:    runtime = await build_crawlee_runtime(
+src/docsync/crawler.py:820:    await crawler.run(incremental_urls)
+src/docsync/main.py:14:def run() -> int:
+src/docsync/main.py:33:        stats = asyncio.run(run_crawler(settings.start_url))
+src/docsync/main.py:50:    return run()
+src/docsync/crawler_runtime.py:10:from crawlee import ConcurrencySettings
+src/docsync/crawler_runtime.py:11:from crawlee.request_loaders import ThrottlingRequestManager
+src/docsync/crawler_runtime.py:12:from crawlee.storage_clients import MemoryStorageClient
+src/docsync/crawler_runtime.py:13:from crawlee.storages import RequestQueue
+src/docsync/crawler_runtime.py:21:    request_manager: ThrottlingRequestManager[RequestQueue]
+src/docsync/crawler_runtime.py:26:async def build_crawlee_runtime(
+src/docsync/crawler_runtime.py:38:    request_queue = await RequestQueue.open(
+src/docsync/crawler_runtime.py:48:    ) -> RequestQueue:
+src/docsync/crawler_runtime.py:51:        return await RequestQueue.open(
+src/docsync/crawler_runtime.py.bak:10:from crawlee import ConcurrencySettings
+src/docsync/crawler_runtime.py.bak:11:from crawlee.request_loaders import ThrottlingRequestManager
+src/docsync/crawler_runtime.py.bak:12:from crawlee.storage_clients import MemoryStorageClient
+src/docsync/crawler_runtime.py.bak:13:from crawlee.storages import RequestQueue
+src/docsync/crawler_runtime.py.bak:21:    request_manager: ThrottlingRequestManager[RequestQueue]
+src/docsync/crawler_runtime.py.bak:26:async def build_crawlee_runtime(
+src/docsync/crawler_runtime.py.bak:38:    request_queue = await RequestQueue.open(
+src/docsync/crawler_runtime.py.bak:48:    ) -> RequestQueue:
+src/docsync/crawler_runtime.py.bak:49:        return await RequestQueue.open(
