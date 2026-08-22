@@ -37,9 +37,9 @@ def test_main_handler_discovers_before_url_language_rejection() -> None:
 
     discovery = source.index("discovered_urls = extract_in_scope_links(")
     enqueue = source.index("await queue_context.add_requests(")
-    rejection = source.index("if is_explicitly_non_english_url(effective_url):")
+    detection = source.index("language_decision = language_detector.detect_from_html(")
 
-    assert discovery < enqueue < rejection
+    assert discovery < enqueue < detection
 
 
 def test_main_handler_discovers_before_text_language_rejection() -> None:
@@ -88,6 +88,5 @@ def test_inventory_discovers_before_language_classification() -> None:
 def test_skip_logs_record_completed_discovery() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
-    assert "Explicitly non-English page skipped after discovery:" in source
     assert "Non-English page skipped after discovery:" in source
     assert "Non-English fallback page skipped after discovery:" in source

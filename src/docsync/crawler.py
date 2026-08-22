@@ -29,10 +29,8 @@ from docsync.incremental import (
     save_content_hashes,
     save_url_state,
 )
-from docsync.language import (
-    EnglishPageDetector,
-    is_explicitly_non_english_url,
-)
+from docsync.language import EnglishPageDetector
+from docsync.language_strategy import LanguageStrategy
 from docsync.markdown import MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
 from docsync.playwright_rendering import (
@@ -161,9 +159,6 @@ def extract_in_scope_links(
             continue
 
         if any(pattern.search(candidate_url) for pattern in EXCLUDED_URL_PATTERNS):
-            continue
-
-        if is_explicitly_non_english_url(candidate_url):
             continue
 
         if candidate_url in seen_urls:
@@ -321,13 +316,12 @@ async def run_crawler(
 
     markdown_exporter = MarkdownExporter(resolved_output_dir)
     language_detector = EnglishPageDetector()
+    language_strategy = LanguageStrategy(settings.language)
 
     normalized_start_url = normalize_start_url(start_url)
 
-    if is_explicitly_non_english_url(normalized_start_url):
-        raise ValueError(
-            "The start URL is explicitly non-English while --language en is active."
-        )
+    if language_strategy.should_skip_url(normalized_start_url):
+        raise ValueError("The start URL language does not match requested language.")
     scope_pattern = build_scope_pattern(normalized_start_url)
 
     start_hostname = urlsplit(normalized_start_url).hostname
@@ -447,6 +441,12 @@ async def run_crawler(
                 scope_pattern=scope_pattern,
             )
 
+            discovered_urls = [
+                url
+                for url in discovered_urls
+                if not language_strategy.should_skip_url(url)
+            ]
+
             if discovered_urls:
                 queue_context = cast(
                     Any,
@@ -458,30 +458,17 @@ async def run_crawler(
 
             discovered_link_count = len(discovered_urls)
 
-            if is_explicitly_non_english_url(effective_url):
-                record_non_english_page()
-                context.log.info(
-                    "Explicitly non-English page skipped after discovery: "
-                    "url=%s discovered_links=%s",
-                    effective_url,
-                    discovered_link_count,
-                )
-                return
-
             language_decision = language_detector.detect_from_html(
                 url=effective_url,
                 html=html,
             )
 
-            if (
-                settings.language == "en"
-                and not language_decision.is_english
-                and language_decision.source
-                not in {
-                    "insufficient-text",
-                    "language-detector-no-result",
-                }
-            ):
+            if not language_strategy.accepts(
+                language_decision
+            ) and language_decision.source not in {
+                "insufficient-text",
+                "language-detector-no-result",
+            }:
                 record_non_english_page()
                 context.log.info(
                     "Non-English page skipped after discovery: "
@@ -579,6 +566,12 @@ async def run_crawler(
                     scope_pattern=scope_pattern,
                 )
 
+                fallback_urls = [
+                    url
+                    for url in fallback_urls
+                    if not language_strategy.should_skip_url(url)
+                ]
+
                 if fallback_urls:
                     fallback_context = cast(
                         Any,
@@ -595,14 +588,12 @@ async def run_crawler(
                     html=fallback_html,
                 )
 
-                if (
-                    not fallback_language_decision.is_english
-                    and fallback_language_decision.source
-                    not in {
-                        "insufficient-text",
-                        "language-detector-no-result",
-                    }
-                ):
+                if not language_strategy.accepts(
+                    fallback_language_decision
+                ) and fallback_language_decision.source not in {
+                    "insufficient-text",
+                    "language-detector-no-result",
+                }:
                     record_non_english_page()
                     context.log.info(
                         "Non-English fallback page skipped after discovery: "
@@ -718,7 +709,7 @@ async def run_crawler(
                 normalized_start_url,
                 *sitemap_result.urls,
             ]
-            if not is_explicitly_non_english_url(url)
+            if not language_strategy.should_skip_url(url)
         )
     )
 

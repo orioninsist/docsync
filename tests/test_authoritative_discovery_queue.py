@@ -49,12 +49,12 @@ def test_primary_discovery_precedes_url_language_rejection() -> None:
         "await queue_context.add_requests(",
         discovery,
     )
-    rejection = source.index(
-        "if is_explicitly_non_english_url(effective_url):",
+    detection = source.index(
+        "language_decision = language_detector.detect_from_html(",
         insertion,
     )
 
-    assert discovery < insertion < rejection
+    assert discovery < insertion < detection
 
 
 def test_primary_discovery_precedes_text_language_rejection() -> None:

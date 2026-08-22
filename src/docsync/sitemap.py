@@ -10,7 +10,6 @@ from urllib.request import Request
 
 from defusedxml import ElementTree as ET
 
-from docsync.language import is_explicitly_non_english_url
 from docsync.url_security import (
     is_safe_in_scope_url,
     normalize_url,
@@ -332,10 +331,6 @@ def discover_sitemap_urls_sync(
         if sitemap_type == "index":
             for location in locations:
                 child_sitemap = normalize_url(urljoin(final_url, location))
-
-                if is_explicitly_non_english_url(child_sitemap):
-                    continue
-
                 child_parts = urlsplit(child_sitemap)
 
                 if (child_parts.hostname or "").lower() != (
@@ -362,10 +357,6 @@ def discover_sitemap_urls_sync(
                 start_url=normalized_start,
             ):
                 continue
-
-            if is_explicitly_non_english_url(page_url):
-                continue
-
             if page_url in discovered_url_set:
                 continue
 

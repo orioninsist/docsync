@@ -11,10 +11,8 @@ from docsync.crawler import (
     build_scope_pattern,
     extract_in_scope_links,
 )
-from docsync.language import (
-    detect_explicit_url_language,
-    is_explicitly_non_english_url,
-)
+from docsync.language import detect_explicit_url_language
+from docsync.language_strategy import LanguageStrategy
 from docsync.sitemap import (
     SitemapDiscoveryResult,
     discover_sitemap_urls_sync,
@@ -37,7 +35,9 @@ CRAWLER_PATH = ROOT / "src/docsync/crawler.py"
     ],
 )
 def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
-    assert is_explicitly_non_english_url(url) is True
+    strategy = LanguageStrategy("en")
+
+    assert strategy.should_skip_url(url) is True
 
 
 @pytest.mark.parametrize(
@@ -51,7 +51,9 @@ def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
     ],
 )
 def test_english_google_urls_are_allowed(url: str) -> None:
-    assert is_explicitly_non_english_url(url) is False
+    strategy = LanguageStrategy("en")
+
+    assert strategy.should_skip_url(url) is False
 
 
 def test_url_language_decision_records_query_source() -> None:
@@ -86,6 +88,9 @@ def test_html_discovery_only_returns_english_urls() -> None:
         scope_pattern=scope_pattern,
     ) == [
         "https://developers.google.com/docs/english",
+        "https://developers.google.com/docs/german?hl=de",
+        "https://developers.google.com/intl/ja/docs/japanese",
+        "https://developers.google.com/fr/docs/french",
     ]
 
 
@@ -95,7 +100,7 @@ def test_http_and_playwright_use_the_same_filtered_url_list() -> None:
     assert "await context.enqueue_links(" not in source
     assert "await queue_context.add_requests(" in source
     assert "await fallback_context.add_requests(" in source
-    assert "is_explicitly_non_english_url(candidate_url)" in source
+    assert "language_strategy.should_skip_url" in source
 
 
 def test_sitemap_discovery_filters_localized_page_urls(
@@ -149,4 +154,6 @@ def test_sitemap_discovery_filters_localized_page_urls(
     assert isinstance(result, SitemapDiscoveryResult)
     assert result.urls == [
         "https://developers.google.com/docs/english",
+        "https://developers.google.com/docs/german?hl=de",
+        "https://developers.google.com/intl/ja/docs",
     ]

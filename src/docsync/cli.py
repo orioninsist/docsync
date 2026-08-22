@@ -380,6 +380,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_concurrency=settings.max_concurrency,
                 requests_per_minute=settings.requests_per_minute,
                 request_timeout_seconds=settings.request_timeout_seconds,
+                language=settings.language,
                 respect_robots_txt=settings.respect_robots_txt,
             )
         )

@@ -25,10 +25,8 @@ from docsync.crawler import (
     extract_in_scope_links,
 )
 from docsync.crawler_runtime import build_crawlee_runtime
-from docsync.language import (
-    EnglishPageDetector,
-    is_explicitly_non_english_url,
-)
+from docsync.language import EnglishPageDetector
+from docsync.language_strategy import LanguageStrategy
 from docsync.sitemap import discover_sitemap_urls
 from docsync.url_security import (
     normalize_url,
@@ -215,6 +213,7 @@ async def run_inventory(
     max_concurrency: int,
     requests_per_minute: int,
     request_timeout_seconds: int,
+    language: str = "en",
     respect_robots_txt: bool = True,
 ) -> SiteInventory:
     """Discover and classify pages without writing Markdown."""
@@ -241,6 +240,7 @@ async def run_inventory(
 
     report = SiteInventory(seed_url=normalized_seed_url)
     detector = EnglishPageDetector()
+    language_strategy = LanguageStrategy(language)
 
     discovered_urls: set[str] = set()
     processed_urls: set[str] = set()
@@ -254,7 +254,7 @@ async def run_inventory(
         if scope_pattern.search(normalized_url) is None:
             return None
 
-        if is_explicitly_non_english_url(normalized_url):
+        if language_strategy.should_skip_url(normalized_url):
             return None
 
         if normalized_url in discovered_urls:
@@ -375,7 +375,7 @@ async def run_inventory(
         if queued_urls:
             await context.add_requests(queued_urls)
 
-        if is_explicitly_non_english_url(effective_url):
+        if language_strategy.should_skip_url(effective_url):
             report.non_english_urls += 1
             print_progress()
             return
@@ -388,7 +388,7 @@ async def run_inventory(
             content_language=context.http_response.headers.get("content-language"),
         )
 
-        if language_decision.is_english:
+        if language_strategy.accepts(language_decision):
             report.english_urls += 1
         else:
             report.non_english_urls += 1
