@@ -105,21 +105,18 @@ def normalize_start_url(start_url: str) -> str:
 
 def build_scope_pattern(start_url: str) -> Pattern[str]:
     """Build a regex restricted to the start URL origin and path tree."""
-
     parsed_url = urlsplit(normalize_start_url(start_url))
-
     origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
     path = parsed_url.path
 
     if path == "/":
-        expression = rf"^{re.escape(origin)}/"
+        scope_path = "/"
+    elif path.endswith("/"):
+        scope_path = path
     else:
-        expression = (
-            rf"^{re.escape(origin)}"
-            rf"{re.escape(path)}"
-            rf"(?:/|$|[?#])"
-        )
+        scope_path = path.rsplit("/", 1)[0] + "/"
 
+    expression = rf"^{re.escape(origin)}{re.escape(scope_path)}"
     return re.compile(expression, re.IGNORECASE)
 
 
