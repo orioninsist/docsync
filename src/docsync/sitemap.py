@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import gzip
+import zlib
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request
@@ -84,6 +85,59 @@ def _validate_sitemap_payload(
         )
 
 
+def _decompress_gzip_bounded(
+    payload: bytes,
+    *,
+    max_bytes: int,
+) -> bytes:
+    """Decompress gzip data while bounding the expanded payload size."""
+
+    if max_bytes <= 0:
+        raise ValueError("max_bytes must be greater than zero")
+
+    decompressor = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    output = bytearray()
+    remaining_input = payload
+
+    try:
+        while remaining_input:
+            remaining_capacity = max_bytes + 1 - len(output)
+            if remaining_capacity <= 0:
+                raise ValueError(f"Decompressed sitemap exceeds {max_bytes} bytes")
+
+            output.extend(
+                decompressor.decompress(
+                    remaining_input,
+                    remaining_capacity,
+                )
+            )
+
+            if len(output) > max_bytes:
+                raise ValueError(f"Decompressed sitemap exceeds {max_bytes} bytes")
+
+            remaining_input = decompressor.unconsumed_tail
+
+            if not remaining_input:
+                break
+
+        remaining_capacity = max_bytes + 1 - len(output)
+        if remaining_capacity <= 0:
+            raise ValueError(f"Decompressed sitemap exceeds {max_bytes} bytes")
+
+        output.extend(decompressor.flush(remaining_capacity))
+
+    except zlib.error as error:
+        raise gzip.BadGzipFile("Invalid gzip sitemap response") from error
+
+    if len(output) > max_bytes:
+        raise ValueError(f"Decompressed sitemap exceeds {max_bytes} bytes")
+
+    if not decompressor.eof:
+        raise gzip.BadGzipFile("Incomplete gzip sitemap response")
+
+    return bytes(output)
+
+
 def decode_sitemap_payload(payload: bytes, url: str) -> str:
     """Decode and validate plain or gzip-compressed sitemap content."""
 
@@ -104,7 +158,10 @@ def decode_sitemap_payload(payload: bytes, url: str) -> str:
 
     if payload_is_gzip:
         try:
-            payload = gzip.decompress(payload)
+            payload = _decompress_gzip_bounded(
+                payload,
+                max_bytes=SITEMAP_MAX_PAYLOAD_BYTES,
+            )
         except (OSError, EOFError) as error:
             raise SitemapCompressionError(
                 f"Invalid gzip sitemap response: {validated_url}"

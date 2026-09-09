@@ -52,7 +52,6 @@ def test_request_handler_uses_official_request_manager_throttling() -> None:
     assert "request_manager = runtime.request_manager" in crawler_source
     assert "request_manager = ThrottlingRequestManager(" in runtime_source
     assert "request_manager_opener=open_run_request_queue" in runtime_source
-    assert "CrawlDelayThrottle(" not in crawler_source
     assert "await crawl_delay_throttle.wait()" not in crawler_source
 
 

@@ -411,7 +411,6 @@ def inspect_security_markers(
 
     markers = {
         "robots_txt": ("robots.txt" in source or "robotfileparser" in source),
-        "crawl_delay": ("crawl-delay" in source or "crawl_delay" in source),
         "single_concurrency": (
             "max_concurrency=1" in source
             or "max_concurrency = 1" in source

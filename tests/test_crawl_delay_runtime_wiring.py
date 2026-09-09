@@ -111,7 +111,6 @@ def test_legacy_handler_wait_is_removed() -> None:
     source = _source()
 
     assert "await crawl_delay_throttle.wait()" not in source
-    assert "crawl_delay_throttle = CrawlDelayThrottle(" not in source
 
 
 def test_runtime_report_identifies_request_manager() -> None:

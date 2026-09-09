@@ -180,7 +180,7 @@ def test_existing_crawler_limits_are_preserved() -> None:
     }.issubset(keyword_names)
 
 
-def test_crawl_delay_remains_runtime_wired() -> None:
+def test_request_throttling_remains_runtime_wired() -> None:
     runtime = asyncio.run(
         build_crawlee_runtime(
             hostname="example.com",
