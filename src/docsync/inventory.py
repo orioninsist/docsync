@@ -19,11 +19,6 @@ from crawlee.errors import (
     UserHandlerTimeoutError,
 )
 
-from docsync.crawler import (
-    DEFAULT_MAX_REQUEST_RETRIES,
-    build_scope_pattern,
-    extract_in_scope_links,
-)
 from docsync.crawler_runtime import build_crawlee_runtime
 from docsync.language import EnglishPageDetector
 from docsync.language_strategy import LanguageStrategy
@@ -31,6 +26,12 @@ from docsync.sitemap import discover_sitemap_urls
 from docsync.url_security import (
     normalize_url,
     validated_http_url,
+)
+
+from .crawler import (
+    DEFAULT_MAX_REQUEST_RETRIES,
+    build_scope_pattern,
+    extract_in_scope_links,
 )
 
 INVENTORY_REPORT_FILENAME = "site-inventory.json"

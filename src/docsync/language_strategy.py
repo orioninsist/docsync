@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from docsync.language import (
     LanguageDecision,
@@ -43,16 +44,18 @@ class LanguageStrategy:
     ) -> bool:
         """Return whether a language decision matches the requested language."""
 
-        if decision.language_code is None:
+        raw_language_code = decision.language_code
+
+        if raw_language_code is None:
             return False
 
-        return (
-            decision.language_code.split(
-                "-",
-                maxsplit=1,
-            )[0]
-            == self.requested_language
-        )
+        language_code = cast(str, raw_language_code)
+        primary_language = language_code.split(
+            "-",
+            maxsplit=1,
+        )[0]
+
+        return primary_language == self.requested_language
 
     def should_skip_url(
         self,
@@ -65,10 +68,13 @@ class LanguageStrategy:
         if decision is None:
             return False
 
-        if decision.language_code is None:
+        raw_language_code = decision.language_code
+
+        if raw_language_code is None:
             return False
 
-        detected_language = decision.language_code.split(
+        language_code = cast(str, raw_language_code)
+        detected_language = language_code.split(
             "-",
             maxsplit=1,
         )[0]

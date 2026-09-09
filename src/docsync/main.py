@@ -6,9 +6,10 @@ import asyncio
 import sys
 
 from docsync.config import Settings
-from docsync.crawler import run_crawler
 from docsync.logging_config import configure_logging
 from docsync.metrics import CrawlStats
+
+from .crawler import run_crawler
 
 
 def run() -> int:

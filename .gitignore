@@ -275,3 +275,13 @@ data/*
 
 # Local docsync development artifacts
 .docsync-*/
+
+# Generated docsync/pipeline runtime inventory
+state/inventory.json
+/output/
+/state/
+/storage/
+.patch-backups/
+diagnostics/
+docsync_bootstrap_audit.txt
+/logs/

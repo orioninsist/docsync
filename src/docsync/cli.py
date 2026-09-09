@@ -4,12 +4,11 @@ import argparse
 import asyncio
 import inspect
 import os
-from collections.abc import Awaitable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from docsync.config import Settings
-from docsync.crawler import run_crawler
 from docsync.inventory import run_inventory
 from docsync.metrics import CrawlStats
 from docsync.progress_events import CrawlEvent
@@ -19,6 +18,8 @@ from docsync.terminal_ui import (
     SiteInformation,
     build_console,
 )
+
+from .crawler import run_crawler
 
 
 def positive_integer(value: str) -> int:
@@ -184,6 +185,14 @@ def _resolve_crawler_result(result: Any) -> Any:
 
 
 def _invoke_run_crawler(args: argparse.Namespace) -> Any:
+    # DOCSYNC_DYNAMIC_RUN_CRAWLER_BOUNDARY
+    # CLI compatibility dispatch intentionally builds arguments dynamically.
+    # Preserve CrawlStats typing without changing runtime call behavior.
+    dynamic_run_crawler = cast(
+        Callable[..., Awaitable[CrawlStats]],
+        run_crawler,
+    )
+
     signature = inspect.signature(run_crawler)
     parameters = signature.parameters
 
@@ -213,13 +222,13 @@ def _invoke_run_crawler(args: argparse.Namespace) -> Any:
     }
 
     if not parameters:
-        return _resolve_crawler_result(run_crawler())
+        return _resolve_crawler_result(dynamic_run_crawler())
 
     if set(parameters) == {"start_url"}:
-        return _resolve_crawler_result(run_crawler(args.start_url))
+        return _resolve_crawler_result(dynamic_run_crawler(args.start_url))
 
     if keyword_arguments:
-        return _resolve_crawler_result(run_crawler(**keyword_arguments))
+        return _resolve_crawler_result(dynamic_run_crawler(**keyword_arguments))
 
     if len(parameters) == 1:
         parameter = next(iter(parameters.values()))
@@ -227,11 +236,11 @@ def _invoke_run_crawler(args: argparse.Namespace) -> Any:
 
         if "setting" in parameter.name.lower() or "setting" in annotation_text:
             settings = Settings.from_environment()
-            return _resolve_crawler_result(run_crawler(settings))
+            return _resolve_crawler_result(dynamic_run_crawler(settings))
 
     detected = ", ".join(parameters) or "<none>"
     raise RuntimeError(
-        f"Unsupported run_crawler() signature. Detected parameters: {detected}"
+        f"Unsupported dynamic_run_crawler() signature. Detected parameters: {detected}"
     )
 
 
@@ -367,6 +376,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # DOCSYNC_CRAWLEE_STORAGE_BINDING
+    # Keep Crawlee's internal RequestQueue/Dataset/KeyValueStore beside the
+    # explicitly selected persistent state. When --state-dir is omitted,
+    # leave storage resolution to the existing docsync configuration flow.
+    if args.state_dir is not None:
+        state_root = Path(args.state_dir).expanduser().resolve()
+        state_root.mkdir(parents=True, exist_ok=True)
+        crawlee_storage_root = state_root / ".crawlee"
+        crawlee_storage_root.mkdir(parents=True, exist_ok=True)
+        os.environ["CRAWLEE_STORAGE_DIR"] = str(crawlee_storage_root)
 
     _apply_environment_overrides(args)
     settings = Settings.from_environment()

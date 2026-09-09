@@ -110,13 +110,16 @@ def build_scope_pattern(start_url: str) -> Pattern[str]:
     path = parsed_url.path
 
     if path == "/":
-        scope_path = "/"
+        expression = rf"^{re.escape(origin)}/"
     elif path.endswith("/"):
-        scope_path = path
+        expression = rf"^{re.escape(origin)}{re.escape(path)}"
     else:
-        scope_path = path.rsplit("/", 1)[0] + "/"
+        expression = (
+            rf"^{re.escape(origin)}"
+            rf"{re.escape(path)}"
+            rf"(?:/|$)"
+        )
 
-    expression = rf"^{re.escape(origin)}{re.escape(scope_path)}"
     return re.compile(expression, re.IGNORECASE)
 
 
