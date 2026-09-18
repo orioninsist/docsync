@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 README_PATH = PROJECT_ROOT / "README.md"
@@ -452,8 +452,15 @@ def categorize_files(files: list[Path]) -> dict[str, list[Path]]:
     return dict(categories)
 
 
-def summarize_runtime_directories(files: list[Path]) -> list[dict[str, object]]:
-    summaries: list[dict[str, object]] = []
+class RuntimeDirectorySummary(TypedDict):
+    directory: str
+    file_count: int
+    total_bytes: int
+    suffix_counts: dict[str, int]
+
+
+def summarize_runtime_directories(files: list[Path]) -> list[RuntimeDirectorySummary]:
+    summaries: list[RuntimeDirectorySummary] = []
 
     for directory_name in sorted(RUNTIME_SUMMARY_DIRECTORIES):
         directory = PROJECT_ROOT / directory_name
