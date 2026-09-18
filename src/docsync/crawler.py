@@ -581,7 +581,7 @@ async def run_crawler(
                     request_timeout_seconds=settings.request_timeout_seconds,
                 )
 
-                fallback_html = await render_url_with_crawlee(
+                fallback_html, fallback_links = await render_url_with_crawlee(
                     context.request.url,
                     headless=fallback_config.headless,
                     browser_type=fallback_config.browser_type,
@@ -599,25 +599,38 @@ async def run_crawler(
                 )
                 used_browser_fallback = True
 
-                fallback_urls = extract_in_scope_links(
-                    soup=soup,
-                    base_url=effective_url,
-                    scope_pattern=scope_pattern,
-                )
+                fallback_urls: list[str] = []
+                fallback_seen_urls: set[str] = set()
 
-                fallback_urls = [
-                    url
-                    for url in fallback_urls
-                    if not language_strategy.should_skip_url(url)
-                ]
+                for fallback_link in fallback_links:
+                    try:
+                        candidate_url = normalize_url(validated_http_url(fallback_link))
+                    except (TypeError, ValueError):
+                        continue
+
+                    if scope_pattern.search(candidate_url) is None:
+                        continue
+
+                    if any(
+                        pattern.search(candidate_url)
+                        for pattern in EXCLUDED_URL_PATTERNS
+                    ):
+                        continue
+
+                    if language_strategy.should_skip_url(candidate_url):
+                        continue
+
+                    if candidate_url in fallback_seen_urls:
+                        continue
+
+                    fallback_seen_urls.add(candidate_url)
+                    fallback_urls.append(candidate_url)
 
                 if fallback_urls:
-                    fallback_context = cast(
-                        Any,
-                        context,
-                    )
-                    await fallback_context.add_requests(
-                        fallback_urls,
+                    fallback_context = cast(Any, context)
+                    await fallback_context.enqueue_links(
+                        requests=fallback_urls,
+                        strategy="all",
                     )
 
                 discovered_link_count = len(fallback_urls)
