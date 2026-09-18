@@ -485,7 +485,7 @@ def test_canonical_failed_request_handler_is_registered() -> None:
 
 def test_canonical_failed_request_handler_accepts_context_and_error() -> None:
     tree = _parse(PACKAGE_CRAWLER_PATH)
-    run_crawler = _canonical_run_crawler(tree)
+    run_crawler = _async_function(tree, "run_crawler")
     failed_handler = _canonical_failed_handler(run_crawler)
 
     positional_arguments = [
@@ -500,7 +500,7 @@ def test_canonical_failed_request_handler_accepts_context_and_error() -> None:
 
 def test_canonical_failed_request_handler_updates_failure_lifecycle() -> None:
     tree = _parse(PACKAGE_CRAWLER_PATH)
-    run_crawler = _canonical_run_crawler(tree)
+    run_crawler = _async_function(tree, "run_crawler")
     failed_handler = _canonical_failed_handler(run_crawler)
 
     assert "failed" in _canonical_augmented_metric_names(failed_handler)
