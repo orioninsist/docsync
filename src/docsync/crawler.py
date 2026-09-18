@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from re import Pattern
 from typing import Any, Final, cast
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
 from crawlee.crawlers import (
@@ -119,53 +119,6 @@ def build_scope_pattern(start_url: str) -> Pattern[str]:
         )
 
     return re.compile(expression, re.IGNORECASE)
-
-
-def extract_in_scope_links(
-    *,
-    soup: BeautifulSoup,
-    base_url: str,
-    scope_pattern: Pattern[str],
-) -> list[str]:
-    """Extract normalized, unique, crawlable links from one parsed DOM."""
-
-    validated_base_url = validated_http_url(base_url)
-    normalized_base_url = normalize_url(validated_base_url)
-    discovered_urls: list[str] = []
-    seen_urls: set[str] = set()
-
-    for anchor in soup.select("a[href]"):
-        href = anchor.get("href")
-
-        if not isinstance(href, str) or not href.strip():
-            continue
-
-        try:
-            candidate_url = normalize_url(
-                urljoin(
-                    validated_base_url,
-                    href.strip(),
-                )
-            )
-        except (TypeError, ValueError):
-            continue
-
-        if candidate_url == normalized_base_url:
-            continue
-
-        if scope_pattern.search(candidate_url) is None:
-            continue
-
-        if any(pattern.search(candidate_url) for pattern in EXCLUDED_URL_PATTERNS):
-            continue
-
-        if candidate_url in seen_urls:
-            continue
-
-        seen_urls.add(candidate_url)
-        discovered_urls.append(candidate_url)
-
-    return discovered_urls
 
 
 def filter_discovered_urls(
