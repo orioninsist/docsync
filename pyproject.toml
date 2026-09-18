@@ -79,7 +79,6 @@ python_version = "3.13"
 files = [
     "src",
     "main.py",
-    "src/docsync",
     "tools",
     "tests",
 ]
