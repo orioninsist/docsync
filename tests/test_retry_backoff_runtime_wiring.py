@@ -258,20 +258,32 @@ def test_package_crawler_uses_retry_constant_at_runtime_construction() -> None:
     retry_values: dict[str, ast.expr] = {}
 
     for constructor_name, constructor_call in calls_by_constructor.items():
-        retry_keywords = [
-            keyword
-            for keyword in constructor_call.keywords
-            if keyword.arg == "max_request_retries"
-        ]
+        if constructor_name == "BeautifulSoupCrawler":
+            option_assignment = next(
+                node
+                for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name == "build_http_crawler"
+            )
+            retry_value = next(
+                value
+                for node in ast.walk(option_assignment)
+                if isinstance(node, ast.Dict)
+                for key, value in zip(node.keys, node.values, strict=True)
+                if isinstance(key, ast.Constant)
+                and key.value == "max_request_retries"
+            )
+        else:
+            retry_keywords = [
+                keyword
+                for keyword in constructor_call.keywords
+                if keyword.arg == "max_request_retries"
+            ]
+            assert len(retry_keywords) == 1
+            retry_value = retry_keywords[0].value
 
-        assert len(retry_keywords) == 1, (
-            f"{constructor_name} must configure max_request_retries exactly once."
-        )
-
-        if constructor_name is None:
-            continue
-
-        retry_values[constructor_name] = retry_keywords[0].value
+        if constructor_name is not None:
+            retry_values[constructor_name] = retry_value
 
     assert all(isinstance(value, ast.Name) for value in retry_values.values()), (
         "Every crawler must reference a retry constant."
@@ -535,16 +547,31 @@ def test_canonical_http_and_browser_crawlers_share_retry_budget() -> None:
     retry_values: dict[str, ast.expr] = {}
 
     for constructor_name, constructor_call in crawler_calls.items():
-        retry_keywords = [
-            keyword
-            for keyword in constructor_call.keywords
-            if keyword.arg == "max_request_retries"
-        ]
+        if constructor_name == "BeautifulSoupCrawler":
+            http_builder = next(
+                node
+                for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name == "build_http_crawler"
+            )
+            retry_value = next(
+                value
+                for node in ast.walk(http_builder)
+                if isinstance(node, ast.Dict)
+                for key, value in zip(node.keys, node.values, strict=True)
+                if isinstance(key, ast.Constant)
+                and key.value == "max_request_retries"
+            )
+        else:
+            retry_keywords = [
+                keyword
+                for keyword in constructor_call.keywords
+                if keyword.arg == "max_request_retries"
+            ]
+            assert len(retry_keywords) == 1
+            retry_value = retry_keywords[0].value
 
-        assert len(retry_keywords) == 1, (
-            f"{constructor_name} must configure max_request_retries exactly once."
-        )
-        retry_values[constructor_name] = retry_keywords[0].value
+        retry_values[constructor_name] = retry_value
 
     assert all(isinstance(value, ast.Name) for value in retry_values.values()), (
         "Both crawler constructors must reference a retry constant."
