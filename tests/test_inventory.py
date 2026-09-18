@@ -121,14 +121,18 @@ def install_inventory_http_client(
     real_crawler = BeautifulSoupCrawler
     fake_client = InventoryHttpClient(responses)
 
+    from docsync import inventory
+
+    real_build_http_crawler = inventory.build_http_crawler
+
     def build_crawler(**kwargs: Any) -> BeautifulSoupCrawler:
-        return real_crawler(
-            http_client=fake_client,
+        return real_build_http_crawler(
             **kwargs,
+            http_client=fake_client,
         )
 
     monkeypatch.setattr(
-        "docsync.inventory.BeautifulSoupCrawler",
+        "docsync.inventory.build_http_crawler",
         build_crawler,
     )
 
