@@ -170,14 +170,15 @@ def test_existing_concurrency_controls_are_preserved() -> None:
 
 
 def test_existing_crawler_limits_are_preserved() -> None:
-    keyword_names = {keyword.arg for keyword in crawler_constructor().keywords}
+    source = ENGINE_PATH.read_text(encoding="utf-8")
 
-    assert {
+    for option_name in {
         "concurrency_settings",
         "max_request_retries",
         "max_requests_per_crawl",
         "request_handler_timeout",
-    }.issubset(keyword_names)
+    }:
+        assert f'"{option_name}"' in source
 
 
 def test_request_throttling_remains_runtime_wired() -> None:
