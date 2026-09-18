@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from docsync.crawler import build_scope_pattern, filter_discovered_urls
 from docsync.language import detect_explicit_url_language
 from docsync.language_strategy import LanguageStrategy
