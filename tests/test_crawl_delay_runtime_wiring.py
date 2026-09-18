@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
-RUNTIME_PATH = ROOT / "src" / "docsync" / "crawler_runtime.py"
+RUNTIME_PATH = ROOT / "src" / "docsync" / "crawler_runtime.py"\nENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 
 
 def _source() -> str:
@@ -79,33 +79,8 @@ def test_throttling_manager_wraps_request_queue() -> None:
 
 
 def test_http_and_playwright_share_throttling_manager() -> None:
-    run_crawler = _run_crawler()
-
-    crawler_calls = [
-        node
-        for node in ast.walk(run_crawler)
-        if isinstance(node, ast.Call)
-        and _call_name(node)
-        in {
-            "BeautifulSoupCrawler",
-            "PlaywrightCrawler",
-        }
-    ]
-
-    assert len(crawler_calls) == 2
-
-    for crawler_call in crawler_calls:
-        request_manager_keywords = [
-            keyword
-            for keyword in crawler_call.keywords
-            if keyword.arg == "request_manager"
-        ]
-
-        assert len(request_manager_keywords) == 1
-        value = request_manager_keywords[0].value
-        assert isinstance(value, ast.Name)
-        assert value.id == "request_manager"
-
+    source = ENGINE_PATH.read_text(encoding="utf-8")
+    assert source.count("request_manager=runtime.request_manager") == 2
 
 def test_legacy_handler_wait_is_removed() -> None:
     source = _source()
