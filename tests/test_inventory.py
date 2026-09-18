@@ -118,7 +118,6 @@ def install_inventory_http_client(
         ],
     ],
 ) -> None:
-    real_crawler = BeautifulSoupCrawler
     fake_client = InventoryHttpClient(responses)
 
     from docsync import inventory
