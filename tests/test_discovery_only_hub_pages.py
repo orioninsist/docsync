@@ -60,7 +60,7 @@ def test_fallback_discovers_before_second_export() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
     fallback_discovery_position = source.index(
-        "fallback_urls = extract_in_scope_links("
+        "for fallback_link in fallback_links:"
     )
     fallback_export_position = source.index(
         "document = markdown_exporter.export(",
@@ -83,9 +83,9 @@ def test_discovery_only_pages_are_not_raised_as_failures() -> None:
 def test_browser_fallback_links_enter_request_queue_before_export() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
-    fallback_position = source.index("fallback_urls = extract_in_scope_links(")
+    fallback_position = source.index("for fallback_link in fallback_links:")
     add_position = source.index(
-        "await fallback_context.add_requests(",
+        "await fallback_context.enqueue_links(",
         fallback_position,
     )
     export_position = source.index(
