@@ -73,7 +73,6 @@ def _silence_crawlee_runtime_logs() -> None:
         logger.propagate = False
 
 
-DEFAULT_MAX_REQUEST_RETRIES: Final[int] = 2
 DEFAULT_REQUEST_TIMEOUT_SECONDS: Final[int] = 60
 DEFAULT_MAX_REQUESTS_PER_CRAWL: Final[int] = 100
 
