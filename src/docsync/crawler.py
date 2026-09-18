@@ -168,6 +168,42 @@ def extract_in_scope_links(
     return discovered_urls
 
 
+def filter_discovered_urls(
+    *,
+    urls: list[str],
+    base_url: str,
+    scope_pattern: Pattern[str],
+    should_skip_url: Any,
+) -> list[str]:
+    """Apply DocsSync URL policy consistently to discovered links."""
+
+    normalized_base_url = normalize_url(validated_http_url(base_url))
+    discovered_urls: list[str] = []
+    seen_urls: set[str] = set()
+
+    for url in urls:
+        try:
+            candidate_url = normalize_url(validated_http_url(url))
+        except (TypeError, ValueError):
+            continue
+
+        if candidate_url == normalized_base_url:
+            continue
+        if scope_pattern.search(candidate_url) is None:
+            continue
+        if any(pattern.search(candidate_url) for pattern in EXCLUDED_URL_PATTERNS):
+            continue
+        if should_skip_url(candidate_url):
+            continue
+        if candidate_url in seen_urls:
+            continue
+
+        seen_urls.add(candidate_url)
+        discovered_urls.append(candidate_url)
+
+    return discovered_urls
+
+
 async def discover_and_enqueue_in_scope_links(
     *,
     context: Any,
@@ -183,34 +219,12 @@ async def discover_and_enqueue_in_scope_links(
         base_url=base_url,
         strategy="all",
     )
-
-    normalized_base_url = normalize_url(validated_http_url(base_url))
-    discovered_urls: list[str] = []
-    seen_urls: set[str] = set()
-
-    for request in extracted_requests:
-        try:
-            candidate_url = normalize_url(validated_http_url(request.url))
-        except (TypeError, ValueError):
-            continue
-
-        if candidate_url == normalized_base_url:
-            continue
-
-        if scope_pattern.search(candidate_url) is None:
-            continue
-
-        if any(pattern.search(candidate_url) for pattern in EXCLUDED_URL_PATTERNS):
-            continue
-
-        if should_skip_url(candidate_url):
-            continue
-
-        if candidate_url in seen_urls:
-            continue
-
-        seen_urls.add(candidate_url)
-        discovered_urls.append(candidate_url)
+    discovered_urls = filter_discovered_urls(
+        urls=[request.url for request in extracted_requests],
+        base_url=base_url,
+        scope_pattern=scope_pattern,
+        should_skip_url=should_skip_url,
+    )
 
     if discovered_urls:
         await context.enqueue_links(
@@ -563,32 +577,12 @@ async def run_crawler(
                 )
                 used_browser_fallback = True
 
-                fallback_urls: list[str] = []
-                fallback_seen_urls: set[str] = set()
-
-                for fallback_link in fallback_links:
-                    try:
-                        candidate_url = normalize_url(validated_http_url(fallback_link))
-                    except (TypeError, ValueError):
-                        continue
-
-                    if scope_pattern.search(candidate_url) is None:
-                        continue
-
-                    if any(
-                        pattern.search(candidate_url)
-                        for pattern in EXCLUDED_URL_PATTERNS
-                    ):
-                        continue
-
-                    if language_strategy.should_skip_url(candidate_url):
-                        continue
-
-                    if candidate_url in fallback_seen_urls:
-                        continue
-
-                    fallback_seen_urls.add(candidate_url)
-                    fallback_urls.append(candidate_url)
+                fallback_urls = filter_discovered_urls(
+                    urls=fallback_links,
+                    base_url=context.request.url,
+                    scope_pattern=scope_pattern,
+                    should_skip_url=language_strategy.should_skip_url,
+                )
 
                 if fallback_urls:
                     fallback_context = cast(Any, context)
