@@ -35,9 +35,9 @@ from docsync.markdown import MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
 from docsync.playwright_rendering import (
     PlaywrightRenderingConfig,
+    render_url_with_crawlee,
     install_resource_blocking,
     render_page_html,
-    render_url_html,
 )
 from docsync.progress_events import CrawlEvent, CrawlEventSink
 from docsync.sitemap import discover_sitemap_urls
@@ -542,7 +542,7 @@ async def run_crawler(
                     request_timeout_seconds=settings.request_timeout_seconds,
                 )
 
-                fallback_html = await render_url_html(
+                fallback_html = await render_url_with_crawlee(
                     context.request.url,
                     headless=fallback_config.headless,
                     browser_type=fallback_config.browser_type,
