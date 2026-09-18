@@ -7,7 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
-RUNTIME_PATH = ROOT / "src" / "docsync" / "crawler_runtime.py"\nENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
+RUNTIME_PATH = ROOT / "src" / "docsync" / "crawler_runtime.py"
+ENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 
 
 def _source() -> str:
