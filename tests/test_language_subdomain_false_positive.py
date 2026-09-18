@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-from bs4 import BeautifulSoup
-
-from docsync.crawler import (
-    build_scope_pattern,
-    extract_in_scope_links,
-)
+from docsync.crawler import build_scope_pattern, filter_discovered_urls
 from docsync.language import (
     detect_explicit_url_language,
     is_explicitly_non_english_url,
@@ -66,24 +61,16 @@ def test_intl_language_path_is_still_detected() -> None:
 def test_kitty_links_survive_english_url_filtering() -> None:
     base_url = "https://sw.kovidgoyal.net/kitty/"
 
-    soup = BeautifulSoup(
-        """
-        <html>
-          <body>
-            <a href="overview/">Overview</a>
-            <a href="conf/">Configuration</a>
-            <a href="/kitty/actions/">Actions</a>
-            <a href="https://sw.kovidgoyal.net/kitty/kittens/custom/">Custom</a>
-          </body>
-        </html>
-        """,
-        "lxml",
-    )
-
-    links = extract_in_scope_links(
-        soup=soup,
+    links = filter_discovered_urls(
+        urls=[
+            "https://sw.kovidgoyal.net/kitty/overview/",
+            "https://sw.kovidgoyal.net/kitty/conf/",
+            "https://sw.kovidgoyal.net/kitty/actions/",
+            "https://sw.kovidgoyal.net/kitty/kittens/custom/",
+        ],
         base_url=base_url,
         scope_pattern=build_scope_pattern(base_url),
+        should_skip_url=is_explicitly_non_english_url,
     )
 
     assert links == [
