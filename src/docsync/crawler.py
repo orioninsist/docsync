@@ -170,6 +170,59 @@ def extract_in_scope_links(
     return discovered_urls
 
 
+async def discover_and_enqueue_in_scope_links(
+    *,
+    context: Any,
+    base_url: str,
+    scope_pattern: Pattern[str],
+    should_skip_url: Any,
+) -> list[str]:
+    """Use Crawlee to extract and enqueue links while DocsSync owns URL policy."""
+
+    extracted_requests = await context.extract_links(
+        selector="a",
+        attribute="href",
+        base_url=base_url,
+        strategy="all",
+    )
+
+    normalized_base_url = normalize_url(validated_http_url(base_url))
+    discovered_urls: list[str] = []
+    seen_urls: set[str] = set()
+
+    for request in extracted_requests:
+        try:
+            candidate_url = normalize_url(validated_http_url(request.url))
+        except (TypeError, ValueError):
+            continue
+
+        if candidate_url == normalized_base_url:
+            continue
+
+        if scope_pattern.search(candidate_url) is None:
+            continue
+
+        if any(pattern.search(candidate_url) for pattern in EXCLUDED_URL_PATTERNS):
+            continue
+
+        if should_skip_url(candidate_url):
+            continue
+
+        if candidate_url in seen_urls:
+            continue
+
+        seen_urls.add(candidate_url)
+        discovered_urls.append(candidate_url)
+
+    if discovered_urls:
+        await context.enqueue_links(
+            requests=discovered_urls,
+            strategy="all",
+        )
+
+    return discovered_urls
+
+
 async def run_crawler(
     start_url: str,
     output_dir: str | Path | None = None,
@@ -435,26 +488,12 @@ async def run_crawler(
                     or context.request.url
                 )
 
-            discovered_urls = extract_in_scope_links(
-                soup=soup,
+            discovered_urls = await discover_and_enqueue_in_scope_links(
+                context=cast(Any, context),
                 base_url=effective_url,
                 scope_pattern=scope_pattern,
+                should_skip_url=language_strategy.should_skip_url,
             )
-
-            discovered_urls = [
-                url
-                for url in discovered_urls
-                if not language_strategy.should_skip_url(url)
-            ]
-
-            if discovered_urls:
-                queue_context = cast(
-                    Any,
-                    context,
-                )
-                await queue_context.add_requests(
-                    discovered_urls,
-                )
 
             discovered_link_count = len(discovered_urls)
 
