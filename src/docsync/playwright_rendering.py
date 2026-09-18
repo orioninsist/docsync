@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Final, Protocol
 
-from playwright.async_api import async_playwright
 
 BLOCKED_RESOURCE_TYPES: Final[frozenset[str]] = frozenset(
     {
@@ -280,7 +280,7 @@ def normalized_blocked_resource_types(
     return frozenset(value.strip().lower() for value in values if value.strip())
 
 
-async def render_url_html(
+async def render_url_with_crawlee(
     url: str,
     *,
     headless: bool,
@@ -292,55 +292,52 @@ async def render_url_html(
     blocked_resource_types: frozenset[str] = BLOCKED_RESOURCE_TYPES,
     browser_arguments: tuple[str, ...] = DEFAULT_BROWSER_ARGUMENTS,
 ) -> str:
-    """Render one URL in an isolated browser for HTTP-mode fallback."""
+    """Render one URL through Crawlee so Crawlee owns browser lifecycle."""
 
-    if request_timeout_seconds <= 0:
-        raise ValueError("request_timeout_seconds must be greater than zero")
+    from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 
-    if network_idle_timeout_milliseconds <= 0:
-        raise ValueError("network_idle_timeout_milliseconds must be greater than zero")
+    config = PlaywrightRenderingConfig(
+        headless=headless,
+        browser_type=browser_type,
+        request_timeout_seconds=request_timeout_seconds,
+        network_idle_timeout_milliseconds=network_idle_timeout_milliseconds,
+        blocked_resource_types=blocked_resource_types,
+        browser_arguments=browser_arguments,
+    )
 
-    normalized_browser_type = browser_type.strip().lower()
+    rendered_html: str | None = None
 
-    if normalized_browser_type not in {
-        "chromium",
-        "firefox",
-        "webkit",
-    }:
-        raise ValueError("browser_type must be chromium, firefox, or webkit")
+    crawler = PlaywrightCrawler(
+        max_requests_per_crawl=1,
+        max_request_retries=0,
+        request_handler_timeout=timedelta(seconds=request_timeout_seconds),
+        navigation_timeout=timedelta(seconds=request_timeout_seconds),
+        **config.crawler_options(),
+    )
 
-    async with async_playwright() as playwright:
-        launcher = getattr(
-            playwright,
-            normalized_browser_type,
+    @crawler.pre_navigation_hook
+    async def install_browser_controls(context: PlaywrightCrawlingContext) -> None:
+        await install_resource_blocking(
+            context.page,
+            blocked_resource_types=config.blocked_resource_types,
         )
 
-        browser = await launcher.launch(
-            headless=headless,
-            args=list(browser_arguments),
+    @crawler.router.default_handler
+    async def capture_html(context: PlaywrightCrawlingContext) -> None:
+        nonlocal rendered_html
+        rendered_html = await render_page_html(
+            context.page,
+            url=context.request.url,
+            logger=context.log,
+            request_timeout_seconds=config.request_timeout_seconds,
+            network_idle_timeout_milliseconds=(
+                config.network_idle_timeout_milliseconds
+            ),
         )
 
-        try:
-            page = await browser.new_page()
+    await crawler.run([url])
 
-            await install_resource_blocking(
-                page,
-                blocked_resource_types=blocked_resource_types,
-            )
+    if rendered_html is None:
+        raise RuntimeError(f"Crawlee Playwright fallback produced no HTML: {url}")
 
-            await page.goto(
-                url,
-                wait_until="domcontentloaded",
-                timeout=request_timeout_seconds * 1000,
-            )
-
-            with suppress(Exception):
-                await page.wait_for_load_state(
-                    "networkidle",
-                    timeout=network_idle_timeout_milliseconds,
-                )
-
-            rendered_html: str = await page.content()
-            return rendered_html
-        finally:
-            await browser.close()
+    return rendered_html
