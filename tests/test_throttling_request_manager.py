@@ -210,14 +210,21 @@ def test_429_backoff_is_capped() -> None:
         "https://example.com/docs",
     )
 
+    first_state = manager._domain_states["example.com"]
+    first_throttled_until = first_state.throttled_until
+
     manager.record_domain_delay(
         "https://example.com/docs",
     )
 
     state = manager._domain_states["example.com"]
 
-    assert state.consecutive_429_count == 2
-    assert state.throttled_until.year > 1
+    # Crawlee 1.10 treats overlapping 429 responses received during the same
+    # active backoff window as one rate-limit event. The second response must
+    # therefore not advance the exponential backoff counter or extend the
+    # current cooldown.
+    assert state.consecutive_429_count == 1
+    assert state.throttled_until == first_throttled_until
 
 
 def test_success_resets_429_counter() -> None:
