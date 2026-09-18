@@ -289,8 +289,8 @@ async def render_url_with_crawlee(
     ),
     blocked_resource_types: frozenset[str] = BLOCKED_RESOURCE_TYPES,
     browser_arguments: tuple[str, ...] = DEFAULT_BROWSER_ARGUMENTS,
-) -> str:
-    """Render one URL through Crawlee so Crawlee owns browser lifecycle."""
+) -> tuple[str, list[str]]:
+    """Render one URL and extract links through Crawlee-owned Playwright."""
 
     from crawlee.crawlers import (
         PlaywrightCrawler,
@@ -308,6 +308,7 @@ async def render_url_with_crawlee(
     )
 
     rendered_html: str | None = None
+    rendered_links: list[str] = []
 
     crawler = PlaywrightCrawler(
         max_requests_per_crawl=1,
@@ -338,10 +339,17 @@ async def render_url_with_crawlee(
                 config.network_idle_timeout_milliseconds
             ),
         )
+        extracted_requests = await context.extract_links(
+            selector="a",
+            attribute="href",
+            base_url=str(context.page.url),
+            strategy="all",
+        )
+        rendered_links.extend(request.url for request in extracted_requests)
 
     await crawler.run([url])
 
     if rendered_html is None:
         raise RuntimeError(f"Crawlee Playwright fallback produced no HTML: {url}")
 
-    return rendered_html
+    return rendered_html, rendered_links
