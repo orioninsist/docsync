@@ -31,7 +31,7 @@ from docsync.url_security import (
 from .crawler import (
     DEFAULT_MAX_REQUEST_RETRIES,
     build_scope_pattern,
-    extract_in_scope_links,
+    discover_and_enqueue_in_scope_links,
 )
 
 INVENTORY_REPORT_FILENAME = "site-inventory.json"
@@ -359,22 +359,15 @@ async def run_inventory(
 
         report.reachable_pages += 1
 
-        discovered_links = extract_in_scope_links(
-            soup=context.soup,
+        discovered_links = await discover_and_enqueue_in_scope_links(
+            context=context,
             base_url=effective_url,
             scope_pattern=scope_pattern,
+            should_skip_url=language_strategy.should_skip_url,
         )
 
-        queued_urls: list[str] = []
-
         for discovered_link in discovered_links:
-            registered_url = register_discovered_url(discovered_link)
-
-            if registered_url is not None:
-                queued_urls.append(registered_url)
-
-        if queued_urls:
-            await context.add_requests(queued_urls)
+            register_discovered_url(discovered_link)
 
         if language_strategy.should_skip_url(effective_url):
             report.non_english_urls += 1

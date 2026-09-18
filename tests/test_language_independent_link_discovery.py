@@ -35,8 +35,8 @@ def test_main_handler_discovers_before_url_language_rejection() -> None:
         "request_handler",
     )
 
-    discovery = source.index("discovered_urls = extract_in_scope_links(")
-    enqueue = source.index("await queue_context.add_requests(")
+    discovery = source.index("discovered_urls = await discover_and_enqueue_in_scope_links(")
+    enqueue = source.index("discovered_link_count = len(discovered_urls)")
     detection = source.index("language_decision = language_detector.detect_from_html(")
 
     assert discovery < enqueue < detection
@@ -48,7 +48,7 @@ def test_main_handler_discovers_before_text_language_rejection() -> None:
         "request_handler",
     )
 
-    enqueue = source.index("await queue_context.add_requests(")
+    enqueue = source.index("discovered_link_count = len(discovered_urls)")
     detection = source.index("language_decision = language_detector.detect_from_html(")
 
     assert enqueue < detection
@@ -60,11 +60,13 @@ def test_fallback_discovers_before_language_rejection() -> None:
         "request_handler",
     )
 
-    fallback_start = source.index("fallback_html = await render_url_with_crawlee(")
+    fallback_start = source.index(
+        "fallback_html, fallback_links = await render_url_with_crawlee("
+    )
     fallback_source = source[fallback_start:]
 
-    discovery = fallback_source.index("fallback_urls = extract_in_scope_links(")
-    enqueue = fallback_source.index("await fallback_context.add_requests(")
+    discovery = fallback_source.index("for fallback_link in fallback_links:")
+    enqueue = fallback_source.index("await fallback_context.enqueue_links(")
     detection = fallback_source.index(
         "fallback_language_decision = language_detector.detect_from_html("
     )
@@ -78,8 +80,8 @@ def test_inventory_discovers_before_language_classification() -> None:
         "request_handler",
     )
 
-    discovery = source.index("discovered_links = extract_in_scope_links(")
-    enqueue = source.index("await context.add_requests(queued_urls)")
+    discovery = source.index("discovered_links = await discover_and_enqueue_in_scope_links(")
+    enqueue = source.index("for discovered_link in discovered_links:")
     detection = source.index("language_decision = detector.detect_from_html(")
 
     assert discovery < enqueue < detection

@@ -12,16 +12,18 @@ def _source() -> str:
     return CRAWLER_PATH.read_text(encoding="utf-8")
 
 
-def test_primary_links_use_context_transaction() -> None:
+def test_primary_links_use_crawlee_native_discovery() -> None:
     source = _source()
 
-    assert source.count("await queue_context.add_requests(") == 1
+    assert "await context.extract_links(" in source
+    assert "await context.enqueue_links(" in source
 
 
-def test_fallback_links_use_context_transaction() -> None:
+def test_fallback_links_use_crawlee_native_enqueue() -> None:
     source = _source()
 
-    assert source.count("await fallback_context.add_requests(") == 1
+    assert source.count("await fallback_context.enqueue_links(") == 1
+    assert "await fallback_context.add_requests(" not in source
 
 
 def test_handler_does_not_bypass_context_lifecycle() -> None:
@@ -44,9 +46,9 @@ def test_throttling_manager_remains_crawler_request_manager() -> None:
 def test_primary_discovery_precedes_url_language_rejection() -> None:
     source = _source()
 
-    discovery = source.index("discovered_urls = extract_in_scope_links(")
+    discovery = source.index("discovered_urls = await discover_and_enqueue_in_scope_links(")
     insertion = source.index(
-        "await queue_context.add_requests(",
+        "discovered_link_count = len(discovered_urls)",
         discovery,
     )
     detection = source.index(
@@ -60,7 +62,7 @@ def test_primary_discovery_precedes_url_language_rejection() -> None:
 def test_primary_discovery_precedes_text_language_rejection() -> None:
     source = _source()
 
-    insertion = source.index("await queue_context.add_requests(")
+    insertion = source.index("discovered_link_count = len(discovered_urls)")
     rejection = source.index(
         "language_decision = language_detector.detect_from_html(",
         insertion,
@@ -72,9 +74,9 @@ def test_primary_discovery_precedes_text_language_rejection() -> None:
 def test_fallback_discovery_precedes_language_rejection() -> None:
     source = _source()
 
-    discovery = source.index("fallback_urls = extract_in_scope_links(")
+    discovery = source.index("for fallback_link in fallback_links:")
     insertion = source.index(
-        "await fallback_context.add_requests(",
+        "await fallback_context.enqueue_links(",
         discovery,
     )
     rejection = source.index(
