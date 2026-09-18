@@ -81,7 +81,8 @@ def test_throttling_manager_wraps_request_queue() -> None:
 
 def test_http_and_playwright_share_throttling_manager() -> None:
     source = ENGINE_PATH.read_text(encoding="utf-8")
-    assert source.count("request_manager=runtime.request_manager") == 2
+    assert '"request_manager": runtime.request_manager' in source
+    assert "request_manager=runtime.request_manager" in source
 
 def test_legacy_handler_wait_is_removed() -> None:
     source = _source()
