@@ -36,7 +36,6 @@ def test_handler_does_not_bypass_context_lifecycle() -> None:
 
 
 def test_throttling_manager_remains_crawler_request_manager() -> None:
-    crawler_source = _source()
     runtime_source = RUNTIME_PATH.read_text(encoding="utf-8")
 
     assert "request_manager = ThrottlingRequestManager(" in runtime_source
