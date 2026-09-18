@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, cast
 
 
 BLOCKED_RESOURCE_TYPES: Final[frozenset[str]] = frozenset(
@@ -294,7 +293,11 @@ async def render_url_with_crawlee(
 ) -> str:
     """Render one URL through Crawlee so Crawlee owns browser lifecycle."""
 
-    from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
+    from crawlee.crawlers import (
+        PlaywrightCrawler,
+        PlaywrightCrawlingContext,
+        PlaywrightPreNavCrawlingContext,
+    )
 
     config = PlaywrightRenderingConfig(
         headless=headless,
@@ -316,9 +319,11 @@ async def render_url_with_crawlee(
     )
 
     @crawler.pre_navigation_hook
-    async def install_browser_controls(context: PlaywrightCrawlingContext) -> None:
+    async def install_browser_controls(
+        context: PlaywrightPreNavCrawlingContext,
+    ) -> None:
         await install_resource_blocking(
-            context.page,
+            cast(PageLike, context.page),
             blocked_resource_types=config.blocked_resource_types,
         )
 
@@ -326,7 +331,7 @@ async def render_url_with_crawlee(
     async def capture_html(context: PlaywrightCrawlingContext) -> None:
         nonlocal rendered_html
         rendered_html = await render_page_html(
-            context.page,
+            cast(PageLike, context.page),
             url=context.request.url,
             logger=context.log,
             request_timeout_seconds=config.request_timeout_seconds,
