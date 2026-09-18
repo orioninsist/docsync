@@ -65,7 +65,7 @@ def test_fallback_discovers_before_language_rejection() -> None:
     )
     fallback_source = source[fallback_start:]
 
-    discovery = fallback_source.index("for fallback_link in fallback_links:")
+    discovery = fallback_source.index("fallback_urls = filter_discovered_urls(")
     enqueue = fallback_source.index("await fallback_context.enqueue_links(")
     detection = fallback_source.index(
         "fallback_language_decision = language_detector.detect_from_html("
