@@ -48,7 +48,9 @@ def test_extract_in_scope_links_normalizes_and_filters() -> None:
 def test_request_handler_discovers_before_first_export() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
-    discovery_position = source.index("discovered_urls = extract_in_scope_links(")
+    discovery_position = source.index(
+        "discovered_urls = await discover_and_enqueue_in_scope_links("
+    )
     first_export_position = source.index("document = markdown_exporter.export(")
 
     assert discovery_position < first_export_position
