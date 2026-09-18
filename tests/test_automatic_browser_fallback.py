@@ -45,7 +45,7 @@ def test_http_empty_content_activates_browser_fallback() -> None:
     assert "HTTP extraction returned no meaningful content" in source
     assert '"No meaningful Markdown content found:"' in source
     assert 'resolved_mode != "http"' in source
-    assert "fallback_html = await render_url_with_crawlee(" in source
+    assert "fallback_html, fallback_links = await render_url_with_crawlee(" in source
 
 
 def test_rendered_html_is_exported_as_markdown() -> None:
