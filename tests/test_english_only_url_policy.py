@@ -5,12 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from bs4 import BeautifulSoup
-
-from docsync.crawler import (
-    build_scope_pattern,
-    extract_in_scope_links,
-)
+from docsync.crawler import build_scope_pattern, filter_discovered_urls
 from docsync.language import detect_explicit_url_language
 from docsync.language_strategy import LanguageStrategy
 from docsync.sitemap import (
@@ -65,34 +60,21 @@ def test_url_language_decision_records_query_source() -> None:
     assert decision.source == "url-query"
 
 
-def test_html_discovery_only_returns_english_urls() -> None:
-    soup = BeautifulSoup(
-        """
-        <html lang="en">
-          <body>
-            <a href="/docs/english">English</a>
-            <a href="/docs/german?hl=de">German</a>
-            <a href="/intl/ja/docs/japanese">Japanese</a>
-            <a href="/fr/docs/french">French</a>
-          </body>
-        </html>
-        """,
-        "html.parser",
-    )
-
+def test_discovery_policy_rejects_explicit_non_english_urls() -> None:
+    strategy = LanguageStrategy("en")
     scope_pattern = build_scope_pattern("https://developers.google.com")
 
-    assert extract_in_scope_links(
-        soup=soup,
+    assert filter_discovered_urls(
+        urls=[
+            "https://developers.google.com/docs/english",
+            "https://developers.google.com/docs/german?hl=de",
+            "https://developers.google.com/intl/ja/docs/japanese",
+            "https://developers.google.com/fr/docs/french",
+        ],
         base_url="https://developers.google.com",
         scope_pattern=scope_pattern,
-    ) == [
-        "https://developers.google.com/docs/english",
-        "https://developers.google.com/docs/german?hl=de",
-        "https://developers.google.com/intl/ja/docs/japanese",
-        "https://developers.google.com/fr/docs/french",
-    ]
-
+        should_skip_url=strategy.should_skip_url,
+    ) == ["https://developers.google.com/docs/english"]
 
 def test_http_and_playwright_use_the_same_filtered_url_list() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
