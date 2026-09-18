@@ -100,8 +100,11 @@ def test_javascript_only_fallback_reexports_rendered_dom() -> None:
 def test_rendered_dom_links_return_to_crawlee_queue() -> None:
     source = _source(CRAWLER_PATH)
 
-    assert 'soup.select("a[href]")' in source
-    assert "fallback_context.add_requests(" in source
+    rendering_source = _source(RENDERING_PATH)
+
+    assert "extracted_requests = await context.extract_links(" in rendering_source
+    assert "fallback_html, fallback_links = await render_url_with_crawlee(" in source
+    assert "await fallback_context.enqueue_links(" in source
     assert "scope_pattern.search(candidate_url)" in source
     assert "EXCLUDED_URL_PATTERNS" in source
 
