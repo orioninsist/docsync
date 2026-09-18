@@ -19,10 +19,11 @@ def test_primary_links_use_crawlee_native_discovery() -> None:
     assert "await context.enqueue_links(" in source
 
 
-def test_fallback_links_use_context_transaction() -> None:
+def test_fallback_links_use_crawlee_native_enqueue() -> None:
     source = _source()
 
-    assert source.count("await fallback_context.add_requests(") == 1
+    assert source.count("await fallback_context.enqueue_links(") == 1
+    assert "await fallback_context.add_requests(" not in source
 
 
 def test_handler_does_not_bypass_context_lifecycle() -> None:
@@ -75,7 +76,7 @@ def test_fallback_discovery_precedes_language_rejection() -> None:
 
     discovery = source.index("fallback_urls = extract_in_scope_links(")
     insertion = source.index(
-        "await fallback_context.add_requests(",
+        "await fallback_context.enqueue_links(",
         discovery,
     )
     rejection = source.index(
