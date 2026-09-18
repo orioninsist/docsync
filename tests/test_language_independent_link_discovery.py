@@ -60,7 +60,7 @@ def test_fallback_discovers_before_language_rejection() -> None:
         "request_handler",
     )
 
-    fallback_start = source.index("fallback_html = await render_url_html(")
+    fallback_start = source.index("fallback_html = await render_url_with_crawlee(")
     fallback_source = source[fallback_start:]
 
     discovery = fallback_source.index("fallback_urls = extract_in_scope_links(")
