@@ -63,13 +63,15 @@ def test_rendered_html_is_exported_as_markdown() -> None:
     assert "used_browser_fallback = True" in _source(CRAWLER_PATH)
 
 
-def test_rendered_dom_links_use_context_add_requests() -> None:
-    source = _source(CRAWLER_PATH)
+def test_rendered_dom_links_use_crawlee_native_discovery() -> None:
+    crawler_source = _source(CRAWLER_PATH)
+    rendering_source = _source(RENDERING_PATH)
 
-    assert 'soup.select("a[href]")' in source
-    assert "fallback_context.add_requests(" in source
-    assert "scope_pattern.search(candidate_url)" in source
-    assert "EXCLUDED_URL_PATTERNS" in source
+    assert "extracted_requests = await context.extract_links(" in rendering_source
+    assert "fallback_html, fallback_links = await render_url_with_crawlee(" in crawler_source
+    assert "await fallback_context.enqueue_links(" in crawler_source
+    assert "scope_pattern.search(candidate_url)" in crawler_source
+    assert "EXCLUDED_URL_PATTERNS" in crawler_source
 
 
 def test_invalid_rendered_links_are_skipped() -> None:
