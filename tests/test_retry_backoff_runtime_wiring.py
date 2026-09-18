@@ -220,7 +220,7 @@ def test_package_retry_constant_is_deterministic() -> None:
 
 
 def test_package_crawler_uses_retry_constant_at_runtime_construction() -> None:
-    crawler_path = Path("src/docsync/crawler.py")
+    crawler_path = Path("src/docsync/crawl_engine.py")
     tree = ast.parse(
         crawler_path.read_text(encoding="utf-8"),
         filename=str(crawler_path),
@@ -230,7 +230,7 @@ def test_package_crawler_uses_retry_constant_at_runtime_construction() -> None:
         node
         for node in ast.walk(tree)
         if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
-        and node.name in {"run_crawler", "_run_crawler"}
+        and node.name == "build_crawler"
     )
 
     def call_name(call: ast.Call) -> str | None:
@@ -369,7 +369,7 @@ def _canonical_run_crawler(
         None,
     )
 
-    assert function is not None, "Canonical run_crawler() was not found."
+    assert function is not None, "Canonical build_crawler() was not found."
     return function
 
 
