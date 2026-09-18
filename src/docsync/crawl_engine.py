@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from crawlee.crawlers import BeautifulSoupCrawler, PlaywrightCrawler
+from crawlee.http_clients import HttpClient
 
 from docsync.crawler_runtime import CrawleeRuntime
 from docsync.playwright_rendering import (
@@ -29,20 +30,23 @@ def build_http_crawler(
     runtime: CrawleeRuntime,
     max_requests: int,
     respect_robots_txt: bool,
-    http_client: Any | None = None,
+    http_client: HttpClient | None = None,
 ) -> BeautifulSoupCrawler:
     """Build the canonical HTTP crawler from one shared runtime."""
 
-    return BeautifulSoupCrawler(
-        request_manager=runtime.request_manager,
-        storage_client=runtime.storage_client,
-        concurrency_settings=runtime.concurrency_settings,
-        max_request_retries=DEFAULT_MAX_REQUEST_RETRIES,
-        max_requests_per_crawl=max_requests,
-        request_handler_timeout=runtime.request_handler_timeout,
-        respect_robots_txt_file=respect_robots_txt,
-        http_client=http_client,
-    )
+    crawler_options: dict[str, Any] = {
+        "request_manager": runtime.request_manager,
+        "storage_client": runtime.storage_client,
+        "concurrency_settings": runtime.concurrency_settings,
+        "max_request_retries": DEFAULT_MAX_REQUEST_RETRIES,
+        "max_requests_per_crawl": max_requests,
+        "request_handler_timeout": runtime.request_handler_timeout,
+        "respect_robots_txt_file": respect_robots_txt,
+    }
+    if http_client is not None:
+        crawler_options["http_client"] = http_client
+
+    return BeautifulSoupCrawler(**crawler_options)
 
 
 def build_playwright_crawler(
@@ -85,7 +89,7 @@ def build_crawler(
     headless: bool,
     browser_type: str,
     request_timeout_seconds: int,
-    http_client: Any | None = None,
+    http_client: HttpClient | None = None,
 ) -> CrawlerBuildResult:
     """Build the canonical crawler for an HTTP or Playwright workflow."""
 
