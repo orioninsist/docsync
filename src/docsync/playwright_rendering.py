@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any, Final, Protocol, cast
 
 
+
 BLOCKED_RESOURCE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "font",
