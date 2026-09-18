@@ -39,7 +39,7 @@ def settings_from_environment(
     return Settings.from_environment()
 
 
-def run_crawler_node() -> ast.AsyncFunctionDef:
+def run_crawler_node() -> ast.FunctionDef:
     tree = ast.parse(
         ENGINE_PATH.read_text(encoding="utf-8"),
         filename=str(ENGINE_PATH),
@@ -48,7 +48,7 @@ def run_crawler_node() -> ast.AsyncFunctionDef:
     matches = [
         node
         for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "build_http_crawler"
+        if isinstance(node, ast.FunctionDef) and node.name == "build_http_crawler"
     ]
 
     assert len(matches) == 1
