@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
-RUNTIME_PATH = ROOT / "src" / "docsync" / "crawler_runtime.py"
+RUNTIME_PATH = ROOT / "src" / "docsync" / "crawler_runtime.py"\nENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 
 
 def _request_handler() -> ast.AsyncFunctionDef:
@@ -49,7 +49,7 @@ def test_request_handler_uses_official_request_manager_throttling() -> None:
     assert isinstance(executable_statements[0], ast.Nonlocal)
 
     assert "runtime = await build_crawlee_runtime(" in crawler_source
-    assert "request_manager = runtime.request_manager" in crawler_source
+    engine_source = ENGINE_PATH.read_text(encoding="utf-8")\n    assert "request_manager=runtime.request_manager" in engine_source
     assert "request_manager = ThrottlingRequestManager(" in runtime_source
     assert "request_manager_opener=open_run_request_queue" in runtime_source
     assert "await crawl_delay_throttle.wait()" not in crawler_source
