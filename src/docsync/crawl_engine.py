@@ -29,6 +29,7 @@ def build_http_crawler(
     runtime: CrawleeRuntime,
     max_requests: int,
     respect_robots_txt: bool,
+    http_client: Any | None = None,
 ) -> BeautifulSoupCrawler:
     """Build the canonical HTTP crawler from one shared runtime."""
 
@@ -40,6 +41,7 @@ def build_http_crawler(
         max_requests_per_crawl=max_requests,
         request_handler_timeout=runtime.request_handler_timeout,
         respect_robots_txt_file=respect_robots_txt,
+        http_client=http_client,
     )
 
 
@@ -83,6 +85,7 @@ def build_crawler(
     headless: bool,
     browser_type: str,
     request_timeout_seconds: int,
+    http_client: Any | None = None,
 ) -> CrawlerBuildResult:
     """Build the canonical crawler for an HTTP or Playwright workflow."""
 
@@ -108,6 +111,7 @@ def build_crawler(
                 runtime=runtime,
                 max_requests=max_requests,
                 respect_robots_txt=respect_robots_txt,
+                http_client=http_client,
             )
         )
 
