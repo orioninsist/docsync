@@ -20,7 +20,8 @@ from docsync.config import Settings
 ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 CONFIG_PATH: Final[Path] = ROOT / "src/docsync/config.py"
 CLI_PATH: Final[Path] = ROOT / "src/docsync/cli.py"
-CRAWLER_PATH: Final[Path] = ROOT / "src/docsync/crawler.py"\nENGINE_PATH: Final[Path] = ROOT / "src/docsync/crawl_engine.py"
+CRAWLER_PATH: Final[Path] = ROOT / "src/docsync/crawler.py"
+ENGINE_PATH: Final[Path] = ROOT / "src/docsync/crawl_engine.py"
 
 
 def configure_runtime_directories(
