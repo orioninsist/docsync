@@ -5,7 +5,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import httpx
@@ -125,9 +125,12 @@ def install_inventory_http_client(
     real_build_http_crawler = inventory.build_http_crawler
 
     def build_crawler(**kwargs: Any) -> BeautifulSoupCrawler:
-        return real_build_http_crawler(
-            **kwargs,
-            http_client=fake_client,
+        return cast(
+            BeautifulSoupCrawler,
+            real_build_http_crawler(
+                **kwargs,
+                http_client=fake_client,
+            ),
         )
 
     monkeypatch.setattr(
