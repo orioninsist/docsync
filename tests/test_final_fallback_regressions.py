@@ -70,7 +70,7 @@ def test_http_empty_markdown_triggers_playwright_renderer() -> None:
 
     assert 'resolved_mode != "http"' in source
     assert '"No meaningful Markdown content found:"' in source
-    assert "fallback_html = await render_url_with_crawlee(" in source
+    assert "fallback_html, fallback_links = await render_url_with_crawlee(" in source
     assert "used_browser_fallback = True" in source
 
 
