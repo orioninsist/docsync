@@ -8,6 +8,7 @@ from typing import Final
 
 ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 PACKAGE_CRAWLER_PATH: Final[Path] = ROOT / "src" / "docsync" / "crawler.py"
+CRAWL_ENGINE_PATH: Final[Path] = ROOT / "src" / "docsync" / "crawl_engine.py"
 EXPECTED_PACKAGE_MAX_REQUEST_RETRIES: Final[int] = 2
 EXPECTED_LEGACY_MAX_SESSION_ROTATIONS: Final[int] = 0
 
@@ -209,7 +210,7 @@ def _contains_crawler_run(
 
 
 def test_package_retry_constant_is_deterministic() -> None:
-    tree = _parse(PACKAGE_CRAWLER_PATH)
+    tree = _parse(CRAWL_ENGINE_PATH)
 
     configured_retries = _assignment_integer(
         tree,
@@ -220,17 +221,16 @@ def test_package_retry_constant_is_deterministic() -> None:
 
 
 def test_package_crawler_uses_retry_constant_at_runtime_construction() -> None:
-    crawler_path = Path("src/docsync/crawl_engine.py")
-    tree = ast.parse(
-        crawler_path.read_text(encoding="utf-8"),
-        filename=str(crawler_path),
-    )
-
-    run_crawler = next(
+    tree = _parse(CRAWL_ENGINE_PATH)
+    build_http_crawler = next(
         node
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
-        and node.name == "build_crawler"
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "build_http_crawler"
+    )
+    build_playwright_crawler = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "build_playwright_crawler"
     )
 
     def call_name(call: ast.Call) -> str | None:
@@ -242,7 +242,8 @@ def test_package_crawler_uses_retry_constant_at_runtime_construction() -> None:
 
     crawler_calls = [
         node
-        for node in ast.walk(run_crawler)
+        for function in (build_http_crawler, build_playwright_crawler)
+        for node in ast.walk(function)
         if isinstance(node, ast.Call)
         and call_name(node) in {"BeautifulSoupCrawler", "PlaywrightCrawler"}
     ]
@@ -252,7 +253,7 @@ def test_package_crawler_uses_retry_constant_at_runtime_construction() -> None:
     assert set(calls_by_constructor) == {
         "BeautifulSoupCrawler",
         "PlaywrightCrawler",
-    }, "run_crawler() must preserve HTTP and browser crawler construction."
+    }, "Shared crawl engine must preserve HTTP and browser crawler construction."
 
     retry_values: dict[str, ast.expr] = {}
 
@@ -304,7 +305,7 @@ def test_package_crawler_uses_retry_constant_at_runtime_construction() -> None:
 
 
 def test_package_retry_budget_represents_initial_attempt_plus_two_retries() -> None:
-    tree = _parse(PACKAGE_CRAWLER_PATH)
+    tree = _parse(CRAWL_ENGINE_PATH)
     retry_count = _assignment_integer(tree, "DEFAULT_MAX_REQUEST_RETRIES")
 
     total_attempt_budget = 1 + retry_count
@@ -349,11 +350,7 @@ def test_package_crawler_executes_crawlee_run_lifecycle() -> None:
 
 
 def _canonical_retry_tree() -> ast.Module:
-    crawler_path = Path("src/docsync/crawler.py")
-    return ast.parse(
-        crawler_path.read_text(encoding="utf-8"),
-        filename=str(crawler_path),
-    )
+    return _parse(CRAWL_ENGINE_PATH)
 
 
 def _canonical_run_crawler(
@@ -364,7 +361,7 @@ def _canonical_run_crawler(
             node
             for node in ast.walk(tree)
             if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
-            and node.name in {"run_crawler", "_run_crawler"}
+            and node.name == "build_crawler"
         ),
         None,
     )
@@ -479,15 +476,15 @@ def _canonical_log_levels(
 
 
 def test_canonical_failed_request_handler_is_registered() -> None:
-    tree = _canonical_retry_tree()
-    run_crawler = _canonical_run_crawler(tree)
+    tree = _parse(PACKAGE_CRAWLER_PATH)
+    run_crawler = _async_function(tree, "run_crawler")
     failed_handler = _canonical_failed_handler(run_crawler)
 
     assert "failed_request_handler" in _canonical_decorator_names(failed_handler)
 
 
 def test_canonical_failed_request_handler_accepts_context_and_error() -> None:
-    tree = _canonical_retry_tree()
+    tree = _parse(PACKAGE_CRAWLER_PATH)
     run_crawler = _canonical_run_crawler(tree)
     failed_handler = _canonical_failed_handler(run_crawler)
 
@@ -502,7 +499,7 @@ def test_canonical_failed_request_handler_accepts_context_and_error() -> None:
 
 
 def test_canonical_failed_request_handler_updates_failure_lifecycle() -> None:
-    tree = _canonical_retry_tree()
+    tree = _parse(PACKAGE_CRAWLER_PATH)
     run_crawler = _canonical_run_crawler(tree)
     failed_handler = _canonical_failed_handler(run_crawler)
 
@@ -516,8 +513,24 @@ def test_canonical_failed_request_handler_updates_failure_lifecycle() -> None:
 
 def test_canonical_http_and_browser_crawlers_share_retry_budget() -> None:
     tree = _canonical_retry_tree()
-    run_crawler = _canonical_run_crawler(tree)
-    crawler_calls = _canonical_crawler_calls(run_crawler)
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {"build_http_crawler", "build_playwright_crawler"}
+    ]
+    crawler_calls: dict[str, ast.Call] = {}
+    for function in functions:
+        crawler_calls.update(
+            {
+                name: node
+                for node in ast.walk(function)
+                if isinstance(node, ast.Call)
+                if (name := _canonical_call_name(node))
+                in {"BeautifulSoupCrawler", "PlaywrightCrawler"}
+            }
+        )
+    assert set(crawler_calls) == {"BeautifulSoupCrawler", "PlaywrightCrawler"}
 
     retry_values: dict[str, ast.expr] = {}
 
@@ -573,8 +586,8 @@ def test_canonical_retry_budget_allows_initial_attempt_plus_retries() -> None:
 
 
 def test_canonical_crawler_does_not_disable_request_retries() -> None:
-    tree = _canonical_retry_tree()
-    run_crawler = _canonical_run_crawler(tree)
+    tree = _parse(PACKAGE_CRAWLER_PATH)
+    run_crawler = _async_function(tree, "run_crawler")
 
     disabled_assignments = [
         node
