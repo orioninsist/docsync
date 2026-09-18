@@ -17,7 +17,6 @@ from docsync.config import (
 from docsync.crawler_runtime import build_crawlee_runtime
 
 ROOT = Path(__file__).resolve().parents[1]
-CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
 ENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 
 
@@ -42,8 +41,8 @@ def settings_from_environment(
 
 def run_crawler_node() -> ast.AsyncFunctionDef:
     tree = ast.parse(
-        CRAWLER_PATH.read_text(encoding="utf-8"),
-        filename=str(CRAWLER_PATH),
+        ENGINE_PATH.read_text(encoding="utf-8"),
+        filename=str(ENGINE_PATH),
     )
 
     matches = [
