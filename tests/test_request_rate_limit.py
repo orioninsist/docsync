@@ -17,7 +17,7 @@ from docsync.config import (
 from docsync.crawler_runtime import build_crawlee_runtime
 
 ROOT = Path(__file__).resolve().parents[1]
-CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
+CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"\nENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 
 
 def settings_from_environment(
@@ -48,7 +48,7 @@ def run_crawler_node() -> ast.AsyncFunctionDef:
     matches = [
         node
         for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "run_crawler"
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "build_http_crawler"
     ]
 
     assert len(matches) == 1
