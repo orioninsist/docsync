@@ -13,6 +13,7 @@ from docsync.sitemap import SitemapDiscoveryResult, discover_sitemap_urls_sync
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
+ENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 RUNTIME_PATH = ROOT / "src" / "docsync" / "crawler_runtime.py"
 RENDERING_PATH = ROOT / "src" / "docsync" / "playwright_rendering.py"
 
@@ -124,7 +125,9 @@ def test_http_and_playwright_use_official_throttling_manager() -> None:
     runtime_source = _source(RUNTIME_PATH)
 
     assert "runtime = await build_crawlee_runtime(" in crawler_source
-    assert crawler_source.count("request_manager=request_manager") == 2
+    engine_source = _source(ENGINE_PATH)
+    assert '"request_manager": runtime.request_manager' in engine_source
+    assert "request_manager=runtime.request_manager" in engine_source
     assert "request_manager = ThrottlingRequestManager(" in runtime_source
     assert "request_manager_opener=open_run_request_queue" in runtime_source
     assert 'alias="docsync-main"' in runtime_source

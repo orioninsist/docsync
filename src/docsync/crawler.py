@@ -12,13 +12,12 @@ from urllib.parse import urljoin, urlsplit
 from bs4 import BeautifulSoup
 from crawlee.crawlers import (
     BasicCrawlingContext,
-    BeautifulSoupCrawler,
     BeautifulSoupCrawlingContext,
-    PlaywrightCrawler,
     PlaywrightCrawlingContext,
 )
 
 from docsync.config import Settings
+from docsync.crawl_engine import build_crawler
 from docsync.crawler_runtime import build_crawlee_runtime
 from docsync.incremental import (
     content_is_unchanged,
@@ -35,7 +34,6 @@ from docsync.markdown import MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
 from docsync.playwright_rendering import (
     PlaywrightRenderingConfig,
-    install_resource_blocking,
     render_page_html,
     render_url_with_crawlee,
 )
@@ -391,53 +389,19 @@ async def run_crawler(
         request_timeout_seconds=settings.request_timeout_seconds,
     )
 
-    crawler_storage_client = runtime.storage_client
-    request_manager = runtime.request_manager
-    concurrency_settings = runtime.concurrency_settings
-    request_handler_timeout = runtime.request_handler_timeout
-
     _silence_crawlee_runtime_logs()
 
-    rendering_config: PlaywrightRenderingConfig | None = None
-    crawler: Any
-
-    if resolved_mode == "playwright":
-        rendering_config = PlaywrightRenderingConfig(
-            headless=resolved_headless,
-            browser_type=resolved_browser_type,
-            request_timeout_seconds=settings.request_timeout_seconds,
-        )
-        crawler = PlaywrightCrawler(
-            request_manager=request_manager,
-            storage_client=crawler_storage_client,
-            concurrency_settings=concurrency_settings,
-            max_request_retries=DEFAULT_MAX_REQUEST_RETRIES,
-            max_requests_per_crawl=resolved_max_requests,
-            request_handler_timeout=request_handler_timeout,
-            navigation_timeout=request_handler_timeout,
-            respect_robots_txt_file=settings.respect_robots_txt,
-            **rendering_config.crawler_options(),
-        )
-
-        async def install_browser_controls(
-            context: Any,
-        ) -> None:
-            await install_resource_blocking(
-                context.page,
-                blocked_resource_types=rendering_config.blocked_resource_types,
-            )
-
-        crawler.pre_navigation_hook(install_browser_controls)
-    else:
-        crawler = BeautifulSoupCrawler(
-            request_manager=request_manager,
-            storage_client=crawler_storage_client,
-            concurrency_settings=concurrency_settings,
-            max_request_retries=DEFAULT_MAX_REQUEST_RETRIES,
-            max_requests_per_crawl=resolved_max_requests,
-            request_handler_timeout=request_handler_timeout,
-            respect_robots_txt_file=settings.respect_robots_txt,
-        )
+    crawler_build = build_crawler(
+        mode=resolved_mode,
+        runtime=runtime,
+        max_requests=resolved_max_requests,
+        respect_robots_txt=settings.respect_robots_txt,
+        headless=resolved_headless,
+        browser_type=resolved_browser_type,
+        request_timeout_seconds=settings.request_timeout_seconds,
+    )
+    crawler = crawler_build.crawler
+    rendering_config = crawler_build.rendering_config
 
     active_requests = 0
 

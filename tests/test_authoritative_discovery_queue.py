@@ -6,6 +6,7 @@ from pathlib import Path
 
 CRAWLER_PATH = Path("src/docsync/crawler.py")
 RUNTIME_PATH = Path("src/docsync/crawler_runtime.py")
+ENGINE_PATH = Path("src/docsync/crawl_engine.py")
 
 
 def _source() -> str:
@@ -35,12 +36,13 @@ def test_handler_does_not_bypass_context_lifecycle() -> None:
 
 
 def test_throttling_manager_remains_crawler_request_manager() -> None:
-    crawler_source = _source()
     runtime_source = RUNTIME_PATH.read_text(encoding="utf-8")
 
     assert "request_manager = ThrottlingRequestManager(" in runtime_source
     assert "inner=request_queue" in runtime_source
-    assert crawler_source.count("request_manager=request_manager") == 2
+    engine_source = ENGINE_PATH.read_text(encoding="utf-8")
+    assert '"request_manager": runtime.request_manager' in engine_source
+    assert "request_manager=runtime.request_manager" in engine_source
 
 
 def test_primary_discovery_precedes_url_language_rejection() -> None:

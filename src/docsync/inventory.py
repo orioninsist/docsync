@@ -10,7 +10,6 @@ from urllib.parse import urlsplit
 
 from crawlee.crawlers import (
     BasicCrawlingContext,
-    BeautifulSoupCrawler,
     BeautifulSoupCrawlingContext,
 )
 from crawlee.errors import (
@@ -19,6 +18,7 @@ from crawlee.errors import (
     UserHandlerTimeoutError,
 )
 
+from docsync.crawl_engine import build_http_crawler
 from docsync.crawler_runtime import build_crawlee_runtime
 from docsync.language import EnglishPageDetector
 from docsync.language_strategy import LanguageStrategy
@@ -29,7 +29,6 @@ from docsync.url_security import (
 )
 
 from .crawler import (
-    DEFAULT_MAX_REQUEST_RETRIES,
     build_scope_pattern,
     discover_and_enqueue_in_scope_links,
 )
@@ -319,14 +318,10 @@ async def run_inventory(
         request_timeout_seconds=request_timeout_seconds,
     )
 
-    crawler = BeautifulSoupCrawler(
-        request_manager=runtime.request_manager,
-        storage_client=runtime.storage_client,
-        concurrency_settings=runtime.concurrency_settings,
-        max_request_retries=DEFAULT_MAX_REQUEST_RETRIES,
-        max_requests_per_crawl=max_requests,
-        request_handler_timeout=runtime.request_handler_timeout,
-        respect_robots_txt_file=respect_robots_txt,
+    crawler = build_http_crawler(
+        runtime=runtime,
+        max_requests=max_requests,
+        respect_robots_txt=respect_robots_txt,
     )
 
     @crawler.router.default_handler

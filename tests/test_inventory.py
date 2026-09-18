@@ -5,7 +5,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import httpx
@@ -118,17 +118,23 @@ def install_inventory_http_client(
         ],
     ],
 ) -> None:
-    real_crawler = BeautifulSoupCrawler
     fake_client = InventoryHttpClient(responses)
 
+    from docsync import inventory
+
+    real_build_http_crawler = inventory.build_http_crawler
+
     def build_crawler(**kwargs: Any) -> BeautifulSoupCrawler:
-        return real_crawler(
-            http_client=fake_client,
-            **kwargs,
+        return cast(
+            BeautifulSoupCrawler,
+            real_build_http_crawler(
+                **kwargs,
+                http_client=fake_client,
+            ),
         )
 
     monkeypatch.setattr(
-        "docsync.inventory.BeautifulSoupCrawler",
+        "docsync.inventory.build_http_crawler",
         build_crawler,
     )
 

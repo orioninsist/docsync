@@ -17,7 +17,7 @@ from docsync.config import (
 from docsync.crawler_runtime import build_crawlee_runtime
 
 ROOT = Path(__file__).resolve().parents[1]
-CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
+ENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 
 
 def settings_from_environment(
@@ -39,16 +39,16 @@ def settings_from_environment(
     return Settings.from_environment()
 
 
-def run_crawler_node() -> ast.AsyncFunctionDef:
+def run_crawler_node() -> ast.FunctionDef:
     tree = ast.parse(
-        CRAWLER_PATH.read_text(encoding="utf-8"),
-        filename=str(CRAWLER_PATH),
+        ENGINE_PATH.read_text(encoding="utf-8"),
+        filename=str(ENGINE_PATH),
     )
 
     matches = [
         node
         for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "run_crawler"
+        if isinstance(node, ast.FunctionDef) and node.name == "build_http_crawler"
     ]
 
     assert len(matches) == 1
@@ -170,14 +170,15 @@ def test_existing_concurrency_controls_are_preserved() -> None:
 
 
 def test_existing_crawler_limits_are_preserved() -> None:
-    keyword_names = {keyword.arg for keyword in crawler_constructor().keywords}
+    source = ENGINE_PATH.read_text(encoding="utf-8")
 
-    assert {
+    for option_name in {
         "concurrency_settings",
         "max_request_retries",
         "max_requests_per_crawl",
         "request_handler_timeout",
-    }.issubset(keyword_names)
+    }:
+        assert f'"{option_name}"' in source
 
 
 def test_request_throttling_remains_runtime_wired() -> None:
