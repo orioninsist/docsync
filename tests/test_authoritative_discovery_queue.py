@@ -76,7 +76,7 @@ def test_primary_discovery_precedes_text_language_rejection() -> None:
 def test_fallback_discovery_precedes_language_rejection() -> None:
     source = _source()
 
-    discovery = source.index("for fallback_link in fallback_links:")
+    discovery = source.index("fallback_urls = filter_discovered_urls(")
     insertion = source.index(
         "await fallback_context.enqueue_links(",
         discovery,
