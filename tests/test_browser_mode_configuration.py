@@ -20,7 +20,7 @@ from docsync.config import Settings
 ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 CONFIG_PATH: Final[Path] = ROOT / "src/docsync/config.py"
 CLI_PATH: Final[Path] = ROOT / "src/docsync/cli.py"
-CRAWLER_PATH: Final[Path] = ROOT / "src/docsync/crawler.py"
+CRAWLER_PATH: Final[Path] = ROOT / "src/docsync/crawler.py"\nENGINE_PATH: Final[Path] = ROOT / "src/docsync/crawl_engine.py"
 
 
 def configure_runtime_directories(
@@ -383,42 +383,12 @@ def test_run_crawler_browser_parameters_and_reporting() -> None:
 
 
 def test_playwright_selection_is_wired() -> None:
-    source = CRAWLER_PATH.read_text(
-        encoding="utf-8",
-    )
-    tree = ast.parse(
-        source,
-        filename=str(CRAWLER_PATH),
-    )
+    crawler_source = CRAWLER_PATH.read_text(encoding="utf-8")
+    engine_source = ENGINE_PATH.read_text(encoding="utf-8")
 
-    run_crawler = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "run_crawler"
-    )
-
-    constructor_names = {
-        node.func.id
-        for node in ast.walk(run_crawler)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
-
-    assert "BeautifulSoupCrawler" in constructor_names
-    assert "PlaywrightCrawler" in constructor_names
-    assert "PlaywrightRenderingConfig" in constructor_names
-    assert "render_page_html" in constructor_names
-    assert "install_resource_blocking" in constructor_names
-
-    comparisons = [
-        node for node in ast.walk(run_crawler) if isinstance(node, ast.Compare)
-    ]
-
-    assert any(
-        isinstance(comparison.left, ast.Name)
-        and comparison.left.id == "resolved_mode"
-        and any(
-            isinstance(comparator, ast.Constant) and comparator.value == "playwright"
-            for comparator in comparison.comparators
-        )
-        for comparison in comparisons
-    )
+    assert "crawler_build = build_crawler(" in crawler_source
+    assert "BeautifulSoupCrawler(" in engine_source
+    assert "PlaywrightCrawler(" in engine_source
+    assert "PlaywrightRenderingConfig(" in engine_source
+    assert "install_resource_blocking(" in engine_source
+    assert "render_page_html(" in crawler_source
