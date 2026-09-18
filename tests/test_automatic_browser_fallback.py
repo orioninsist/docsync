@@ -21,23 +21,22 @@ def _tree(path: Path) -> ast.Module:
     )
 
 
-def test_isolated_url_renderer_exists() -> None:
+def test_crawlee_url_renderer_exists() -> None:
     functions = {
         node.name
         for node in _tree(RENDERING_PATH).body
         if isinstance(node, ast.AsyncFunctionDef)
     }
 
-    assert "render_url_html" in functions
+    assert "render_url_with_crawlee" in functions
 
 
-def test_isolated_renderer_uses_playwright() -> None:
+def test_fallback_renderer_uses_crawlee_playwright_crawler() -> None:
     source = _source(RENDERING_PATH)
 
-    assert "async_playwright" in source
-    assert "await page.goto(" in source
-    assert "await page.content()" in source
-    assert "await browser.close()" in source
+    assert "PlaywrightCrawler" in source
+    assert "async_playwright" not in source
+    assert "await crawler.run([url])" in source
 
 
 def test_http_empty_content_activates_browser_fallback() -> None:
@@ -46,7 +45,7 @@ def test_http_empty_content_activates_browser_fallback() -> None:
     assert "HTTP extraction returned no meaningful content" in source
     assert '"No meaningful Markdown content found:"' in source
     assert 'resolved_mode != "http"' in source
-    assert "fallback_html = await render_url_html(" in source
+    assert "fallback_html = await render_url_with_crawlee(" in source
 
 
 def test_rendered_html_is_exported_as_markdown() -> None:
