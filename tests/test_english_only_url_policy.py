@@ -100,7 +100,8 @@ def test_http_and_playwright_use_the_same_filtered_url_list() -> None:
     assert "await context.extract_links(" in source
     assert "await context.enqueue_links(" in source
     assert "await queue_context.add_requests(" not in source
-    assert "await fallback_context.add_requests(" in source
+    assert "await fallback_context.enqueue_links(" in source
+    assert "await fallback_context.add_requests(" not in source
     assert "should_skip_url=language_strategy.should_skip_url" in source
 
 
