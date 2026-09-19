@@ -172,9 +172,7 @@ def load_url_state(
             "filename": (filename if isinstance(filename, str) else ""),
             "content_hash": (digest if isinstance(digest, str) else ""),
             "etag": (etag if isinstance(etag, str) else ""),
-            "last_modified": (
-                last_modified if isinstance(last_modified, str) else ""
-            ),
+            "last_modified": (last_modified if isinstance(last_modified, str) else ""),
         }
 
     return result
