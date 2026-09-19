@@ -36,6 +36,7 @@ def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
 
     assert strategy.should_skip_url(url) is True
 
+
 @pytest.mark.parametrize(
     "url",
     [
