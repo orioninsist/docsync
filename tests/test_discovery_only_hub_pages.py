@@ -10,7 +10,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
 
 
-
 def test_discovered_urls_are_normalized_and_filtered() -> None:
     scope_pattern = build_scope_pattern("https://support.google.com/youtube")
 
