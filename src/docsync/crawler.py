@@ -333,7 +333,7 @@ async def run_crawler(
 
     markdown_exporter = MarkdownExporter(resolved_output_dir)
     language_detector = EnglishPageDetector()
-    language_strategy = LanguageStrategy(settings.language)
+    language_strategy = LanguageStrategy(resolved_language)
 
     normalized_start_url = normalize_start_url(start_url)
 
