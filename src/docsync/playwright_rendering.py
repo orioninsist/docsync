@@ -362,7 +362,13 @@ class PlaywrightFallbackRenderer:
             )
             rendered_links.extend(request.url for request in extracted_requests)
 
-        await crawler.run([url])
+        from crawlee import Request
+
+        request = Request.from_url(
+            url,
+            unique_key=f"{url}#docsync-fallback-{id(self)}-{id(crawler)}",
+        )
+        await crawler.run([request])
 
         if rendered_html is None:
             raise RuntimeError(f"Crawlee Playwright fallback produced no HTML: {url}")
