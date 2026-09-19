@@ -34,27 +34,29 @@ async def _run(*, url: str, iterations: int, browser_type: str) -> list[Sample]:
         request_timeout_seconds=60,
     )
 
-    for iteration in range(1, iterations + 1):
-        started = time.perf_counter()
-        try:
-            html, links = await renderer.render(url)
-        except RuntimeError as error:
-            elapsed = time.perf_counter() - started
-            raise RuntimeError(
-                "Browser fallback benchmark could not complete repeated "
-                f"production calls: iteration={iteration} elapsed={elapsed:.3f}s "
-                f"url={url}. The production fallback is currently not reusable "
-                "across sequential invocations in this process."
-            ) from error
+    try:
+        for iteration in range(1, iterations + 1):
+            started = time.perf_counter()
+            try:
+                html, links = await renderer.render(url)
+            except RuntimeError as error:
+                elapsed = time.perf_counter() - started
+                raise RuntimeError(
+                    "Browser fallback benchmark could not complete repeated "
+                    f"production calls: iteration={iteration} elapsed={elapsed:.3f}s "
+                    f"url={url}."
+                ) from error
 
-        samples.append(
-            Sample(
-                iteration=iteration,
-                seconds=time.perf_counter() - started,
-                html_bytes=len(html.encode("utf-8")),
-                links=len(links),
+            samples.append(
+                Sample(
+                    iteration=iteration,
+                    seconds=time.perf_counter() - started,
+                    html_bytes=len(html.encode("utf-8")),
+                    links=len(links),
+                )
             )
-        )
+    finally:
+        await renderer.close()
 
     return samples
 
@@ -82,7 +84,7 @@ def main() -> None:
     )
     durations = [sample.seconds for sample in samples]
     payload = {
-        "mode": "production-reused-renderer",
+        "mode": "persistent-crawler-browser-pool",
         "url": args.url,
         "browser_type": args.browser_type,
         "iterations": args.iterations,
