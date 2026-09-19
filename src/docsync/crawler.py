@@ -468,6 +468,24 @@ async def run_crawler(
                     or context.request.url
                 )
 
+            try:
+                normalized_effective_url = normalize_url(
+                    validated_http_url(effective_url)
+                )
+            except (TypeError, ValueError):
+                stats.rejected_urls += 1
+                stats.processed += 1
+                return
+
+            if scope_pattern.search(normalized_effective_url) is None:
+                stats.rejected_urls += 1
+                stats.processed += 1
+                context.log.warning(
+                    "Redirected outside crawl scope; skipping content: %s",
+                    effective_url,
+                )
+                return
+
             discovered_urls = await discover_and_enqueue_in_scope_links(
                 context=cast(Any, context),
                 base_url=effective_url,
@@ -477,9 +495,16 @@ async def run_crawler(
 
             discovered_link_count = len(discovered_urls)
 
+            content_language = None
+            if resolved_mode == "http":
+                content_language = cast(Any, context).http_response.headers.get(
+                    "content-language"
+                )
+
             language_decision = language_detector.detect_from_html(
                 url=effective_url,
                 html=html,
+                content_language=content_language,
             )
 
             if not language_strategy.accepts(
