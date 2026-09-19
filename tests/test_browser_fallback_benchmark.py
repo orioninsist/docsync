@@ -38,5 +38,5 @@ def test_benchmark_measures_production_fallback_without_changing_it() -> None:
 
     assert "PlaywrightFallbackRenderer(" in source
     assert "renderer.render(url)" in source
-    assert '"mode": "production-reused-renderer"' in source
+    assert '"mode": "persistent-crawler-browser-pool"' in source
     assert "time.perf_counter()" in source
