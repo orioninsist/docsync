@@ -15,7 +15,7 @@ import statistics
 import time
 from dataclasses import asdict, dataclass
 
-from docsync.playwright_rendering import render_url_with_crawlee
+from docsync.playwright_rendering import PlaywrightFallbackRenderer
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,16 +28,16 @@ class Sample:
 
 async def _run(*, url: str, iterations: int, browser_type: str) -> list[Sample]:
     samples: list[Sample] = []
+    renderer = PlaywrightFallbackRenderer(
+        headless=True,
+        browser_type=browser_type,
+        request_timeout_seconds=60,
+    )
 
     for iteration in range(1, iterations + 1):
         started = time.perf_counter()
         try:
-            html, links = await render_url_with_crawlee(
-                url,
-                headless=True,
-                browser_type=browser_type,
-                request_timeout_seconds=60,
-            )
+            html, links = await renderer.render(url)
         except RuntimeError as error:
             elapsed = time.perf_counter() - started
             raise RuntimeError(
@@ -82,7 +82,7 @@ def main() -> None:
     )
     durations = [sample.seconds for sample in samples]
     payload = {
-        "mode": "production-per-call-crawler",
+        "mode": "production-reused-renderer",
         "url": args.url,
         "browser_type": args.browser_type,
         "iterations": args.iterations,
