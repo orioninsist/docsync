@@ -43,6 +43,7 @@ def test_official_throttling_manager_is_imported() -> None:
     assert "from crawlee.request_loaders import ThrottlingRequestManager" in source
     assert "from crawlee.storages import RequestQueue" in source
 
+
 def test_request_queue_is_opened_inside_runtime_builder() -> None:
     runtime_tree = ast.parse(
         RUNTIME_PATH.read_text(encoding="utf-8"),
@@ -73,15 +74,18 @@ def test_throttling_manager_wraps_request_queue() -> None:
     assert "request_manager_opener=RequestQueue.open" not in runtime_source
     assert "runtime = await build_crawlee_runtime(" in crawler_source
 
+
 def test_http_and_playwright_share_throttling_manager() -> None:
     source = ENGINE_PATH.read_text(encoding="utf-8")
     assert '"request_manager": runtime.request_manager' in source
     assert "request_manager=runtime.request_manager" in source
 
+
 def test_legacy_handler_wait_is_removed() -> None:
     source = _source()
 
     assert "await crawl_delay_throttle.wait()" not in source
+
 
 def test_runtime_report_identifies_request_manager() -> None:
     source = _source()
