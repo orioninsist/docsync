@@ -7,7 +7,7 @@ import subprocess  # nosec B404
 import sys
 import tempfile
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
@@ -111,7 +111,9 @@ class IncrementalFixtureHandler(BaseHTTPRequestHandler):
         )
 
 
-def run_crawler(url: str, *, output_dir: Path, state_dir: Path, log_dir: Path) -> subprocess.CompletedProcess[str]:
+def run_crawler(
+    url: str, *, output_dir: Path, state_dir: Path, log_dir: Path
+) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     environment.update(
         {
@@ -185,7 +187,7 @@ def main() -> int:
             result.markdown_files_after_second = markdown_count(output_dir)
 
             all_records = list(IncrementalFixtureHandler.page_requests)
-            second_records = all_records[len(first_records):]
+            second_records = all_records[len(first_records) :]
             result.second_crawl_body_bytes = sum(
                 record.body_bytes for record in second_records
             )
@@ -203,7 +205,9 @@ def main() -> int:
             if not first_records or first_records[-1].status != 200:
                 result.issues.append("First crawl did not fetch the page with 200.")
             if not second_records or second_records[-1].status != 304:
-                result.issues.append("Second crawl did not revalidate the page with 304.")
+                result.issues.append(
+                    "Second crawl did not revalidate the page with 304."
+                )
             if not second_records or second_records[-1].if_none_match != ETAG:
                 result.issues.append("Second crawl did not send the saved ETag.")
             if result.first_crawl_body_bytes <= 0:
@@ -211,7 +215,9 @@ def main() -> int:
             if result.second_crawl_body_bytes != 0:
                 result.issues.append("Second crawl transferred a page body.")
             if result.markdown_files_after_first != 1:
-                result.issues.append("First crawl did not create exactly one Markdown file.")
+                result.issues.append(
+                    "First crawl did not create exactly one Markdown file."
+                )
             if result.markdown_files_after_second != result.markdown_files_after_first:
                 result.issues.append("Second crawl changed the Markdown file count.")
             if result.state_etag != ETAG:
