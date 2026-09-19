@@ -329,9 +329,7 @@ class PlaywrightFallbackRenderer:
             request_handler_timeout=timedelta(
                 seconds=self._config.request_timeout_seconds
             ),
-            navigation_timeout=timedelta(
-                seconds=self._config.request_timeout_seconds
-            ),
+            navigation_timeout=timedelta(seconds=self._config.request_timeout_seconds),
             **self._config.crawler_options(),
         )
 
