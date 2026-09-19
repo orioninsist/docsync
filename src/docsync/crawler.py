@@ -386,6 +386,7 @@ async def run_crawler(
     pending_http_validators: dict[str, tuple[str, str]] = {}
 
     if resolved_mode == "http":
+
         async def add_incremental_validators(context: BasicCrawlingContext) -> None:
             headers = conditional_request_headers(
                 url=context.request.url,
@@ -713,12 +714,21 @@ async def run_crawler(
         max_urls=resolved_max_requests,
     )
 
+    known_in_scope_urls = [
+        url
+        for url in url_state
+        if scope_pattern.search(url) is not None
+        and not language_strategy.should_skip_url(url)
+        and not any(pattern.search(url) for pattern in EXCLUDED_URL_PATTERNS)
+    ]
+
     initial_urls = list(
         dict.fromkeys(
             url
             for url in [
                 normalized_start_url,
                 *sitemap_result.urls,
+                *known_in_scope_urls,
             ]
             if not language_strategy.should_skip_url(url)
         )
