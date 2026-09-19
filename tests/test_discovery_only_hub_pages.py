@@ -9,6 +9,8 @@ from docsync.crawler import build_scope_pattern, filter_discovered_urls
 ROOT = Path(__file__).resolve().parents[1]
 CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
 
+
+
 def test_discovered_urls_are_normalized_and_filtered() -> None:
     scope_pattern = build_scope_pattern("https://support.google.com/youtube")
 
@@ -30,6 +32,7 @@ def test_discovered_urls_are_normalized_and_filtered() -> None:
         "https://support.google.com/youtube/article/123",
     ]
 
+
 def test_request_handler_discovers_before_first_export() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
@@ -39,6 +42,7 @@ def test_request_handler_discovers_before_first_export() -> None:
     first_export_position = source.index("document = markdown_exporter.export(")
 
     assert discovery_position < first_export_position
+
 
 def test_fallback_discovers_before_second_export() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
@@ -53,6 +57,7 @@ def test_fallback_discovers_before_second_export() -> None:
 
     assert fallback_discovery_position < fallback_export_position
 
+
 def test_discovery_only_pages_are_not_raised_as_failures() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
@@ -61,6 +66,7 @@ def test_discovery_only_pages_are_not_raised_as_failures() -> None:
     assert "stats.empty_pages += 1" in source
     assert "stats.processed += 1" in source
     assert "return" in source
+
 
 def test_browser_fallback_links_enter_request_queue_before_export() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
