@@ -265,9 +265,10 @@ def test_url_state_loader_discards_invalid_records(
             "saved_at": ("2026-07-31T12:00:00+00:00"),
             "filename": "valid.md",
             "content_hash": "abc",
+            "etag": "",
+            "last_modified": "",
         }
     }
-
 
 
 def test_conditional_request_headers_use_saved_validators() -> None:
