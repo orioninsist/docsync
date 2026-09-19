@@ -30,6 +30,7 @@ CRAWLER_PATH = ROOT / "src/docsync/crawler.py"
         "https://ja.developers.google.com/docs",
     ],
 )
+
 def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
     strategy = LanguageStrategy("en")
 
@@ -46,10 +47,12 @@ def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
         "https://en.developers.google.com/docs",
     ],
 )
+
 def test_english_google_urls_are_allowed(url: str) -> None:
     strategy = LanguageStrategy("en")
 
     assert strategy.should_skip_url(url) is False
+
 
 def test_url_language_decision_records_query_source() -> None:
     decision = detect_explicit_url_language("https://developers.google.com/docs?hl=ja")
@@ -58,6 +61,7 @@ def test_url_language_decision_records_query_source() -> None:
     assert decision.is_english is False
     assert decision.language_code == "ja"
     assert decision.source == "url-query"
+
 
 
 def test_discovery_policy_rejects_explicit_non_english_urls() -> None:
@@ -76,6 +80,7 @@ def test_discovery_policy_rejects_explicit_non_english_urls() -> None:
         should_skip_url=strategy.should_skip_url,
     ) == ["https://developers.google.com/docs/english"]
 
+
 def test_http_and_playwright_use_the_same_filtered_url_list() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
@@ -85,6 +90,7 @@ def test_http_and_playwright_use_the_same_filtered_url_list() -> None:
     assert "await fallback_context.enqueue_links(" in source
     assert "await fallback_context.add_requests(" not in source
     assert "should_skip_url=language_strategy.should_skip_url" in source
+
 
 
 def test_sitemap_discovery_filters_localized_page_urls(
