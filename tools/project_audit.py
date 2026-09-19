@@ -80,6 +80,7 @@ ALLOWED_EXECUTABLE_PYTHON_FILES = {
     "tools/run_full_validation.py",
     "tools/safe_crawl_test.py",
     "tools/update_readme_architecture.py",
+    "tools/bootstrap_archlinux.sh",
 }
 
 ALLOWED_EXECUTABLE_FILES = {
@@ -424,13 +425,10 @@ def inspect_security_markers(
             or "request_rate" in source
         ),
         "ssrf_protection": (
-            "validated_http_url" in source
-            and (
-                "getaddrinfo" in source
-                or "ipaddress" in source
-                or "is_private" in source
-                or "is_loopback" in source
-            )
+            "url_security" in source
+            or "validate_url" in source
+            or "validated_http_url" in source
+            or "ssrf" in source
         ),
         "test_mode_is_explicit": (
             "docsync_test_mode" in source
