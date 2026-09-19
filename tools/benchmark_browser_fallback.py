@@ -31,12 +31,22 @@ async def _run(*, url: str, iterations: int, browser_type: str) -> list[Sample]:
 
     for iteration in range(1, iterations + 1):
         started = time.perf_counter()
-        html, links = await render_url_with_crawlee(
-            url,
-            headless=True,
-            browser_type=browser_type,
-            request_timeout_seconds=60,
-        )
+        try:
+            html, links = await render_url_with_crawlee(
+                url,
+                headless=True,
+                browser_type=browser_type,
+                request_timeout_seconds=60,
+            )
+        except RuntimeError as error:
+            elapsed = time.perf_counter() - started
+            raise RuntimeError(
+                "Browser fallback benchmark could not complete repeated "
+                f"production calls: iteration={iteration} elapsed={elapsed:.3f}s "
+                f"url={url}. The production fallback is currently not reusable "
+                "across sequential invocations in this process."
+            ) from error
+
         samples.append(
             Sample(
                 iteration=iteration,
