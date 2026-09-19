@@ -64,6 +64,7 @@ def test_decode_sitemap_payload_decodes_plain_xml() -> None:
         "https://example.com/sitemap.xml",
     ) == payload.decode("utf-8")
 
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -104,6 +105,7 @@ def test_extract_robots_sitemaps() -> None:
         "https://example.com/sitemap.xml",
         "https://example.com/sitemap-news.xml",
     ]
+
 
 @pytest.mark.parametrize(
     (
@@ -238,6 +240,7 @@ def test_fetch_text_url_propagates_redirect_security(
             "https://example.com/sitemap.xml",
             10,
         )
+
 
 @pytest.mark.parametrize(
     "unsafe_child",
