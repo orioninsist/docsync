@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
@@ -279,7 +280,7 @@ def normalized_blocked_resource_types(
 
 
 class PlaywrightFallbackRenderer:
-    """Reusable Crawlee Playwright fallback renderer for one crawl lifecycle."""
+    """Crawl-scoped Playwright fallback renderer with one persistent crawler."""
 
     def __init__(
         self,
@@ -301,9 +302,14 @@ class PlaywrightFallbackRenderer:
             blocked_resource_types=blocked_resource_types,
             browser_arguments=browser_arguments,
         )
+        self._crawler: Any | None = None
+        self._crawler_task: asyncio.Task[None] | None = None
+        self._pending: dict[str, asyncio.Future[tuple[str, list[str]]]] = {}
+        self._request_sequence = 0
 
-    async def render(self, url: str) -> tuple[str, list[str]]:
-        """Render one URL using a fresh request queue and crawler instance."""
+    async def _start(self) -> None:
+        if self._crawler_task is not None:
+            return
 
         from crawlee.crawlers import (
             PlaywrightCrawler,
@@ -318,13 +324,10 @@ class PlaywrightFallbackRenderer:
             alias=None,
             storage_client=storage_client,
         )
-        rendered_html: str | None = None
-        rendered_links: list[str] = []
-
         crawler = PlaywrightCrawler(
             request_manager=request_queue,
             storage_client=storage_client,
-            max_requests_per_crawl=1,
+            keep_alive=True,
             max_request_retries=0,
             request_handler_timeout=timedelta(
                 seconds=self._config.request_timeout_seconds
@@ -344,8 +347,7 @@ class PlaywrightFallbackRenderer:
 
         @crawler.router.default_handler
         async def capture_html(context: PlaywrightCrawlingContext) -> None:
-            nonlocal rendered_html
-            rendered_html = await render_page_html(
+            html = await render_page_html(
                 cast(PageLike, context.page),
                 url=context.request.url,
                 logger=context.log,
@@ -360,20 +362,70 @@ class PlaywrightFallbackRenderer:
                 base_url=str(context.page.url),
                 strategy="all",
             )
-            rendered_links.extend(request.url for request in extracted_requests)
+            future = self._pending.get(context.request.unique_key)
+            if future is not None and not future.done():
+                future.set_result(
+                    (html, [request.url for request in extracted_requests])
+                )
+
+        @crawler.failed_request_handler
+        async def capture_failure(
+            context: PlaywrightCrawlingContext,
+            error: Exception,
+        ) -> None:
+            future = self._pending.get(context.request.unique_key)
+            if future is not None and not future.done():
+                future.set_exception(error)
+
+        self._crawler = crawler
+        self._crawler_task = asyncio.create_task(crawler.run())
+        await asyncio.sleep(0)
+
+    async def render(self, url: str) -> tuple[str, list[str]]:
+        """Render one URL through the crawl-scoped persistent crawler."""
 
         from crawlee import Request
 
-        request = Request.from_url(
-            url,
-            unique_key=f"{url}#docsync-fallback-{id(self)}-{id(crawler)}",
+        await self._start()
+        assert self._crawler is not None
+
+        self._request_sequence += 1
+        unique_key = (
+            f"{url}#docsync-fallback-{id(self)}-{self._request_sequence}"
         )
-        await crawler.run([request])
+        future = asyncio.get_running_loop().create_future()
+        self._pending[unique_key] = future
+        request = Request.from_url(url, unique_key=unique_key)
 
-        if rendered_html is None:
-            raise RuntimeError(f"Crawlee Playwright fallback produced no HTML: {url}")
+        try:
+            await self._crawler.add_requests([request])
+            return await future
+        finally:
+            self._pending.pop(unique_key, None)
 
-        return rendered_html, rendered_links
+    async def close(self) -> None:
+        """Stop the persistent crawler and close its BrowserPool."""
+
+        if self._crawler_task is None:
+            return
+
+        assert self._crawler is not None
+        self._crawler.stop("DocsSync fallback renderer lifecycle completed.")
+        await self._crawler_task
+        self._crawler_task = None
+        self._crawler = None
+
+    async def __aenter__(self) -> PlaywrightFallbackRenderer:
+        await self._start()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
+    ) -> None:
+        await self.close()
 
 
 async def render_url_with_crawlee(
@@ -398,4 +450,7 @@ async def render_url_with_crawlee(
         blocked_resource_types=blocked_resource_types,
         browser_arguments=browser_arguments,
     )
-    return await renderer.render(url)
+    try:
+        return await renderer.render(url)
+    finally:
+        await renderer.close()
