@@ -63,7 +63,7 @@ def test_fallback_discovers_before_language_rejection() -> None:
     )
 
     fallback_start = source.index(
-        "fallback_html, fallback_links = await render_url_with_crawlee("
+        "fallback_html, fallback_links = await fallback_renderer.render("
     )
     fallback_source = source[fallback_start:]
 
