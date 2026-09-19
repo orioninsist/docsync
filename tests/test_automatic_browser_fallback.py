@@ -68,7 +68,7 @@ def test_rendered_dom_links_use_crawlee_native_discovery() -> None:
     rendering_source = _source(RENDERING_PATH)
 
     assert "extracted_requests = await context.extract_links(" in rendering_source
-    assert (\n        "fallback_html, fallback_links = await render_url_with_crawlee(" \n        in crawler_source\n    )
+    assert "fallback_html, fallback_links = await render_url_with_crawlee(" in crawler_source
     assert "await fallback_context.enqueue_links(" in crawler_source
     assert "scope_pattern.search(candidate_url)" in crawler_source
     assert "EXCLUDED_URL_PATTERNS" in crawler_source
