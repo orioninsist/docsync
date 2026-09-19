@@ -161,6 +161,8 @@ def load_url_state(
         saved_at = value.get("saved_at")
         filename = value.get("filename")
         digest = value.get("content_hash")
+        etag = value.get("etag")
+        last_modified = value.get("last_modified")
 
         if not isinstance(saved_at, str):
             continue
@@ -169,6 +171,8 @@ def load_url_state(
             "saved_at": saved_at,
             "filename": (filename if isinstance(filename, str) else ""),
             "content_hash": (digest if isinstance(digest, str) else ""),
+            "etag": (etag if isinstance(etag, str) else ""),
+            "last_modified": (last_modified if isinstance(last_modified, str) else ""),
         }
 
     return result
@@ -300,6 +304,45 @@ def filter_incremental_urls(
     return selected
 
 
+def conditional_request_headers(
+    *,
+    url: str,
+    url_state: dict[str, dict[str, str]],
+    force_refresh: bool = False,
+) -> dict[str, str]:
+    """Return HTTP validators for a previously synchronized URL."""
+
+    if force_refresh:
+        return {}
+
+    entry = url_state.get(normalize_url(url))
+    if entry is None or not entry.get("content_hash", ""):
+        return {}
+
+    headers: dict[str, str] = {}
+    etag = entry.get("etag", "").strip()
+    last_modified = entry.get("last_modified", "").strip()
+
+    if etag:
+        headers["If-None-Match"] = etag
+    if last_modified:
+        headers["If-Modified-Since"] = last_modified
+
+    return headers
+
+
+def response_validators(headers: object) -> tuple[str, str]:
+    """Extract cache validators from a Crawlee HTTP response header mapping."""
+
+    getter = getattr(headers, "get", None)
+    if getter is None:
+        return "", ""
+
+    etag = getter("etag") or ""
+    last_modified = getter("last-modified") or ""
+    return str(etag).strip(), str(last_modified).strip()
+
+
 def record_incremental_success(
     *,
     url: str,
@@ -308,6 +351,8 @@ def record_incremental_success(
     hashes: dict[str, str],
     url_state: dict[str, dict[str, str]],
     saved_at: datetime | None = None,
+    etag: str = "",
+    last_modified: str = "",
 ) -> None:
     """Record successful output in both legacy state stores."""
 
@@ -324,6 +369,8 @@ def record_incremental_success(
         "saved_at": timestamp.isoformat(),
         "filename": output_path.name,
         "content_hash": normalized_digest,
+        "etag": etag.strip(),
+        "last_modified": last_modified.strip(),
     }
 
 
