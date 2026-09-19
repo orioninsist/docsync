@@ -48,7 +48,7 @@ def test_throttling_manager_remains_crawler_request_manager() -> None:
 def test_primary_discovery_precedes_url_language_rejection() -> None:
     source = _source()
 
-    discovery = source.index(\n        "discovered_urls = await discover_and_enqueue_in_scope_links(" \n    )
+    discovery = source.index("discovered_urls = await discover_and_enqueue_in_scope_links(")
     insertion = source.index(
         "discovered_link_count = len(discovered_urls)",
         discovery,
