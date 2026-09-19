@@ -10,10 +10,8 @@ CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
 RUNTIME_PATH = ROOT / "src" / "docsync" / "crawler_runtime.py"
 ENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 
-
 def _source() -> str:
     return CRAWLER_PATH.read_text(encoding="utf-8")
-
 
 def _tree() -> ast.Module:
     return ast.parse(
@@ -21,14 +19,12 @@ def _tree() -> ast.Module:
         filename=str(CRAWLER_PATH),
     )
 
-
 def _run_crawler() -> ast.AsyncFunctionDef:
     for node in _tree().body:
         if isinstance(node, ast.AsyncFunctionDef) and node.name == "run_crawler":
             return node
 
     raise AssertionError("run_crawler() was not found")
-
 
 def _call_name(call: ast.Call) -> str:
     if isinstance(call.func, ast.Name):
@@ -39,14 +35,11 @@ def _call_name(call: ast.Call) -> str:
 
     return ""
 
-
 def test_official_throttling_manager_is_imported() -> None:
     source = RUNTIME_PATH.read_text(encoding="utf-8")
 
     assert "from crawlee.request_loaders import ThrottlingRequestManager" in source
     assert "from crawlee.storages import RequestQueue" in source
-
-
 
 def test_request_queue_is_opened_inside_runtime_builder() -> None:
     runtime_tree = ast.parse(
@@ -63,8 +56,6 @@ def test_request_queue_is_opened_inside_runtime_builder() -> None:
         for call in calls
     )
 
-
-
 def test_throttling_manager_wraps_request_queue() -> None:
     runtime_source = RUNTIME_PATH.read_text(encoding="utf-8")
     crawler_source = _source()
@@ -80,20 +71,15 @@ def test_throttling_manager_wraps_request_queue() -> None:
     assert "request_manager_opener=RequestQueue.open" not in runtime_source
     assert "runtime = await build_crawlee_runtime(" in crawler_source
 
-
-
 def test_http_and_playwright_share_throttling_manager() -> None:
     source = ENGINE_PATH.read_text(encoding="utf-8")
     assert '"request_manager": runtime.request_manager' in source
     assert "request_manager=runtime.request_manager" in source
 
-
 def test_legacy_handler_wait_is_removed() -> None:
     source = _source()
 
     assert "await crawl_delay_throttle.wait()" not in source
-
-
 
 def test_runtime_report_identifies_request_manager() -> None:
     source = _source()
