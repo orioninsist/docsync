@@ -35,7 +35,9 @@ def test_main_handler_discovers_before_url_language_rejection() -> None:
         "request_handler",
     )
 
-    discovery = source.index("discovered_urls = await discover_and_enqueue_in_scope_links(")
+    discovery = source.index(
+        "discovered_urls = await discover_and_enqueue_in_scope_links("
+    )
     enqueue = source.index("discovered_link_count = len(discovered_urls)")
     detection = source.index("language_decision = language_detector.detect_from_html(")
 
@@ -80,7 +82,9 @@ def test_inventory_discovers_before_language_classification() -> None:
         "request_handler",
     )
 
-    discovery = source.index("discovered_links = await discover_and_enqueue_in_scope_links(")
+    discovery = source.index(
+        "discovered_links = await discover_and_enqueue_in_scope_links("
+    )
     enqueue = source.index("for discovered_link in discovered_links:")
     detection = source.index("language_decision = detector.detect_from_html(")
 
