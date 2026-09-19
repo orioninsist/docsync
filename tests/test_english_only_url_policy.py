@@ -51,7 +51,6 @@ def test_english_google_urls_are_allowed(url: str) -> None:
 
     assert strategy.should_skip_url(url) is False
 
-
 def test_url_language_decision_records_query_source() -> None:
     decision = detect_explicit_url_language("https://developers.google.com/docs?hl=ja")
 
