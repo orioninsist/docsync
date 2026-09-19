@@ -39,7 +39,6 @@ def _call_name(call: ast.Call) -> str:
 
     return ""
 
-
 def test_official_throttling_manager_is_imported() -> None:
     source = RUNTIME_PATH.read_text(encoding="utf-8")
 
