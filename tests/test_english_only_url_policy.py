@@ -31,7 +31,6 @@ CRAWLER_PATH = ROOT / "src/docsync/crawler.py"
     ],
 )
 
-
 def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
     strategy = LanguageStrategy("en")
 
@@ -47,7 +46,6 @@ def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
         "https://en.developers.google.com/docs",
     ],
 )
-
 
 def test_english_google_urls_are_allowed(url: str) -> None:
     strategy = LanguageStrategy("en")
