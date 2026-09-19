@@ -303,7 +303,7 @@ class PlaywrightFallbackRenderer:
             browser_arguments=browser_arguments,
         )
         self._crawler: Any | None = None
-        self._crawler_task: asyncio.Task[None] | None = None
+        self._crawler_task: asyncio.Task[Any] | None = None
         self._pending: dict[str, asyncio.Future[tuple[str, list[str]]]] = {}
         self._request_sequence = 0
 
@@ -370,7 +370,7 @@ class PlaywrightFallbackRenderer:
 
         @crawler.failed_request_handler
         async def capture_failure(
-            context: PlaywrightCrawlingContext,
+            context: Any,
             error: Exception,
         ) -> None:
             future = self._pending.get(context.request.unique_key)
@@ -390,10 +390,10 @@ class PlaywrightFallbackRenderer:
         assert self._crawler is not None
 
         self._request_sequence += 1
-        unique_key = (
-            f"{url}#docsync-fallback-{id(self)}-{self._request_sequence}"
+        unique_key = f"{url}#docsync-fallback-{id(self)}-{self._request_sequence}"
+        future: asyncio.Future[tuple[str, list[str]]] = (
+            asyncio.get_running_loop().create_future()
         )
-        future = asyncio.get_running_loop().create_future()
         self._pending[unique_key] = future
         request = Request.from_url(url, unique_key=unique_key)
 
