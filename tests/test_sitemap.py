@@ -239,7 +239,6 @@ def test_fetch_text_url_propagates_redirect_security(
             10,
         )
 
-
 @pytest.mark.parametrize(
     "unsafe_child",
     [
