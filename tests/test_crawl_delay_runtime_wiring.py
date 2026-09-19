@@ -14,11 +14,13 @@ ENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 def _source() -> str:
     return CRAWLER_PATH.read_text(encoding="utf-8")
 
+
 def _tree() -> ast.Module:
     return ast.parse(
         _source(),
         filename=str(CRAWLER_PATH),
     )
+
 
 def _run_crawler() -> ast.AsyncFunctionDef:
     for node in _tree().body:
@@ -26,6 +28,7 @@ def _run_crawler() -> ast.AsyncFunctionDef:
             return node
 
     raise AssertionError("run_crawler() was not found")
+
 
 def _call_name(call: ast.Call) -> str:
     if isinstance(call.func, ast.Name):
@@ -58,6 +61,7 @@ def test_request_queue_is_opened_inside_runtime_builder() -> None:
         and call.func.attr == "open"
         for call in calls
     )
+
 
 def test_throttling_manager_wraps_request_queue() -> None:
     runtime_source = RUNTIME_PATH.read_text(encoding="utf-8")
