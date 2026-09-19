@@ -98,7 +98,15 @@ def test_state_loaders_use_explicit_state_directory(
     )
 
     assert incremental.load_content_hashes(state_dir) == content_hash_payload
-    assert incremental.load_url_state(state_dir) == url_state_payload
+    assert incremental.load_url_state(state_dir) == {
+        "https://example.com/docs": {
+            "saved_at": "2026-08-01T00:00:00+00:00",
+            "filename": "docs.md",
+            "content_hash": "abc123",
+            "etag": "",
+            "last_modified": "",
+        }
+    }
 
 
 def test_state_savers_use_explicit_state_directory(
