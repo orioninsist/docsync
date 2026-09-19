@@ -389,9 +389,9 @@ def discover_sitemap_urls_sync(
         if sitemap_type == "index":
             for location in locations:
                 child_sitemap = normalize_url(urljoin(final_url, location))
-                if normalized_http_origin(
-                    child_sitemap
-                ) != normalized_http_origin(normalized_start):
+                if normalized_http_origin(child_sitemap) != normalized_http_origin(
+                    normalized_start
+                ):
                     continue
 
                 if child_sitemap in queued_sitemaps:
