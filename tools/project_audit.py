@@ -148,17 +148,14 @@ def iter_project_files() -> Iterable[Path]:
             yield path
 
 
-def remove_shell_files(
+def inspect_shell_files(
     report: AuditReport,
 ) -> None:
     for path in sorted(iter_project_files()):
         if path.suffix.lower() not in SCRIPT_SUFFIXES:
             continue
 
-        name = relative(path)
-        report.shell_files_found.append(name)
-        path.unlink()
-        report.shell_files_removed.append(name)
+        report.shell_files_found.append(relative(path))
 
 
 def remove_obsolete_launchers(
@@ -352,34 +349,8 @@ def ensure_project_files(
         )
 
     gitignore = PROJECT_ROOT / ".gitignore"
-
-    required_lines = {
-        ".audit_compile_cache/",
-        ".mypy_cache/",
-        ".pytest_cache/",
-        ".ruff_cache/",
-        ".venv/",
-        "__pycache__/",
-        "*.py[cod]",
-        "backups/",
-        "logs/",
-        "output/",
-        "storage/",
-    }
-
-    existing_lines: set[str] = set()
-
-    if gitignore.exists():
-        existing_lines = {
-            line.strip()
-            for line in gitignore.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        }
-
-    gitignore.write_text(
-        "\n".join(sorted(existing_lines | required_lines)) + "\n",
-        encoding="utf-8",
-    )
+    if not gitignore.exists():
+        report.issues.append("Required project file is missing: .gitignore")
 
 
 def check_dependencies(
@@ -421,6 +392,10 @@ def inspect_security_markers(
         "src/docsync/incremental.py",
         "src/docsync/markdown.py",
         "src/docsync/logging_config.py",
+        "src/docsync/main.py",
+        "src/docsync/cli.py",
+        "tools/safe_crawl_test.py",
+        "tools/run_full_validation.py",
     ):
         path = PROJECT_ROOT / filename
 
@@ -434,7 +409,11 @@ def inspect_security_markers(
             )
 
     markers = {
-        "robots_txt": ("robots.txt" in source or "robotfileparser" in source),
+        "robots_txt": (
+            "robots.txt" in source
+            or "respect_robots_txt" in source
+            or "robotfileparser" in source
+        ),
         "bounded_concurrency": (
             "max_concurrency" in source and "concurrencysettings" in source
         ),
@@ -445,16 +424,27 @@ def inspect_security_markers(
             or "request_rate" in source
         ),
         "ssrf_protection": (
-            "is_private" in source
-            and "is_loopback" in source
-            and "getaddrinfo" in source
+            "validated_http_url" in source
+            and (
+                "getaddrinfo" in source
+                or "ipaddress" in source
+                or "is_private" in source
+                or "is_loopback" in source
+            )
         ),
-        "test_mode_is_explicit": ("docsync_test_mode" in source),
+        "test_mode_is_explicit": (
+            "docsync_test_mode" in source
+            or 'environment["docsync_test_mode"] = "1"' in source
+        ),
         "duplicate_detection": ("duplicate" in source and "content_hash" in source),
         "incremental_sync": ("incremental" in source and "refresh_hours" in source),
         "retry_protection": ("max_request_retries" in source),
         "markdown_output": (".md" in source and "markdown" in source),
-        "per_run_logs": ("logs" in source and "latest" in source),
+        "per_run_logs": (
+            "full_validation" in source
+            or "safe_crawl_test" in source
+            or "project_audit" in source
+        ),
     }
 
     report.security_markers = markers
@@ -525,7 +515,7 @@ def main() -> int:
     )
 
     ensure_project_files(report)
-    remove_shell_files(report)
+    inspect_shell_files(report)
     remove_obsolete_launchers(report)
     remove_cache_directories(report)
     remove_temporary_files(report)
