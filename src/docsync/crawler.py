@@ -10,21 +10,26 @@ from typing import Any, Final, cast
 from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
+from crawlee import HttpHeaders
 from crawlee.crawlers import (
     BasicCrawlingContext,
     BeautifulSoupCrawlingContext,
     PlaywrightCrawlingContext,
 )
+from crawlee.errors import ContextPipelineInterruptedError
 
 from docsync.config import Settings
 from docsync.crawl_engine import build_crawler
 from docsync.crawler_runtime import build_crawlee_runtime
 from docsync.incremental import (
+    conditional_request_headers,
     content_is_unchanged,
     filter_incremental_urls,
     load_content_hashes,
     load_url_state,
+    record_incremental_skip,
     record_incremental_success,
+    response_validators,
     save_content_hashes,
     save_url_state,
 )
@@ -378,6 +383,43 @@ async def run_crawler(
     crawler = crawler_build.crawler
     rendering_config = crawler_build.rendering_config
 
+    pending_http_validators: dict[str, tuple[str, str]] = {}
+
+    if resolved_mode == "http":
+        async def add_incremental_validators(context: BasicCrawlingContext) -> None:
+            headers = conditional_request_headers(
+                url=context.request.url,
+                url_state=url_state,
+                force_refresh=resolved_force_refresh,
+            )
+            if not headers:
+                return
+
+            existing_headers = context.request.headers or HttpHeaders()
+            context.request.headers = HttpHeaders(
+                {
+                    **dict(existing_headers),
+                    **headers,
+                }
+            )
+
+        async def handle_incremental_response(context: Any) -> None:
+            normalized_url = normalize_url(context.request.url)
+            status_code = context.http_response.status_code
+
+            if status_code == 304:
+                record_incremental_skip(normalized_url, stats)
+                raise ContextPipelineInterruptedError(
+                    f"Not modified: {normalized_url}"
+                )
+
+            pending_http_validators[normalized_url] = response_validators(
+                context.http_response.headers
+            )
+
+        crawler.pre_navigation_hook(add_incremental_validators)
+        crawler.post_navigation_hook(handle_incremental_response)
+
     active_requests = 0
 
     @crawler.router.default_handler
@@ -629,12 +671,23 @@ async def run_crawler(
                 }
             )
 
+            validator_url = normalize_url(document.url)
+            etag, last_modified = pending_http_validators.pop(
+                validator_url,
+                ("", ""),
+            )
+            if used_browser_fallback:
+                etag = ""
+                last_modified = ""
+
             record_incremental_success(
                 url=document.url,
                 output_path=document.output_path,
                 digest=document.content_hash,
                 hashes=content_hashes,
                 url_state=url_state,
+                etag=etag,
+                last_modified=last_modified,
             )
 
             stats.processed += 1
