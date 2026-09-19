@@ -410,9 +410,7 @@ async def run_crawler(
 
             if status_code == 304:
                 record_incremental_skip(normalized_url, stats)
-                raise ContextPipelineInterruptedError(
-                    f"Not modified: {normalized_url}"
-                )
+                raise ContextPipelineInterruptedError(f"Not modified: {normalized_url}")
 
             pending_http_validators[normalized_url] = response_validators(
                 context.http_response.headers
