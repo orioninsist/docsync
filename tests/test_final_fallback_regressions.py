@@ -115,7 +115,7 @@ def test_crawlee_renderer_waits_for_javascript_and_returns_html() -> None:
 
     assert "async def render_url_with_crawlee(" in source
     assert "PlaywrightCrawler(" in source
-    assert "await crawler.run([request])" in source
+    assert "asyncio.create_task(crawler.run())" in source
     assert '"networkidle"' in source
     assert "async_playwright" not in source
 
