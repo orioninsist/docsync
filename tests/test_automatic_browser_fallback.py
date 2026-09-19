@@ -36,7 +36,7 @@ def test_fallback_renderer_uses_crawlee_playwright_crawler() -> None:
 
     assert "PlaywrightCrawler" in source
     assert "async_playwright" not in source
-    assert "await crawler.run([url])" in source
+    assert "await crawler.run([request])" in source
 
 
 def test_http_empty_content_activates_browser_fallback() -> None:
