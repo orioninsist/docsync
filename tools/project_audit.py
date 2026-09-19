@@ -55,7 +55,6 @@ EXPECTED_ROOT_FILES = {
     "README.md",
     "TODO.md",
     "main.py",
-    "project_analysis.txt",
     "pyproject.toml",
     "uv.lock",
 }
