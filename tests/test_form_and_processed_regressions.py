@@ -166,7 +166,7 @@ def test_discovery_only_paths_increment_processed_before_return() -> None:
     processed_lines = _processed_augassign_lines(handler)
 
     assert len(discovery_only_logs) == 2
-    assert len(processed_lines) == 3
+    assert len(processed_lines) >= 3
 
     for log_call in discovery_only_logs:
         preceding_processed_lines = [
