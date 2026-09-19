@@ -304,19 +304,23 @@ def test_force_refresh_disables_conditional_request_headers() -> None:
         }
     }
 
-    assert incremental.conditional_request_headers(
-        url=url,
-        url_state=state,
-        force_refresh=True,
-    ) == {}
+    assert (
+        incremental.conditional_request_headers(
+            url=url,
+            url_state=state,
+            force_refresh=True,
+        )
+        == {}
+    )
 
 
 def test_response_validators_are_extracted_case_insensitively() -> None:
     class Headers:
-        values = {
-            "etag": '"docs-v2"',
-            "last-modified": "Sat, 19 Sep 2026 12:00:00 GMT",
-        }
+        def __init__(self) -> None:
+            self.values = {
+                "etag": '"docs-v2"',
+                "last-modified": "Sat, 19 Sep 2026 12:00:00 GMT",
+            }
 
         def get(self, key: str):
             return self.values.get(key.lower())
