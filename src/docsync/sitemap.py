@@ -14,6 +14,7 @@ from defusedxml import ElementTree as ET
 from docsync.url_security import (
     is_safe_in_scope_url,
     normalize_url,
+    normalized_http_origin,
     secure_urlopen,
     validated_http_url,
 )
@@ -388,11 +389,9 @@ def discover_sitemap_urls_sync(
         if sitemap_type == "index":
             for location in locations:
                 child_sitemap = normalize_url(urljoin(final_url, location))
-                child_parts = urlsplit(child_sitemap)
-
-                if (child_parts.hostname or "").lower() != (
-                    parsed_start.hostname or ""
-                ).lower():
+                if normalized_http_origin(
+                    child_sitemap
+                ) != normalized_http_origin(normalized_start):
                     continue
 
                 if child_sitemap in queued_sitemaps:
