@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
@@ -278,6 +279,155 @@ def normalized_blocked_resource_types(
     return frozenset(value.strip().lower() for value in values if value.strip())
 
 
+class PlaywrightFallbackRenderer:
+    """Crawl-scoped Playwright fallback renderer with one persistent crawler."""
+
+    def __init__(
+        self,
+        *,
+        headless: bool,
+        browser_type: str,
+        request_timeout_seconds: int,
+        network_idle_timeout_milliseconds: int = (
+            DEFAULT_NETWORK_IDLE_TIMEOUT_MILLISECONDS
+        ),
+        blocked_resource_types: frozenset[str] = BLOCKED_RESOURCE_TYPES,
+        browser_arguments: tuple[str, ...] = DEFAULT_BROWSER_ARGUMENTS,
+    ) -> None:
+        self._config = PlaywrightRenderingConfig(
+            headless=headless,
+            browser_type=browser_type,
+            request_timeout_seconds=request_timeout_seconds,
+            network_idle_timeout_milliseconds=network_idle_timeout_milliseconds,
+            blocked_resource_types=blocked_resource_types,
+            browser_arguments=browser_arguments,
+        )
+        self._crawler: Any | None = None
+        self._crawler_task: asyncio.Task[Any] | None = None
+        self._pending: dict[str, asyncio.Future[tuple[str, list[str]]]] = {}
+        self._request_sequence = 0
+
+    async def _start(self) -> None:
+        if self._crawler_task is not None:
+            return
+
+        from crawlee.crawlers import (
+            PlaywrightCrawler,
+            PlaywrightCrawlingContext,
+            PlaywrightPreNavCrawlingContext,
+        )
+        from crawlee.storage_clients import MemoryStorageClient
+        from crawlee.storages import RequestQueue
+
+        storage_client = MemoryStorageClient()
+        request_queue = await RequestQueue.open(
+            alias=None,
+            storage_client=storage_client,
+        )
+        crawler = PlaywrightCrawler(
+            request_manager=request_queue,
+            storage_client=storage_client,
+            keep_alive=True,
+            max_request_retries=0,
+            request_handler_timeout=timedelta(
+                seconds=self._config.request_timeout_seconds
+            ),
+            navigation_timeout=timedelta(seconds=self._config.request_timeout_seconds),
+            **self._config.crawler_options(),
+        )
+
+        @crawler.pre_navigation_hook
+        async def install_browser_controls(
+            context: PlaywrightPreNavCrawlingContext,
+        ) -> None:
+            await install_resource_blocking(
+                cast(PageLike, context.page),
+                blocked_resource_types=self._config.blocked_resource_types,
+            )
+
+        @crawler.router.default_handler
+        async def capture_html(context: PlaywrightCrawlingContext) -> None:
+            html = await render_page_html(
+                cast(PageLike, context.page),
+                url=context.request.url,
+                logger=context.log,
+                request_timeout_seconds=self._config.request_timeout_seconds,
+                network_idle_timeout_milliseconds=(
+                    self._config.network_idle_timeout_milliseconds
+                ),
+            )
+            extracted_requests = await context.extract_links(
+                selector="a",
+                attribute="href",
+                base_url=str(context.page.url),
+                strategy="all",
+            )
+            future = self._pending.get(context.request.unique_key)
+            if future is not None and not future.done():
+                future.set_result(
+                    (html, [request.url for request in extracted_requests])
+                )
+
+        @crawler.failed_request_handler
+        async def capture_failure(
+            context: Any,
+            error: Exception,
+        ) -> None:
+            future = self._pending.get(context.request.unique_key)
+            if future is not None and not future.done():
+                future.set_exception(error)
+
+        self._crawler = crawler
+        self._crawler_task = asyncio.create_task(crawler.run())
+        await asyncio.sleep(0)
+
+    async def render(self, url: str) -> tuple[str, list[str]]:
+        """Render one URL through the crawl-scoped persistent crawler."""
+
+        from crawlee import Request
+
+        await self._start()
+        assert self._crawler is not None
+
+        self._request_sequence += 1
+        unique_key = f"{url}#docsync-fallback-{id(self)}-{self._request_sequence}"
+        future: asyncio.Future[tuple[str, list[str]]] = (
+            asyncio.get_running_loop().create_future()
+        )
+        self._pending[unique_key] = future
+        request = Request.from_url(url, unique_key=unique_key)
+
+        try:
+            await self._crawler.add_requests([request])
+            return await future
+        finally:
+            self._pending.pop(unique_key, None)
+
+    async def close(self) -> None:
+        """Stop the persistent crawler and close its BrowserPool."""
+
+        if self._crawler_task is None:
+            return
+
+        assert self._crawler is not None
+        self._crawler.stop("DocsSync fallback renderer lifecycle completed.")
+        await self._crawler_task
+        self._crawler_task = None
+        self._crawler = None
+
+    async def __aenter__(self) -> PlaywrightFallbackRenderer:
+        await self._start()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
+    ) -> None:
+        await self.close()
+
+
 async def render_url_with_crawlee(
     url: str,
     *,
@@ -290,15 +440,9 @@ async def render_url_with_crawlee(
     blocked_resource_types: frozenset[str] = BLOCKED_RESOURCE_TYPES,
     browser_arguments: tuple[str, ...] = DEFAULT_BROWSER_ARGUMENTS,
 ) -> tuple[str, list[str]]:
-    """Render one URL and extract links through Crawlee-owned Playwright."""
+    """Render one URL through the reusable fallback renderer API."""
 
-    from crawlee.crawlers import (
-        PlaywrightCrawler,
-        PlaywrightCrawlingContext,
-        PlaywrightPreNavCrawlingContext,
-    )
-
-    config = PlaywrightRenderingConfig(
+    renderer = PlaywrightFallbackRenderer(
         headless=headless,
         browser_type=browser_type,
         request_timeout_seconds=request_timeout_seconds,
@@ -306,50 +450,7 @@ async def render_url_with_crawlee(
         blocked_resource_types=blocked_resource_types,
         browser_arguments=browser_arguments,
     )
-
-    rendered_html: str | None = None
-    rendered_links: list[str] = []
-
-    crawler = PlaywrightCrawler(
-        max_requests_per_crawl=1,
-        max_request_retries=0,
-        request_handler_timeout=timedelta(seconds=request_timeout_seconds),
-        navigation_timeout=timedelta(seconds=request_timeout_seconds),
-        **config.crawler_options(),
-    )
-
-    @crawler.pre_navigation_hook
-    async def install_browser_controls(
-        context: PlaywrightPreNavCrawlingContext,
-    ) -> None:
-        await install_resource_blocking(
-            cast(PageLike, context.page),
-            blocked_resource_types=config.blocked_resource_types,
-        )
-
-    @crawler.router.default_handler
-    async def capture_html(context: PlaywrightCrawlingContext) -> None:
-        nonlocal rendered_html
-        rendered_html = await render_page_html(
-            cast(PageLike, context.page),
-            url=context.request.url,
-            logger=context.log,
-            request_timeout_seconds=config.request_timeout_seconds,
-            network_idle_timeout_milliseconds=(
-                config.network_idle_timeout_milliseconds
-            ),
-        )
-        extracted_requests = await context.extract_links(
-            selector="a",
-            attribute="href",
-            base_url=str(context.page.url),
-            strategy="all",
-        )
-        rendered_links.extend(request.url for request in extracted_requests)
-
-    await crawler.run([url])
-
-    if rendered_html is None:
-        raise RuntimeError(f"Crawlee Playwright fallback produced no HTML: {url}")
-
-    return rendered_html, rendered_links
+    try:
+        return await renderer.render(url)
+    finally:
+        await renderer.close()

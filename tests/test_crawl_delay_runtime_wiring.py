@@ -84,6 +84,7 @@ def test_http_and_playwright_share_throttling_manager() -> None:
     assert '"request_manager": runtime.request_manager' in source
     assert "request_manager=runtime.request_manager" in source
 
+
 def test_legacy_handler_wait_is_removed() -> None:
     source = _source()
 

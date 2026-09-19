@@ -31,6 +31,7 @@ def test_discovered_urls_are_normalized_and_filtered() -> None:
         "https://support.google.com/youtube/article/123",
     ]
 
+
 def test_request_handler_discovers_before_first_export() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 

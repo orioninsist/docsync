@@ -71,7 +71,7 @@ def test_http_empty_markdown_triggers_playwright_renderer() -> None:
 
     assert 'resolved_mode != "http"' in source
     assert '"No meaningful Markdown content found:"' in source
-    assert "fallback_html, fallback_links = await render_url_with_crawlee(" in source
+    assert "fallback_html, fallback_links = await fallback_renderer.render(" in source
     assert "used_browser_fallback = True" in source
 
 
@@ -82,8 +82,8 @@ def test_javascript_only_fallback_reexports_rendered_dom() -> None:
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "render_url_with_crawlee"
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "render"
     ]
 
     export_calls = [
@@ -104,7 +104,7 @@ def test_rendered_dom_links_return_to_crawlee_queue() -> None:
     rendering_source = _source(RENDERING_PATH)
 
     assert "extracted_requests = await context.extract_links(" in rendering_source
-    assert "fallback_html, fallback_links = await render_url_with_crawlee(" in source
+    assert "fallback_html, fallback_links = await fallback_renderer.render(" in source
     assert "await fallback_context.enqueue_links(" in source
     assert "scope_pattern.search(candidate_url)" in source
     assert "EXCLUDED_URL_PATTERNS" in source
@@ -115,7 +115,7 @@ def test_crawlee_renderer_waits_for_javascript_and_returns_html() -> None:
 
     assert "async def render_url_with_crawlee(" in source
     assert "PlaywrightCrawler(" in source
-    assert "await crawler.run([url])" in source
+    assert "asyncio.create_task(crawler.run())" in source
     assert '"networkidle"' in source
     assert "async_playwright" not in source
 

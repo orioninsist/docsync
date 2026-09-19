@@ -171,11 +171,27 @@ def main() -> int:
 
     steps = [
         Step(
-            name="Project audit and safe cleanup",
+            name="Project audit",
             command=[
                 sys.executable,
                 "tools/project_audit.py",
             ],
+        ),
+        Step(
+            name="Ruff formatting",
+            command=["uv", "run", "ruff", "format", "--check", "."],
+        ),
+        Step(
+            name="Ruff lint",
+            command=["uv", "run", "ruff", "check", "."],
+        ),
+        Step(
+            name="MyPy",
+            command=["uv", "run", "mypy", "."],
+        ),
+        Step(
+            name="Pytest",
+            command=["uv", "run", "pytest", "-q"],
         ),
         Step(
             name="Python compilation",

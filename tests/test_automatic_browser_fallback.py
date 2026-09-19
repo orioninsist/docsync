@@ -36,7 +36,7 @@ def test_fallback_renderer_uses_crawlee_playwright_crawler() -> None:
 
     assert "PlaywrightCrawler" in source
     assert "async_playwright" not in source
-    assert "await crawler.run([url])" in source
+    assert "asyncio.create_task(crawler.run())" in source
 
 
 def test_http_empty_content_activates_browser_fallback() -> None:
@@ -45,7 +45,7 @@ def test_http_empty_content_activates_browser_fallback() -> None:
     assert "HTTP extraction returned no meaningful content" in source
     assert '"No meaningful Markdown content found:"' in source
     assert 'resolved_mode != "http"' in source
-    assert "fallback_html, fallback_links = await render_url_with_crawlee(" in source
+    assert "fallback_html, fallback_links = await fallback_renderer.render(" in source
 
 
 def test_rendered_html_is_exported_as_markdown() -> None:
@@ -68,7 +68,10 @@ def test_rendered_dom_links_use_crawlee_native_discovery() -> None:
     rendering_source = _source(RENDERING_PATH)
 
     assert "extracted_requests = await context.extract_links(" in rendering_source
-    assert "fallback_html, fallback_links = await render_url_with_crawlee(" in crawler_source
+    assert (
+        "fallback_html, fallback_links = await fallback_renderer.render("
+        in crawler_source
+    )
     assert "await fallback_context.enqueue_links(" in crawler_source
     assert "scope_pattern.search(candidate_url)" in crawler_source
     assert "EXCLUDED_URL_PATTERNS" in crawler_source

@@ -270,8 +270,7 @@ def test_package_crawler_uses_retry_constant_at_runtime_construction() -> None:
                 for node in ast.walk(option_assignment)
                 if isinstance(node, ast.Dict)
                 for key, value in zip(node.keys, node.values, strict=True)
-                if isinstance(key, ast.Constant)
-                and key.value == "max_request_retries"
+                if isinstance(key, ast.Constant) and key.value == "max_request_retries"
             )
         else:
             retry_keywords = [
@@ -559,8 +558,7 @@ def test_canonical_http_and_browser_crawlers_share_retry_budget() -> None:
                 for node in ast.walk(http_builder)
                 if isinstance(node, ast.Dict)
                 for key, value in zip(node.keys, node.values, strict=True)
-                if isinstance(key, ast.Constant)
-                and key.value == "max_request_retries"
+                if isinstance(key, ast.Constant) and key.value == "max_request_retries"
             )
         else:
             retry_keywords = [

@@ -77,6 +77,7 @@ def test_discovery_policy_rejects_explicit_non_english_urls() -> None:
         should_skip_url=strategy.should_skip_url,
     ) == ["https://developers.google.com/docs/english"]
 
+
 def test_http_and_playwright_use_the_same_filtered_url_list() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 

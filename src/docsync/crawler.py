@@ -33,9 +33,8 @@ from docsync.language_strategy import LanguageStrategy
 from docsync.markdown import MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
 from docsync.playwright_rendering import (
-    PlaywrightRenderingConfig,
+    PlaywrightFallbackRenderer,
     render_page_html,
-    render_url_with_crawlee,
 )
 from docsync.progress_events import CrawlEvent, CrawlEventSink
 from docsync.sitemap import discover_sitemap_urls
@@ -280,6 +279,16 @@ async def run_crawler(
 
     stats = CrawlStats(mode=resolved_mode)
 
+    fallback_renderer = (
+        PlaywrightFallbackRenderer(
+            headless=resolved_headless,
+            browser_type=resolved_browser_type,
+            request_timeout_seconds=settings.request_timeout_seconds,
+        )
+        if resolved_mode == "http"
+        else None
+    )
+
     def record_non_english_page() -> None:
         """Record one successfully handled non-English page."""
 
@@ -333,7 +342,7 @@ async def run_crawler(
 
     markdown_exporter = MarkdownExporter(resolved_output_dir)
     language_detector = EnglishPageDetector()
-    language_strategy = LanguageStrategy(settings.language)
+    language_strategy = LanguageStrategy(resolved_language)
 
     normalized_start_url = normalize_start_url(start_url)
 
@@ -505,22 +514,9 @@ async def run_crawler(
                     context.request.url,
                 )
 
-                fallback_config = PlaywrightRenderingConfig(
-                    headless=resolved_headless,
-                    browser_type=resolved_browser_type,
-                    request_timeout_seconds=settings.request_timeout_seconds,
-                )
-
-                fallback_html, fallback_links = await render_url_with_crawlee(
-                    context.request.url,
-                    headless=fallback_config.headless,
-                    browser_type=fallback_config.browser_type,
-                    request_timeout_seconds=(fallback_config.request_timeout_seconds),
-                    network_idle_timeout_milliseconds=(
-                        fallback_config.network_idle_timeout_milliseconds
-                    ),
-                    blocked_resource_types=(fallback_config.blocked_resource_types),
-                    browser_arguments=(fallback_config.browser_arguments),
+                assert fallback_renderer is not None
+                fallback_html, fallback_links = await fallback_renderer.render(
+                    context.request.url
                 )
 
                 soup = BeautifulSoup(
@@ -788,7 +784,11 @@ async def run_crawler(
         active_requests=0,
     )
 
-    await crawler.run(incremental_urls)
+    try:
+        await crawler.run(incremental_urls)
+    finally:
+        if fallback_renderer is not None:
+            await fallback_renderer.close()
 
     emit_event(
         phase="Finalizing",

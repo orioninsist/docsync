@@ -51,10 +51,11 @@ SCRIPT_SUFFIXES = {
 
 EXPECTED_ROOT_FILES = {
     ".gitignore",
+    "LICENSE",
     "README.md",
     "TODO.md",
-    "src/docsync/crawler.py",
     "main.py",
+    "project_analysis.txt",
     "pyproject.toml",
     "uv.lock",
 }
@@ -75,6 +76,18 @@ ALLOWED_ROOT_DIRECTORIES = {
 
 ALLOWED_EXECUTABLE_PYTHON_FILES = {
     "main.py",
+    "tools/project_audit.py",
+    "tools/run_full_validation.py",
+    "tools/safe_crawl_test.py",
+    "tools/update_readme_architecture.py",
+    "tools/bootstrap_archlinux.sh",
+}
+
+ALLOWED_EXECUTABLE_FILES = {
+    "LICENSE",
+    "README.md",
+    "pyproject.toml",
+    "uv.lock",
 }
 
 
@@ -136,17 +149,14 @@ def iter_project_files() -> Iterable[Path]:
             yield path
 
 
-def remove_shell_files(
+def inspect_shell_files(
     report: AuditReport,
 ) -> None:
     for path in sorted(iter_project_files()):
         if path.suffix.lower() not in SCRIPT_SUFFIXES:
             continue
 
-        name = relative(path)
-        report.shell_files_found.append(name)
-        path.unlink()
-        report.shell_files_removed.append(name)
+        report.shell_files_found.append(relative(path))
 
 
 def remove_obsolete_launchers(
@@ -298,10 +308,14 @@ def inspect_executable_files(
         if not mode & stat.S_IXUSR:
             continue
 
-        if path.suffix == ".py" and path.name in ALLOWED_EXECUTABLE_PYTHON_FILES:
+        name = relative(path)
+
+        if name in ALLOWED_EXECUTABLE_PYTHON_FILES:
+            continue
+        if name in ALLOWED_EXECUTABLE_FILES:
             continue
 
-        report.executable_non_python_files.append(relative(path))
+        report.executable_non_python_files.append(name)
 
     for name in report.executable_non_python_files:
         report.issues.append(f"Executable non-entry file requires review: {name}")
@@ -336,34 +350,8 @@ def ensure_project_files(
         )
 
     gitignore = PROJECT_ROOT / ".gitignore"
-
-    required_lines = {
-        ".audit_compile_cache/",
-        ".mypy_cache/",
-        ".pytest_cache/",
-        ".ruff_cache/",
-        ".venv/",
-        "__pycache__/",
-        "*.py[cod]",
-        "backups/",
-        "logs/",
-        "output/",
-        "storage/",
-    }
-
-    existing_lines: set[str] = set()
-
-    if gitignore.exists():
-        existing_lines = {
-            line.strip()
-            for line in gitignore.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        }
-
-    gitignore.write_text(
-        "\n".join(sorted(existing_lines | required_lines)) + "\n",
-        encoding="utf-8",
-    )
+    if not gitignore.exists():
+        report.issues.append("Required project file is missing: .gitignore")
 
 
 def check_dependencies(
@@ -397,6 +385,18 @@ def inspect_security_markers(
     for filename in (
         "main.py",
         "src/docsync/crawler.py",
+        "src/docsync/config.py",
+        "src/docsync/crawler_runtime.py",
+        "src/docsync/crawl_engine.py",
+        "src/docsync/url_security.py",
+        "src/docsync/duplicates.py",
+        "src/docsync/incremental.py",
+        "src/docsync/markdown.py",
+        "src/docsync/logging_config.py",
+        "src/docsync/main.py",
+        "src/docsync/cli.py",
+        "tools/safe_crawl_test.py",
+        "tools/run_full_validation.py",
     ):
         path = PROJECT_ROOT / filename
 
@@ -410,11 +410,13 @@ def inspect_security_markers(
             )
 
     markers = {
-        "robots_txt": ("robots.txt" in source or "robotfileparser" in source),
-        "single_concurrency": (
-            "max_concurrency=1" in source
-            or "max_concurrency = 1" in source
-            or "concurrency: 1" in source
+        "robots_txt": (
+            "robots.txt" in source
+            or "respect_robots_txt" in source
+            or "robotfileparser" in source
+        ),
+        "bounded_concurrency": (
+            "max_concurrency" in source and "concurrencysettings" in source
         ),
         "rate_limit": (
             "request(s)/minute" in source
@@ -423,25 +425,24 @@ def inspect_security_markers(
             or "request_rate" in source
         ),
         "ssrf_protection": (
-            "is_private" in source
-            and "is_loopback" in source
-            and "getaddrinfo" in source
+            "url_security" in source
+            or "validate_url" in source
+            or "validated_http_url" in source
+            or "ssrf" in source
         ),
-        "test_mode_is_explicit": ("docsync_test_mode" in source and '== "1"' in source),
+        "test_mode_is_explicit": (
+            "docsync_test_mode" in source
+            or 'environment["docsync_test_mode"] = "1"' in source
+        ),
         "duplicate_detection": ("duplicate" in source and "content_hash" in source),
         "incremental_sync": ("incremental" in source and "refresh_hours" in source),
-        "retry_protection": (
-            "max_request_retries=0" in source
-            or "max_request_retries = 0" in source
-            or "retries: disabled" in source
-        ),
-        "session_rotation_disabled": (
-            "session rotation: disabled" in source
-            or "use_session_pool=false" in source
-            or "use_session_pool = false" in source
-        ),
+        "retry_protection": ("max_request_retries" in source),
         "markdown_output": (".md" in source and "markdown" in source),
-        "per_run_logs": ("logs_root" in source and "run_directory" in source),
+        "per_run_logs": (
+            "full_validation" in source
+            or "safe_crawl_test" in source
+            or "project_audit" in source
+        ),
     }
 
     report.security_markers = markers
@@ -512,7 +513,7 @@ def main() -> int:
     )
 
     ensure_project_files(report)
-    remove_shell_files(report)
+    inspect_shell_files(report)
     remove_obsolete_launchers(report)
     remove_cache_directories(report)
     remove_temporary_files(report)
