@@ -45,6 +45,8 @@ def test_recent_url_inside_refresh_window() -> None:
             "saved_at": (now - timedelta(hours=2)).isoformat(),
             "filename": "docs.md",
             "content_hash": "abc",
+            "etag": "",
+            "last_modified": "",
         }
     }
 
@@ -170,6 +172,8 @@ def test_record_success_updates_legacy_stores(
             "saved_at": saved_at.isoformat(),
             "filename": "docs.md",
             "content_hash": "abc123",
+            "etag": "",
+            "last_modified": "",
         }
     }
 
@@ -263,3 +267,60 @@ def test_url_state_loader_discards_invalid_records(
             "content_hash": "abc",
         }
     }
+
+
+
+def test_conditional_request_headers_use_saved_validators() -> None:
+    url = "https://example.com/docs"
+    state = {
+        url: {
+            "saved_at": datetime.now(UTC).isoformat(),
+            "filename": "docs.md",
+            "content_hash": "abc123",
+            "etag": '"docs-v1"',
+            "last_modified": "Fri, 18 Sep 2026 12:00:00 GMT",
+        }
+    }
+
+    assert incremental.conditional_request_headers(
+        url=url,
+        url_state=state,
+    ) == {
+        "If-None-Match": '"docs-v1"',
+        "If-Modified-Since": "Fri, 18 Sep 2026 12:00:00 GMT",
+    }
+
+
+def test_force_refresh_disables_conditional_request_headers() -> None:
+    url = "https://example.com/docs"
+    state = {
+        url: {
+            "saved_at": datetime.now(UTC).isoformat(),
+            "filename": "docs.md",
+            "content_hash": "abc123",
+            "etag": '"docs-v1"',
+            "last_modified": "",
+        }
+    }
+
+    assert incremental.conditional_request_headers(
+        url=url,
+        url_state=state,
+        force_refresh=True,
+    ) == {}
+
+
+def test_response_validators_are_extracted_case_insensitively() -> None:
+    class Headers:
+        values = {
+            "etag": '"docs-v2"',
+            "last-modified": "Sat, 19 Sep 2026 12:00:00 GMT",
+        }
+
+        def get(self, key: str):
+            return self.values.get(key.lower())
+
+    assert incremental.response_validators(Headers()) == (
+        '"docs-v2"',
+        "Sat, 19 Sep 2026 12:00:00 GMT",
+    )
