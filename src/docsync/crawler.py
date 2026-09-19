@@ -34,7 +34,6 @@ from docsync.markdown import MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
 from docsync.playwright_rendering import (
     PlaywrightFallbackRenderer,
-    PlaywrightRenderingConfig,
     render_page_html,
 )
 from docsync.progress_events import CrawlEvent, CrawlEventSink
@@ -515,15 +514,7 @@ async def run_crawler(
                     context.request.url,
                 )
 
-                fallback_config = PlaywrightRenderingConfig(
-                    headless=resolved_headless,
-                    browser_type=resolved_browser_type,
-                    request_timeout_seconds=settings.request_timeout_seconds,
-                )
-
-                if fallback_renderer is None:
-                    raise RuntimeError("Playwright fallback renderer is unavailable")
-
+                assert fallback_renderer is not None
                 fallback_html, fallback_links = await fallback_renderer.render(
                     context.request.url
                 )
