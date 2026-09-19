@@ -784,7 +784,11 @@ async def run_crawler(
         active_requests=0,
     )
 
-    await crawler.run(incremental_urls)
+    try:
+        await crawler.run(incremental_urls)
+    finally:
+        if fallback_renderer is not None:
+            await fallback_renderer.close()
 
     emit_event(
         phase="Finalizing",
