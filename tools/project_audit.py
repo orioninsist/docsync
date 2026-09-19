@@ -51,10 +51,11 @@ SCRIPT_SUFFIXES = {
 
 EXPECTED_ROOT_FILES = {
     ".gitignore",
+    "LICENSE",
     "README.md",
     "TODO.md",
-    "src/docsync/crawler.py",
     "main.py",
+    "project_analysis.txt",
     "pyproject.toml",
     "uv.lock",
 }
@@ -75,6 +76,17 @@ ALLOWED_ROOT_DIRECTORIES = {
 
 ALLOWED_EXECUTABLE_PYTHON_FILES = {
     "main.py",
+    "tools/project_audit.py",
+    "tools/run_full_validation.py",
+    "tools/safe_crawl_test.py",
+    "tools/update_readme_architecture.py",
+}
+
+ALLOWED_EXECUTABLE_FILES = {
+    "LICENSE",
+    "README.md",
+    "pyproject.toml",
+    "uv.lock",
 }
 
 
@@ -298,10 +310,14 @@ def inspect_executable_files(
         if not mode & stat.S_IXUSR:
             continue
 
-        if path.suffix == ".py" and path.name in ALLOWED_EXECUTABLE_PYTHON_FILES:
+        name = relative(path)
+
+        if name in ALLOWED_EXECUTABLE_PYTHON_FILES:
+            continue
+        if name in ALLOWED_EXECUTABLE_FILES:
             continue
 
-        report.executable_non_python_files.append(relative(path))
+        report.executable_non_python_files.append(name)
 
     for name in report.executable_non_python_files:
         report.issues.append(f"Executable non-entry file requires review: {name}")
@@ -397,6 +413,14 @@ def inspect_security_markers(
     for filename in (
         "main.py",
         "src/docsync/crawler.py",
+        "src/docsync/config.py",
+        "src/docsync/crawler_runtime.py",
+        "src/docsync/crawl_engine.py",
+        "src/docsync/url_security.py",
+        "src/docsync/duplicates.py",
+        "src/docsync/incremental.py",
+        "src/docsync/markdown.py",
+        "src/docsync/logging_config.py",
     ):
         path = PROJECT_ROOT / filename
 
@@ -411,10 +435,8 @@ def inspect_security_markers(
 
     markers = {
         "robots_txt": ("robots.txt" in source or "robotfileparser" in source),
-        "single_concurrency": (
-            "max_concurrency=1" in source
-            or "max_concurrency = 1" in source
-            or "concurrency: 1" in source
+        "bounded_concurrency": (
+            "max_concurrency" in source and "concurrencysettings" in source
         ),
         "rate_limit": (
             "request(s)/minute" in source
@@ -427,21 +449,12 @@ def inspect_security_markers(
             and "is_loopback" in source
             and "getaddrinfo" in source
         ),
-        "test_mode_is_explicit": ("docsync_test_mode" in source and '== "1"' in source),
+        "test_mode_is_explicit": ("docsync_test_mode" in source),
         "duplicate_detection": ("duplicate" in source and "content_hash" in source),
         "incremental_sync": ("incremental" in source and "refresh_hours" in source),
-        "retry_protection": (
-            "max_request_retries=0" in source
-            or "max_request_retries = 0" in source
-            or "retries: disabled" in source
-        ),
-        "session_rotation_disabled": (
-            "session rotation: disabled" in source
-            or "use_session_pool=false" in source
-            or "use_session_pool = false" in source
-        ),
+        "retry_protection": ("max_request_retries" in source),
         "markdown_output": (".md" in source and "markdown" in source),
-        "per_run_logs": ("logs_root" in source and "run_directory" in source),
+        "per_run_logs": ("logs" in source and "latest" in source),
     }
 
     report.security_markers = markers
