@@ -4,15 +4,179 @@ A documentation crawling and synchronization engine built with Python, Crawlee, 
 
 docsync crawls documentation websites, extracts clean Markdown content, validates language requirements, and maintains incremental synchronization state.
 
-It is designed for:
+## Quick usage
 
-- Documentation backups
-- Offline documentation archives
-- AI dataset preparation
-- Knowledge base generation
-- Internal documentation mirrors
-- Automated documentation synchronization
+The normal command is:
 
+```bash
+uv run docsync https://example.com/docs --language en
+```
+
+By default, generated Markdown is written under:
+
+```text
+data/markdown/
+```
+
+and persistent incremental state is written under:
+
+```text
+data/state/
+```
+
+The Markdown files are the human-facing crawl result. The state files are not documents; they are required only if you want later runs to revalidate/update the same crawl incrementally.
+
+### Keep vs delete after a crawl
+
+For a normal crawl with default directories:
+
+```text
+data/
+├── markdown/                  KEEP: generated Markdown documents
+│   ├── <host>/.../*.md       KEEP: documentation output
+│   └── crawl-report.json     OPTIONAL: machine-readable crawl summary
+└── state/
+    ├── content_hashes.json    KEEP for incremental sync
+    └── url_state.json         KEEP for incremental sync
+```
+
+`logs/` contains runtime/validation logs. You may delete generated log files when you no longer need diagnostics. The tracked `logs/.gitkeep` file should stay in the repository.
+
+If you delete `data/state/`, the next crawl loses previous ETag/Last-Modified/hash history and behaves like a fresh synchronization. Deleting `data/markdown/` removes the generated documentation itself.
+
+### Choose your own output folder
+
+Yes. You can put the Markdown output anywhere:
+
+```bash
+uv run docsync https://example.com/docs \
+  --language en \
+  --output-dir /mnt/local/docs/example
+```
+
+For reliable incremental synchronization, give that crawl its own state directory too:
+
+```bash
+uv run docsync https://example.com/docs \
+  --language en \
+  --output-dir /mnt/local/docs/example/markdown \
+  --state-dir /mnt/local/docs/example/state
+```
+
+After the first run, use the same `--output-dir` and `--state-dir` again. Existing logical pages are updated in place and unchanged pages can be skipped/revalidated using saved state.
+
+### JavaScript-rendered documentation
+
+```bash
+uv run docsync https://example.com/docs \
+  --language en \
+  --mode playwright \
+  --browser-type chromium
+```
+
+Aliases `--javascript`, `--browser`, and `--playwright` also select Playwright mode.
+
+### Inventory only
+
+To discover/classify the scoped site without writing Markdown:
+
+```bash
+uv run docsync https://example.com/docs \
+  --language en \
+  --inventory-only
+```
+
+This writes `site-inventory.json` into the selected state directory and does not write Markdown.
+
+### Full CLI reference
+
+```text
+uv run docsync [URL] [OPTIONS]
+
+URL
+  start_url
+      Initial URL to crawl. If omitted, DOCSYNC_START_URL is used.
+
+OPTIONS
+  --output-dir PATH
+  --output-folder PATH
+      Directory for generated Markdown files.
+      Default: data/markdown
+
+  --state-dir PATH
+      Persistent incremental state directory.
+      Default: data/state
+
+  --max-concurrency N
+      Maximum concurrent crawler tasks.
+      Environment default: 5
+
+  --max-requests N
+      Maximum requests in one crawl.
+      Environment default: 10000
+
+  --requests-per-minute N
+      Maximum request rate.
+      Valid configured range: 1..60
+      Environment default: 6
+
+  --language {en,tr}
+      Target language. Only English and Turkish are supported.
+      Default: en
+
+  --refresh-hours N
+      Skip recently saved URLs for this many hours.
+      0 disables the refresh window.
+      Valid range: 0..8760
+      Default: 0
+
+  --force-refresh
+      Ignore incremental URL state and request pages again.
+
+  --mode {http,playwright}
+      Crawler mode.
+      Default: http
+
+  --javascript
+  --browser
+  --playwright
+      Aliases for --mode playwright.
+
+  --show-browser
+      Show the Playwright browser window.
+      Default: headless.
+
+  --browser-type {chromium,firefox,webkit}
+      Playwright browser engine.
+      Default: chromium
+
+  --inventory-only
+      Discover/classify URLs without writing Markdown.
+      Writes site-inventory.json to the state directory.
+
+  -h, --help
+      Show CLI help.
+```
+
+Environment variables are also supported:
+
+```text
+DOCSYNC_START_URL
+DOCSYNC_OUTPUT_DIR
+DOCSYNC_STATE_DIR
+DOCSYNC_LOG_DIR
+DOCSYNC_MAX_CONCURRENCY
+DOCSYNC_MAX_REQUESTS
+DOCSYNC_REQUEST_TIMEOUT_SECONDS
+DOCSYNC_RESPECT_ROBOTS_TXT
+DOCSYNC_LANGUAGE
+DOCSYNC_REQUESTS_PER_MINUTE
+DOCSYNC_REFRESH_HOURS
+DOCSYNC_FORCE_REFRESH
+DOCSYNC_MODE
+DOCSYNC_HEADLESS
+DOCSYNC_BROWSER_TYPE
+```
 
 ---
 
