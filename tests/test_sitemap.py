@@ -11,6 +11,7 @@ from docsync.sitemap import (
     SITEMAP_MAX_PAYLOAD_BYTES,
     SitemapDiscoveryResult,
     decode_sitemap_payload,
+    discover_sitemap_urls_sync,
     extract_robots_sitemaps,
     fetch_text_url,
     sitemap_candidate_urls,
@@ -239,3 +240,47 @@ def test_fetch_text_url_propagates_redirect_security(
             "https://example.com/sitemap.xml",
             10,
         )
+
+
+
+@pytest.mark.parametrize(
+    "unsafe_child",
+    [
+        "http://example.com/child.xml",
+        "https://example.com:8443/child.xml",
+    ],
+)
+def test_sitemap_index_rejects_cross_origin_child(
+    monkeypatch: pytest.MonkeyPatch,
+    unsafe_child: str,
+) -> None:
+    fetched: list[str] = []
+
+    def fake_fetch(url: str, timeout_seconds: int) -> tuple[str, str]:
+        del timeout_seconds
+        fetched.append(url)
+
+        if url == "https://example.com/robots.txt":
+            return url, "User-agent: *\nSitemap: https://example.com/index.xml\n"
+
+        if url == "https://example.com/index.xml":
+            return (
+                url,
+                (
+                    '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+                    f"<sitemap><loc>{unsafe_child}</loc></sitemap>"
+                    "</sitemapindex>"
+                ),
+            )
+
+        raise ValueError("fixture has no sitemap at this URL")
+
+    monkeypatch.setattr("docsync.sitemap.fetch_text_url", fake_fetch)
+
+    discover_sitemap_urls_sync(
+        start_url="https://example.com/",
+        timeout_seconds=10,
+        max_urls=100,
+    )
+
+    assert unsafe_child not in fetched
