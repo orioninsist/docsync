@@ -13,12 +13,6 @@ import docsync.incremental as incremental
 
 
 @dataclass
-class Config:
-    refresh_hours: int = 24
-    force_refresh: bool = False
-
-
-@dataclass
 class Stats:
     incremental_skipped: int = 0
     incremental_skipped_urls: set[str] = field(default_factory=set)
@@ -46,7 +40,8 @@ def test_recent_url_inside_refresh_window() -> None:
 
     assert incremental.is_recently_saved(
         "https://example.com/docs/",
-        Config(refresh_hours=24),
+        24,
+        False,
         state,
         now=now,
     )
@@ -72,21 +67,23 @@ def test_expired_url_requires_refresh() -> None:
 
     assert not incremental.is_recently_saved(
         "https://example.com/docs",
-        Config(refresh_hours=24),
+        24,
+        False,
         state,
         now=now,
     )
 
 
 @pytest.mark.parametrize(
-    "config",
+    ("refresh_hours", "force_refresh"),
     [
-        Config(refresh_hours=0),
-        Config(force_refresh=True),
+        (0, False),
+        (24, True),
     ],
 )
 def test_disabled_incremental_filter_requires_refresh(
-    config: Config,
+    refresh_hours: int,
+    force_refresh: bool,
 ) -> None:
     state = {
         "https://example.com/docs": {
@@ -98,7 +95,8 @@ def test_disabled_incremental_filter_requires_refresh(
 
     assert not incremental.is_recently_saved(
         "https://example.com/docs",
-        config,
+        refresh_hours,
+        force_refresh,
         state,
     )
 
@@ -111,7 +109,7 @@ def test_filter_normalizes_deduplicates_and_records_skip(
     monkeypatch.setattr(
         incremental,
         "is_recently_saved",
-        lambda url, config, state: url.endswith("/recent"),
+        lambda url, refresh_hours, force_refresh, state: url.endswith("/recent"),
     )
 
     selected = incremental.filter_incremental_urls(
@@ -121,7 +119,8 @@ def test_filter_normalizes_deduplicates_and_records_skip(
             "https://example.com/recent/",
             "https://example.com/b?utm_source=test",
         ],
-        Config(),
+        24,
+        False,
         stats,
         {},
     )
