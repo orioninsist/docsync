@@ -471,12 +471,18 @@ async def run_crawler(
                 )
                 return
 
+            emit_event(
+                phase="Extracting",
+                current_url=context.request.url,
+                active_requests=active_requests,
+            )
             discovered_urls = await discover_and_enqueue_in_scope_links(
                 context=cast(Any, context),
                 base_url=effective_url,
                 scope_pattern=scope_pattern,
                 should_skip_url=language_strategy.should_skip_url,
             )
+            discovered_link_count = len(discovered_urls)
 
             content_language = None
             if resolved_mode == "http":
@@ -495,6 +501,17 @@ async def run_crawler(
                 "insufficient-text",
                 "language-detector-no-result",
             }:
+                context.log.info(
+                    "Non-English page skipped after discovery: %s",
+                    effective_url,
+                )
+                await context.push_data(
+                    {
+                        "outcome": "non_english",
+                        "url": context.request.url,
+                        "discovered_link_count": discovered_link_count,
+                    }
+                )
                 return
 
             title_element = soup.title
@@ -514,15 +531,22 @@ async def run_crawler(
                 )
             except ValueError as error:
                 if str(error).startswith("No meaningful Markdown content found:"):
-                    # For AdaptivePlaywrightCrawler an empty static result intentionally
-                    # emits no dataset item. Its native result_checker then retries the
-                    # request with Playwright. Browser discovery-only results still
-                    # commit their enqueued links even without a dataset item.
+                    # The adaptive result checker rejects this marker for static
+                    # rendering, which makes Crawlee retry with Playwright. The
+                    # browser result is committed normally if it is still empty.
+                    await context.push_data(
+                        {
+                            "outcome": "empty",
+                            "url": context.request.url,
+                            "discovered_link_count": discovered_link_count,
+                        }
+                    )
                     return
                 raise
 
             await context.push_data(
                 {
+                    "outcome": "document",
                     "url": document.url,
                     "title": document.title,
                     "language": document.language,
@@ -634,6 +658,15 @@ async def run_crawler(
         page = await dataset.get_data()
 
         for item in page.items:
+            outcome = str(item.get("outcome", "document"))
+            if outcome == "non_english":
+                record_non_english_page()
+                continue
+            if outcome == "empty":
+                stats.empty_pages += 1
+                stats.processed += 1
+                continue
+
             document = MarkdownDocument(
                 url=str(item["url"]),
                 title=str(item["title"]),
