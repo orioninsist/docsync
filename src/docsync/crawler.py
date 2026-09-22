@@ -839,13 +839,11 @@ async def run_crawler(
 
     if not incremental_urls:
         emit_event(
-            phase="Nothing to crawl",
+            phase="Resuming queue or nothing to crawl",
             queued=0,
             discovered=len(initial_urls),
             active_requests=0,
         )
-        finalize_crawl()
-        return stats
 
     @crawler.failed_request_handler
     async def failed_handler(
