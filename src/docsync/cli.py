@@ -5,7 +5,6 @@ import asyncio
 import os
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 from docsync.config import Settings
 from docsync.inventory import run_inventory
