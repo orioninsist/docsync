@@ -41,5 +41,6 @@ def build_sitemap_request_loader(
         sitemap_urls=sitemap_seed_urls(start_url),
         http_client=http_client,
         enqueue_strategy="same-hostname",
+        persist_state_key="DOCSYNC_SITEMAP_REQUEST_LOADER_STATE",
         transform_request_function=transform_request_function,
     )
