@@ -29,20 +29,6 @@ class CrawlStats:
     incremental_skipped: int = 0
     incremental_skipped_urls: set[str] = field(default_factory=set)
 
-    def record_incremental_skip(self, url: str) -> bool:
-        """Record one unique incremental skip.
-
-        Returns ``True`` only when the URL was newly added.
-        """
-
-        normalized = url.strip()
-        if not normalized or normalized in self.incremental_skipped_urls:
-            return False
-
-        self.incremental_skipped_urls.add(normalized)
-        self.incremental_skipped = len(self.incremental_skipped_urls)
-        return True
-
     def as_dict(self, *, finished_at: datetime | None = None) -> dict[str, Any]:
         """Return the stable JSON-compatible crawl metrics payload."""
 
