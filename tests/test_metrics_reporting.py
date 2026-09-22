@@ -38,9 +38,6 @@ def test_crawl_stats_defaults_are_zeroed() -> None:
     assert stats.non_english == 0
     assert stats.failed == 0
     assert stats.sitemap_urls == 0
-    assert stats.sitemap_files_checked == 0
-    assert stats.sitemap_files_found == 0
-    assert stats.sitemap_errors == 0
     assert stats.incremental_skipped == 0
     assert stats.incremental_skipped_urls == set()
     assert stats.exit_code == 0
@@ -95,9 +92,6 @@ def test_as_dict_preserves_legacy_metric_names() -> None:
         non_english=3,
         failed=4,
         sitemap_urls=5,
-        sitemap_files_checked=6,
-        sitemap_files_found=7,
-        sitemap_errors=8,
         incremental_skipped=2,
         incremental_skipped_urls={
             "https://example.com/b",
@@ -119,9 +113,6 @@ def test_as_dict_preserves_legacy_metric_names() -> None:
         "non_english": 3,
         "failed": 4,
         "sitemap_urls": 5,
-        "sitemap_files_checked": 6,
-        "sitemap_files_found": 7,
-        "sitemap_errors": 8,
         "incremental_skipped": 2,
         "incremental_skipped_urls": [
             "https://example.com/a",
