@@ -8,11 +8,6 @@ from bs4 import BeautifulSoup
 
 from docsync.markdown import MarkdownExporter
 
-ROOT = Path(__file__).resolve().parents[1]
-CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
-MARKDOWN_PATH = ROOT / "src" / "docsync" / "markdown.py"
-
-
 def test_form_explanatory_text_is_preserved(
     tmp_path: Path,
 ) -> None:
@@ -84,19 +79,3 @@ def test_url_only_empty_page_is_still_rejected(
     else:
         raise AssertionError("Expected empty page rejection")
 
-
-def test_form_is_not_globally_removed() -> None:
-    source = MARKDOWN_PATH.read_text(encoding="utf-8")
-
-    remove_block = source.split(
-        "REMOVE_SELECTORS = (",
-        1,
-    )[1].split(
-        ")",
-        1,
-    )[0]
-
-    assert '"form"' not in remove_block
-    assert '"input"' in remove_block
-    assert '"textarea"' in remove_block
-    assert '"select"' in remove_block
