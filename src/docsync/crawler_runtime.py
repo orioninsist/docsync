@@ -7,6 +7,8 @@ from datetime import timedelta
 from pathlib import Path
 
 from crawlee import ConcurrencySettings
+from crawlee._service_locator import ServiceLocator
+from crawlee.events import LocalEventManager
 from crawlee.configuration import Configuration
 from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient, StorageClient
@@ -19,6 +21,7 @@ class CrawleeRuntime:
 
     storage_client: StorageClient
     configuration: Configuration
+    service_locator: ServiceLocator
     request_manager: ThrottlingRequestManager[RequestQueue]
     concurrency_settings: ConcurrencySettings
     request_handler_timeout: timedelta
@@ -42,6 +45,12 @@ async def build_crawlee_runtime(
         purge_on_start=False,
     )
     storage_client = FileSystemStorageClient()
+    event_manager = LocalEventManager().from_config(config=configuration)
+    runtime_service_locator = ServiceLocator(
+        configuration=configuration,
+        event_manager=event_manager,
+        storage_client=storage_client,
+    )
 
     request_queue = await RequestQueue.open(
         name="docsync-main",
@@ -53,6 +62,7 @@ async def build_crawlee_runtime(
         inner=request_queue,
         domains=[hostname],
         request_manager_opener=RequestQueue.open,
+        service_locator=runtime_service_locator,
     )
 
     concurrency_settings = ConcurrencySettings(
@@ -65,6 +75,7 @@ async def build_crawlee_runtime(
     return CrawleeRuntime(
         storage_client=storage_client,
         configuration=configuration,
+        service_locator=runtime_service_locator,
         request_manager=request_manager,
         concurrency_settings=concurrency_settings,
         request_handler_timeout=timedelta(seconds=request_timeout_seconds),
