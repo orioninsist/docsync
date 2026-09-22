@@ -26,9 +26,6 @@ class CrawlStats:
     non_english: int = 0
     failed: int = 0
     sitemap_urls: int = 0
-    sitemap_files_checked: int = 0
-    sitemap_files_found: int = 0
-    sitemap_errors: int = 0
     incremental_skipped: int = 0
     incremental_skipped_urls: set[str] = field(default_factory=set)
 
@@ -63,9 +60,6 @@ class CrawlStats:
             "non_english": self.non_english,
             "failed": self.failed,
             "sitemap_urls": self.sitemap_urls,
-            "sitemap_files_checked": self.sitemap_files_checked,
-            "sitemap_files_found": self.sitemap_files_found,
-            "sitemap_errors": self.sitemap_errors,
             "incremental_skipped": self.incremental_skipped,
             "incremental_skipped_urls": sorted(self.incremental_skipped_urls),
         }
