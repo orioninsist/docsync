@@ -42,6 +42,7 @@ from docsync.url_security import (
     validated_http_url,
 )
 
+
 def _silence_crawlee_runtime_logs() -> None:
     """Disable Crawlee internal terminal logging."""
 
