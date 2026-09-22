@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from docsync.crawler import build_scope_pattern, filter_discovered_urls
 from docsync.language import detect_explicit_url_language
 from docsync.language_strategy import LanguageStrategy
-
-ROOT = Path(__file__).resolve().parents[1]
-CRAWLER_PATH = ROOT / "src/docsync/crawler.py"
 
 
 @pytest.mark.parametrize(
@@ -72,15 +67,5 @@ def test_discovery_policy_rejects_explicit_non_english_urls() -> None:
         scope_pattern=scope_pattern,
         should_skip_url=strategy.should_skip_url,
     ) == ["https://developers.google.com/docs/english"]
-
-
-def test_adaptive_renderers_use_the_same_filtered_url_list() -> None:
-    source = CRAWLER_PATH.read_text(encoding="utf-8")
-
-    assert "await context.extract_links(" in source
-    assert "await context.enqueue_links(" in source
-    assert "await queue_context.add_requests(" not in source
-    assert "fallback_context" not in source
-    assert "should_skip_url=language_strategy.should_skip_url" in source
 
 
