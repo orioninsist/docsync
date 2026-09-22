@@ -1,83 +1,38 @@
-"""Automatic HTTP-to-Playwright fallback contracts."""
+"""Native adaptive HTTP-to-Playwright fallback contracts."""
 
-from __future__ import annotations
-
-import ast
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
-RENDERING_PATH = ROOT / "src" / "docsync" / "playwright_rendering.py"
+ENGINE = Path("src/docsync/crawl_engine.py")
+CRAWLER = Path("src/docsync/crawler.py")
+RENDERING = Path("src/docsync/playwright_rendering.py")
 
 
-def _source(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+def test_http_mode_uses_native_adaptive_crawler() -> None:
+    source = ENGINE.read_text(encoding="utf-8")
+    assert "AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(" in source
+    assert "result_checker=adaptive_result_is_meaningful" in source
 
 
-def _tree(path: Path) -> ast.Module:
-    return ast.parse(
-        _source(path),
-        filename=str(path),
-    )
-
-
-def test_crawlee_url_renderer_exists() -> None:
-    functions = {
-        node.name
-        for node in _tree(RENDERING_PATH).body
-        if isinstance(node, ast.AsyncFunctionDef)
-    }
-
-    assert "render_url_with_crawlee" in functions
-
-
-def test_fallback_renderer_uses_crawlee_playwright_crawler() -> None:
-    source = _source(RENDERING_PATH)
-
-    assert "PlaywrightCrawler" in source
-    assert "async_playwright" not in source
-    assert "asyncio.create_task(crawler.run())" in source
-
-
-def test_http_empty_content_activates_browser_fallback() -> None:
-    source = _source(CRAWLER_PATH)
-
-    assert "HTTP extraction returned no meaningful content" in source
+def test_empty_content_is_an_adaptive_rejection_marker() -> None:
+    source = CRAWLER.read_text(encoding="utf-8")
+    assert '"outcome": "empty"' in source
     assert '"No meaningful Markdown content found:"' in source
-    assert 'resolved_mode != "http"' in source
-    assert "fallback_html, fallback_links = await fallback_renderer.render(" in source
 
 
-def test_rendered_html_is_exported_as_markdown() -> None:
-    tree = _tree(CRAWLER_PATH)
-
-    export_calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "export"
-    ]
-
-    assert len(export_calls) >= 2
-    assert "used_browser_fallback = True" in _source(CRAWLER_PATH)
+def test_selected_renderer_uses_one_markdown_export_path() -> None:
+    source = CRAWLER.read_text(encoding="utf-8")
+    assert source.count("document = markdown_exporter.export(") == 1
+    assert "await context.push_data(" in source
 
 
-def test_rendered_dom_links_use_crawlee_native_discovery() -> None:
-    crawler_source = _source(CRAWLER_PATH)
-    rendering_source = _source(RENDERING_PATH)
-
-    assert "extracted_requests = await context.extract_links(" in rendering_source
-    assert (
-        "fallback_html, fallback_links = await fallback_renderer.render("
-        in crawler_source
-    )
-    assert "await fallback_context.enqueue_links(" in crawler_source
-    assert "scope_pattern.search(candidate_url)" in crawler_source
-    assert "EXCLUDED_URL_PATTERNS" in crawler_source
+def test_rendered_links_use_the_same_native_discovery_path() -> None:
+    source = CRAWLER.read_text(encoding="utf-8")
+    assert "await context.extract_links(" in source
+    assert "await context.enqueue_links(" in source
 
 
-def test_invalid_rendered_links_are_skipped() -> None:
-    source = _source(CRAWLER_PATH)
-
-    assert "except (TypeError, ValueError):" in source
+def test_custom_fallback_renderer_is_removed() -> None:
+    source = RENDERING.read_text(encoding="utf-8")
+    assert "PlaywrightFallbackRenderer" not in source
+    assert "render_url_with_crawlee" not in source
+    assert "asyncio.create_task(crawler.run())" not in source
