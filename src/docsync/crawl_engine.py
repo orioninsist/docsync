@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from crawlee.crawlers import AdaptivePlaywrightCrawler, BeautifulSoupCrawler, PlaywrightCrawler
+from crawlee.crawlers import (
+    AdaptivePlaywrightCrawler,
+    BeautifulSoupCrawler,
+    PlaywrightCrawler,
+)
 from crawlee.http_clients import HttpClient
 
 from docsync.crawler_runtime import CrawleeRuntime
