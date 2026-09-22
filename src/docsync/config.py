@@ -241,16 +241,6 @@ def _normalize_crawler_mode(value: str) -> CrawlerMode:
 
     normalized = value.strip().lower()
 
-    aliases = {
-        "browser": "playwright",
-        "javascript": "playwright",
-        "js": "playwright",
-    }
-    normalized = aliases.get(
-        normalized,
-        normalized,
-    )
-
     if normalized not in VALID_CRAWLER_MODES:
         raise ValueError("crawler mode must be 'http' or 'playwright'")
 
