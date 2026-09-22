@@ -207,6 +207,9 @@ def test_inventory_discovers_links_and_writes_json(
         async def is_finished(self) -> bool:
             return True
 
+        async def is_empty(self) -> bool:
+            return True
+
         async def close(self) -> None:
             return None
 
@@ -285,6 +288,9 @@ def test_inventory_reports_incomplete_when_request_limit_is_reached(
             return 0
 
         async def is_finished(self) -> bool:
+            return True
+
+        async def is_empty(self) -> bool:
             return True
 
         async def close(self) -> None:
@@ -372,6 +378,9 @@ def test_inventory_preserves_directory_seed_slash(
             return 0
 
         async def is_finished(self) -> bool:
+            return True
+
+        async def is_empty(self) -> bool:
             return True
 
         async def close(self) -> None:
