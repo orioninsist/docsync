@@ -16,6 +16,7 @@ from docsync.cli import (
 from docsync.config import Settings
 from docsync.metrics import CrawlStats
 
+
 def configure_runtime_directories(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
