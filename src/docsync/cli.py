@@ -377,17 +377,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # DOCSYNC_CRAWLEE_STORAGE_BINDING
-    # Keep Crawlee's internal RequestQueue/Dataset/KeyValueStore beside the
-    # explicitly selected persistent state. When --state-dir is omitted,
-    # leave storage resolution to the existing docsync configuration flow.
-    if args.state_dir is not None:
-        state_root = Path(args.state_dir).expanduser().resolve()
-        state_root.mkdir(parents=True, exist_ok=True)
-        crawlee_storage_root = state_root / ".crawlee"
-        crawlee_storage_root.mkdir(parents=True, exist_ok=True)
-        os.environ["CRAWLEE_STORAGE_DIR"] = str(crawlee_storage_root)
-
     _apply_environment_overrides(args)
     settings = Settings.from_environment()
 
