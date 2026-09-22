@@ -6,7 +6,6 @@ import logging
 import re
 from pathlib import Path
 from re import Pattern
-from types import SimpleNamespace
 from typing import Any, Final, cast
 from urllib.parse import urlsplit
 
@@ -235,8 +234,6 @@ async def run_crawler(
     }:
         raise ValueError("browser_type must be chromium, firefox, or webkit.")
 
-    _ = resolved_force_refresh
-
     resolved_output_dir = (
         Path(output_dir).expanduser().resolve()
         if output_dir is not None
@@ -341,11 +338,6 @@ async def run_crawler(
         raise ValueError("The start URL language does not match requested language.")
     scope_pattern = build_scope_pattern(normalized_start_url)
 
-    incremental_config = SimpleNamespace(
-        refresh_hours=resolved_refresh_hours,
-        force_refresh=resolved_force_refresh,
-    )
-
     runtime = await build_crawlee_runtime(
         hostname=start_hostname,
         storage_dir=resolved_state_dir / "crawlee" / "crawl" / start_hostname,
@@ -365,7 +357,8 @@ async def run_crawler(
 
         if not filter_incremental_urls(
             [url],
-            config=incremental_config,
+            refresh_hours=resolved_refresh_hours,
+            force_refresh=resolved_force_refresh,
             stats=stats,
             url_state=url_state,
         ):
