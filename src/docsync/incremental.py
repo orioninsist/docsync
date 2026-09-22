@@ -384,6 +384,14 @@ def record_incremental_success(
 
     timestamp = saved_at.astimezone(UTC) if saved_at is not None else datetime.now(UTC)
 
+    stale_digests = [
+        existing_digest
+        for existing_digest, existing_url in hashes.items()
+        if existing_url == normalized and existing_digest != normalized_digest
+    ]
+    for stale_digest in stale_digests:
+        del hashes[stale_digest]
+
     hashes[normalized_digest] = normalized
     url_state[normalized] = {
         "saved_at": timestamp.isoformat(),
