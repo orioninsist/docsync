@@ -15,8 +15,6 @@ from docsync.playwright_rendering import (
     PlaywrightRenderingConfig,
     handle_route,
     install_resource_blocking,
-    merge_playwright_options,
-    normalized_blocked_resource_types,
     render_page_html,
     should_block_resource,
 )
