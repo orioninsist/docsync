@@ -316,6 +316,7 @@ async def run_inventory(
     )
 
     inventory_succeeded = False
+    request_storage_complete = False
     try:
         while not await sitemap_loader.is_finished():
             sitemap_request = await sitemap_loader.fetch_next_request()
@@ -441,8 +442,11 @@ async def run_inventory(
             0,
             len(discovered_urls) - len(processed_urls),
         )
+        request_storage_complete = await runtime.request_manager.is_finished()
         report.discovery_complete = (
-            report.remaining_urls == 0 and report.processed_urls < max_requests
+            report.remaining_urls == 0
+            and request_storage_complete
+            and report.processed_urls < max_requests
         )
 
         _print_inventory_progress(
@@ -460,6 +464,6 @@ async def run_inventory(
     finally:
         await sitemap_loader.close()
         await sitemap_http_client.cleanup()
-        if inventory_succeeded:
+        if inventory_succeeded and request_storage_complete:
             await runtime.drop_request_storage()
 
