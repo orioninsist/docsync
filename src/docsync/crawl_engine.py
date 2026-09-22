@@ -17,6 +17,17 @@ from docsync.playwright_rendering import (
 DEFAULT_MAX_REQUEST_RETRIES = 2
 
 
+def adaptive_result_is_meaningful(result: Any) -> bool:
+    """Accept terminal static results while forcing empty content to Playwright."""
+
+    for call in result.push_data_calls:
+        values = call.data if isinstance(call.data, list) else [call.data]
+        for value in values:
+            if isinstance(value, dict) and value.get("outcome") != "empty":
+                return True
+    return False
+
+
 @dataclass(slots=True)
 class CrawlerBuildResult:
     """Crawler plus optional Playwright rendering configuration."""
@@ -70,7 +81,7 @@ def build_adaptive_crawler(
         max_requests_per_crawl=max_requests,
         request_handler_timeout=runtime.request_handler_timeout,
         respect_robots_txt_file=respect_robots_txt,
-        result_checker=lambda result: bool(result.push_data_calls),
+        result_checker=adaptive_result_is_meaningful,
         playwright_crawler_specific_kwargs={
             "navigation_timeout": runtime.request_handler_timeout,
             **rendering_config.crawler_options(),
