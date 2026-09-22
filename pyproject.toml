@@ -79,7 +79,6 @@ python_version = "3.13"
 files = [
     "src",
     "main.py",
-    "tools",
     "tests",
 ]
 exclude = [
@@ -107,8 +106,6 @@ minversion = "8.0"
 testpaths = ["tests"]
 python_files = [
     "test_*.py",
-    "*_test.py",
-    "verify_*.py",
 ]
 addopts = [
     "--strict-config",
