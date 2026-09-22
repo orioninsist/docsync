@@ -315,153 +315,151 @@ async def run_inventory(
         transform_request_function=transform_sitemap_request,
     )
 
-    while not await sitemap_loader.is_finished():
-        sitemap_request = await sitemap_loader.fetch_next_request()
-        if sitemap_request is None:
-            break
-        await runtime.request_manager.add_request(sitemap_request)
-        await sitemap_loader.mark_request_as_handled(sitemap_request)
+    inventory_succeeded = False
+    try:
+        while not await sitemap_loader.is_finished():
+            sitemap_request = await sitemap_loader.fetch_next_request()
+            if sitemap_request is None:
+                continue
+            await runtime.request_manager.add_request(sitemap_request)
+            await sitemap_loader.mark_request_as_handled(sitemap_request)
 
-    crawler = build_http_crawler(
-        runtime=runtime,
-        max_requests=max_requests,
-        respect_robots_txt=respect_robots_txt,
-    )
-
-    @crawler.router.default_handler
-    async def request_handler(context: BeautifulSoupCrawlingContext) -> None:
-        requested_url = _normalize_inventory_url(context.request.url)
-        loaded_url = context.request.loaded_url or context.request.url
-
-        try:
-            effective_url = _normalize_inventory_url(loaded_url)
-        except (TypeError, ValueError):
-            effective_url = requested_url
-
-        record_processed_url(requested_url)
-
-        if effective_url != requested_url:
-            report.redirects += 1
-
-        content_type = context.http_response.headers.get(
-            "content-type",
-            "",
-        ).lower()
-
-        if (
-            "text/html" not in content_type
-            and "application/xhtml+xml" not in content_type
-        ):
-            report.failed_pages += 1
-            print_progress()
-            return
-
-        report.reachable_pages += 1
-
-        discovered_links = await discover_and_enqueue_in_scope_links(
-            context=context,
-            base_url=effective_url,
-            scope_pattern=scope_pattern,
-            should_skip_url=language_strategy.should_skip_url,
+        crawler = build_http_crawler(
+            runtime=runtime,
+            max_requests=max_requests,
+            respect_robots_txt=respect_robots_txt,
         )
 
-        for discovered_link in discovered_links:
-            register_discovered_url(discovered_link)
+        @crawler.router.default_handler
+        async def request_handler(context: BeautifulSoupCrawlingContext) -> None:
+            requested_url = _normalize_inventory_url(context.request.url)
+            loaded_url = context.request.loaded_url or context.request.url
 
-        if language_strategy.should_skip_url(effective_url):
-            report.non_english_urls += 1
+            try:
+                effective_url = _normalize_inventory_url(loaded_url)
+            except (TypeError, ValueError):
+                effective_url = requested_url
+
+            record_processed_url(requested_url)
+
+            if effective_url != requested_url:
+                report.redirects += 1
+
+            content_type = context.http_response.headers.get(
+                "content-type",
+                "",
+            ).lower()
+
+            if (
+                "text/html" not in content_type
+                and "application/xhtml+xml" not in content_type
+            ):
+                report.failed_pages += 1
+                print_progress()
+                return
+
+            report.reachable_pages += 1
+
+            discovered_links = await discover_and_enqueue_in_scope_links(
+                context=context,
+                base_url=effective_url,
+                scope_pattern=scope_pattern,
+                should_skip_url=language_strategy.should_skip_url,
+            )
+
+            for discovered_link in discovered_links:
+                register_discovered_url(discovered_link)
+
+            if language_strategy.should_skip_url(effective_url):
+                report.non_english_urls += 1
+                print_progress()
+                return
+
+            html = str(context.soup)
+            language_decision = detector.detect_from_html(
+                url=effective_url,
+                html=html,
+                content_language=context.http_response.headers.get("content-language"),
+            )
+
+            if language_strategy.accepts(language_decision):
+                report.english_urls += 1
+            else:
+                report.non_english_urls += 1
+
             print_progress()
-            return
 
-        html = str(context.soup)
+        @crawler.on_skipped_request
+        async def skipped_handler(url: str, reason: str) -> None:
+            if reason == "robots_txt":
+                report.robots_blocked += 1
 
-        language_decision = detector.detect_from_html(
-            url=effective_url,
-            html=html,
-            content_language=context.http_response.headers.get("content-language"),
-        )
+            try:
+                normalized_url = _normalize_inventory_url(url)
+            except (TypeError, ValueError):
+                normalized_url = url
 
-        if language_strategy.accepts(language_decision):
-            report.english_urls += 1
-        else:
-            report.non_english_urls += 1
+            record_processed_url(normalized_url)
+            print_progress()
 
-        print_progress()
+        @crawler.failed_request_handler
+        async def failed_handler(
+            context: BeautifulSoupCrawlingContext | BasicCrawlingContext,
+            error: Exception,
+        ) -> None:
+            current_error = error
 
-    @crawler.on_skipped_request
-    async def skipped_handler(url: str, reason: str) -> None:
-        if reason == "robots_txt":
-            report.robots_blocked += 1
+            while isinstance(current_error, RequestHandlerError):
+                current_error = current_error.wrapped_exception
 
-        try:
-            normalized_url = _normalize_inventory_url(url)
-        except (TypeError, ValueError):
-            normalized_url = url
-
-        record_processed_url(normalized_url)
-        print_progress()
-
-    @crawler.failed_request_handler
-    async def failed_handler(
-        context: BeautifulSoupCrawlingContext | BasicCrawlingContext,
-        error: Exception,
-    ) -> None:
-        current_error = error
-
-        while isinstance(current_error, RequestHandlerError):
-            current_error = current_error.wrapped_exception
-
-        if isinstance(current_error, HttpStatusCodeError):
-            if current_error.status_code == 404:
-                report.not_found_pages += 1
+            if isinstance(current_error, HttpStatusCodeError):
+                if current_error.status_code == 404:
+                    report.not_found_pages += 1
+                else:
+                    report.failed_pages += 1
+            elif isinstance(
+                current_error,
+                (asyncio.TimeoutError, UserHandlerTimeoutError),
+            ):
+                report.timeouts += 1
             else:
                 report.failed_pages += 1
-        elif isinstance(
-            current_error,
-            (asyncio.TimeoutError, UserHandlerTimeoutError),
-        ):
-            report.timeouts += 1
-        else:
-            report.failed_pages += 1
 
-        try:
-            normalized_url = _normalize_inventory_url(context.request.url)
-        except (TypeError, ValueError):
-            normalized_url = context.request.url
+            try:
+                normalized_url = _normalize_inventory_url(context.request.url)
+            except (TypeError, ValueError):
+                normalized_url = context.request.url
 
-        record_processed_url(normalized_url)
-        print_progress()
+            record_processed_url(normalized_url)
+            print_progress()
 
-    try:
         await crawler.run(initial_urls)
-    except BaseException:
+
+        report.sitemap_urls = await sitemap_loader.get_total_count()
+        report.discovered_urls = len(discovered_urls)
+        report.remaining_urls = max(
+            0,
+            len(discovered_urls) - len(processed_urls),
+        )
+        report.discovery_complete = (
+            report.remaining_urls == 0 and report.processed_urls < max_requests
+        )
+
+        _print_inventory_progress(
+            report=report,
+            discovered_count=report.discovered_urls,
+            queued_count=report.remaining_urls,
+        )
+
+        write_inventory_report(
+            report=report,
+            state_dir=Path(state_dir),
+        )
+        inventory_succeeded = True
+        return report
+    finally:
         await sitemap_loader.close()
         await sitemap_http_client.cleanup()
-        raise
+        if inventory_succeeded:
+            await runtime.drop_request_storage()
 
-    report.sitemap_urls = await sitemap_loader.get_total_count()
-    await sitemap_loader.close()
-    await sitemap_http_client.cleanup()
-
-    report.discovered_urls = len(discovered_urls)
-    report.remaining_urls = max(
-        0,
-        len(discovered_urls) - len(processed_urls),
-    )
-    report.discovery_complete = (
-        report.remaining_urls == 0 and report.processed_urls < max_requests
-    )
-
-    _print_inventory_progress(
-        report=report,
-        discovered_count=report.discovered_urls,
-        queued_count=report.remaining_urls,
-    )
-
-    write_inventory_report(
-        report=report,
-        state_dir=Path(state_dir),
-    )
-    await runtime.drop_request_storage()
-
-    return report
