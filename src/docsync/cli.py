@@ -109,15 +109,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Crawler mode. Use 'playwright' for JavaScript-rendered pages.",
     )
     parser.add_argument(
-        "--javascript",
-        "--browser",
-        "--playwright",
-        dest="mode",
-        action="store_const",
-        const="playwright",
-        help="Use Playwright for JavaScript-rendered pages.",
-    )
-    parser.add_argument(
         "--show-browser",
         dest="headless",
         action="store_false",
