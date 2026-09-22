@@ -5,8 +5,7 @@ from __future__ import annotations
 import pytest
 
 from docsync.crawler import build_scope_pattern, filter_discovered_urls
-from docsync.language import detect_explicit_url_language
-from docsync.language_strategy import LanguageStrategy
+from docsync.language import LanguagePolicy, detect_explicit_url_language
 
 
 @pytest.mark.parametrize(
@@ -22,7 +21,7 @@ from docsync.language_strategy import LanguageStrategy
     ],
 )
 def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
-    strategy = LanguageStrategy("en")
+    strategy = LanguagePolicy("en")
 
     assert strategy.should_skip_url(url) is True
 
@@ -38,7 +37,7 @@ def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
     ],
 )
 def test_english_google_urls_are_allowed(url: str) -> None:
-    strategy = LanguageStrategy("en")
+    strategy = LanguagePolicy("en")
 
     assert strategy.should_skip_url(url) is False
 
@@ -53,7 +52,7 @@ def test_url_language_decision_records_query_source() -> None:
 
 
 def test_discovery_policy_rejects_explicit_non_english_urls() -> None:
-    strategy = LanguageStrategy("en")
+    strategy = LanguagePolicy("en")
     scope_pattern = build_scope_pattern("https://developers.google.com")
 
     assert filter_discovered_urls(
