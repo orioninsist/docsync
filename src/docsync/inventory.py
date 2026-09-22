@@ -13,12 +13,12 @@ from crawlee.crawlers import (
     BasicCrawlingContext,
     BeautifulSoupCrawlingContext,
 )
-from crawlee.http_clients import ImpitHttpClient
 from crawlee.errors import (
     HttpStatusCodeError,
     RequestHandlerError,
     UserHandlerTimeoutError,
 )
+from crawlee.http_clients import ImpitHttpClient
 
 from docsync.crawl_engine import build_http_crawler
 from docsync.crawler_runtime import build_crawlee_runtime
