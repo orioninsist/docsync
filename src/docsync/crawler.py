@@ -296,9 +296,9 @@ async def run_crawler(
 
     markdown_exporter = MarkdownExporter(resolved_output_dir)
     language_detector = EnglishPageDetector()
-    language_strategy = LanguagePolicy(resolved_language)
+    language_policy = LanguagePolicy(resolved_language)
 
-    if language_strategy.should_skip_url(normalized_start_url):
+    if language_policy.should_skip_url(normalized_start_url):
         raise ValueError("The start URL language does not match requested language.")
     scope_pattern = build_scope_pattern(normalized_start_url)
 
@@ -314,7 +314,7 @@ async def run_crawler(
         url = normalize_url(validated_http_url(options["url"]))
         if (
             scope_pattern.search(url) is None
-            or language_strategy.should_skip_url(url)
+            or language_policy.should_skip_url(url)
             or any(pattern.search(url) for pattern in EXCLUDED_URL_PATTERNS)
         ):
             return "skip"
@@ -443,7 +443,7 @@ async def run_crawler(
                 context=cast(Any, context),
                 base_url=effective_url,
                 scope_pattern=scope_pattern,
-                should_skip_url=language_strategy.should_skip_url,
+                should_skip_url=language_policy.should_skip_url,
             )
             discovered_link_count = 0
 
@@ -458,7 +458,7 @@ async def run_crawler(
                 html=html,
                 content_language=content_language,
             )
-            if not language_strategy.accepts(
+            if not language_policy.accepts(
                 language_decision
             ) and language_decision.source not in {
                 "insufficient-text",
@@ -535,7 +535,7 @@ async def run_crawler(
         url
         for url in url_state
         if scope_pattern.search(url) is not None
-        and not language_strategy.should_skip_url(url)
+        and not language_policy.should_skip_url(url)
         and not any(pattern.search(url) for pattern in EXCLUDED_URL_PATTERNS)
     ]
 
