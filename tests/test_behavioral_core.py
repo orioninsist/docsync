@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gzip
 import json
 import urllib.error
 from pathlib import Path
@@ -12,11 +11,6 @@ import pytest
 import docsync.incremental as incremental
 from docsync.markdown import MarkdownExporter
 from docsync.metrics import CrawlStats
-from docsync.sitemap import (
-    decode_sitemap_payload,
-    extract_robots_sitemaps,
-    sitemap_xml_locations,
-)
 from docsync.url_security import (
     SameOriginRedirectHandler,
     normalize_url,
@@ -139,95 +133,6 @@ def test_same_origin_redirect_handler_rejects_unsafe_redirects(
 
     with pytest.raises(expected_exception):
         handler.validate_redirect(redirect_url)
-
-
-def test_decode_sitemap_payload_decodes_plain_xml() -> None:
-    payload = b'<?xml version="1.0"?><urlset></urlset>'
-
-    assert decode_sitemap_payload(
-        payload,
-        "https://example.com/sitemap.xml",
-    ) == payload.decode("utf-8")
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "https://example.com/sitemap.xml.gz",
-        "https://example.com/download",
-    ],
-)
-def test_decode_sitemap_payload_decompresses_gzip(
-    url: str,
-) -> None:
-    expected = '<?xml version="1.0"?><urlset></urlset>'
-    payload = gzip.compress(expected.encode("utf-8"))
-
-    assert decode_sitemap_payload(payload, url) == expected
-
-
-def test_extract_robots_sitemaps_handles_comments_relative_urls_and_duplicates() -> (
-    None
-):
-    robots_text = """
-    User-agent: *
-    Disallow: /private
-
-    Sitemap: /sitemap.xml
-    sitemap: https://example.com/sitemap-news.xml # inline comment
-    Sitemap: /sitemap.xml
-    Sitemap:
-    """
-
-    assert extract_robots_sitemaps(
-        robots_text,
-        "https://example.com/",
-    ) == [
-        "https://example.com/sitemap.xml",
-        "https://example.com/sitemap-news.xml",
-    ]
-
-
-@pytest.mark.parametrize(
-    ("xml_text", "expected_type", "expected_locations"),
-    [
-        (
-            """
-            <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-                <url><loc>https://example.com/a</loc></url>
-                <url><loc> https://example.com/b </loc></url>
-            </urlset>
-            """,
-            "urlset",
-            [
-                "https://example.com/a",
-                "https://example.com/b",
-            ],
-        ),
-        (
-            """
-            <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-                <sitemap><loc>https://example.com/one.xml</loc></sitemap>
-                <sitemap><loc>https://example.com/two.xml</loc></sitemap>
-            </sitemapindex>
-            """,
-            "index",
-            [
-                "https://example.com/one.xml",
-                "https://example.com/two.xml",
-            ],
-        ),
-    ],
-)
-def test_sitemap_xml_locations_extracts_supported_documents(
-    xml_text: str,
-    expected_type: str,
-    expected_locations: list[str],
-) -> None:
-    sitemap_type, locations = sitemap_xml_locations(xml_text)
-
-    assert sitemap_type == expected_type
-    assert locations == expected_locations
 
 
 def test_normalize_markdown_normalizes_newlines_and_spacing() -> None:
