@@ -605,7 +605,8 @@ async def run_crawler(
 
     incremental_urls = filter_incremental_urls(
         initial_urls,
-        config=settings,
+        refresh_hours=resolved_refresh_hours,
+        force_refresh=resolved_force_refresh,
         stats=stats,
         url_state=url_state,
     )
