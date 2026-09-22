@@ -32,7 +32,6 @@ def test_crawl_stats_defaults_are_zeroed() -> None:
 
     assert stats.processed == 0
     assert stats.saved == 0
-    assert stats.duplicate_content == 0
     assert stats.rejected_urls == 0
     assert stats.empty_pages == 0
     assert stats.non_english == 0
@@ -49,14 +48,13 @@ def test_finished_summary_preserves_canonical_contract() -> None:
         started_at=fixed_started_at(),
         processed=8,
         saved=5,
-        duplicate_content=1,
         incremental_skipped=2,
         non_english=3,
         failed=4,
     )
 
     assert stats.finished_summary() == (
-        "Finished: processed=8 saved=5 duplicate=1 "
+        "Finished: processed=8 saved=5 "
         "incremental_skipped=2 non_english=3 failed=4"
     )
     assert stats.exit_code == 1
@@ -68,7 +66,6 @@ def test_as_dict_preserves_metric_names() -> None:
         started_at=fixed_started_at(),
         processed=10,
         saved=6,
-        duplicate_content=2,
         rejected_urls=1,
         empty_pages=1,
         non_english=3,
@@ -89,7 +86,6 @@ def test_as_dict_preserves_metric_names() -> None:
         "mode": "playwright",
         "processed": 10,
         "saved": 6,
-        "duplicate_content": 2,
         "rejected_urls": 1,
         "empty_pages": 1,
         "non_english": 3,
