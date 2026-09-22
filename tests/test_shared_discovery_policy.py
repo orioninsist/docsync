@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from crawlee import RequestOptions
 
 from docsync.crawler import build_scope_pattern, transform_discovered_request
 
 
 def transform(url: str, *, base_url: str, skip=lambda _url: False) -> RequestOptions | str:
-    return transform_discovered_request(
+    return cast(
+        RequestOptions | str,
+        transform_discovered_request(
         RequestOptions(url=url),
         base_url=base_url,
         scope_pattern=build_scope_pattern(base_url),
-        should_skip_url=skip,
+            should_skip_url=skip,
+        ),
     )
 
 
@@ -22,7 +27,7 @@ def test_discovery_policy_normalizes_valid_candidate() -> None:
         base_url="https://example.com/docs/",
     )
     assert result != "skip"
-    assert result["url"] == "https://example.com/docs/guide"
+    assert cast(RequestOptions, result)["url"] == "https://example.com/docs/guide"
 
 
 def test_discovery_policy_skips_out_of_scope_assets_and_language_urls() -> None:
