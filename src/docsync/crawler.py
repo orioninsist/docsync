@@ -337,6 +337,14 @@ async def run_crawler(
             )
         )
 
+    normalized_start_url = normalize_start_url(start_url)
+    start_hostname = urlsplit(normalized_start_url).hostname
+
+    if not start_hostname:
+        raise ValueError(
+            f"Unable to determine hostname from start URL: {normalized_start_url}"
+        )
+
     emit_event(
         phase="Loading state",
         active_requests=0,
@@ -355,18 +363,9 @@ async def run_crawler(
     language_detector = EnglishPageDetector()
     language_strategy = LanguageStrategy(resolved_language)
 
-    normalized_start_url = normalize_start_url(start_url)
-
     if language_strategy.should_skip_url(normalized_start_url):
         raise ValueError("The start URL language does not match requested language.")
     scope_pattern = build_scope_pattern(normalized_start_url)
-
-    start_hostname = urlsplit(normalized_start_url).hostname
-
-    if not start_hostname:
-        raise ValueError(
-            f"Unable to determine hostname from start URL: {normalized_start_url}"
-        )
 
     runtime = await build_crawlee_runtime(
         hostname=start_hostname,
