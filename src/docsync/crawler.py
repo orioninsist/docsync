@@ -35,7 +35,7 @@ from docsync.incremental import (
 from docsync.language import EnglishPageDetector, LanguagePolicy
 from docsync.markdown import MarkdownDocument, MarkdownExporter
 from docsync.metrics import CrawlStats
-from docsync.sitemap import build_sitemap_request_loader
+from docsync.sitemap import build_sitemap_request_loader, clear_sitemap_state
 from docsync.url_security import normalize_url, validated_http_url
 
 EXCLUDED_URL_PATTERNS: Final[tuple[Pattern[str], ...]] = (
@@ -564,5 +564,9 @@ async def run_crawler(
         await sitemap_loader.close()
         await sitemap_http_client.cleanup()
         if crawl_succeeded and request_storage_complete:
+            await clear_sitemap_state(
+                storage_client=runtime.storage_client,
+                configuration=runtime.configuration,
+            )
             await runtime.drop_request_storage()
 
