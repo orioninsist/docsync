@@ -36,16 +36,15 @@ class CrawlerBuildResult:
     rendering_config: PlaywrightRenderingConfig | None = None
 
 
-def build_http_crawler(
+def _common_crawler_options(
     *,
     runtime: CrawleeRuntime,
     max_requests: int,
     respect_robots_txt: bool,
-    http_client: HttpClient | None = None,
-) -> BeautifulSoupCrawler:
-    """Build the canonical HTTP crawler from one shared runtime."""
+) -> dict[str, Any]:
+    """Return shared Crawlee options for every crawler implementation."""
 
-    crawler_options: dict[str, Any] = {
+    return {
         "request_manager": runtime.request_manager,
         "storage_client": runtime.storage_client,
         "configuration": runtime.configuration,
@@ -56,6 +55,22 @@ def build_http_crawler(
         "request_handler_timeout": runtime.request_handler_timeout,
         "respect_robots_txt_file": respect_robots_txt,
     }
+
+
+def build_http_crawler(
+    *,
+    runtime: CrawleeRuntime,
+    max_requests: int,
+    respect_robots_txt: bool,
+    http_client: HttpClient | None = None,
+) -> BeautifulSoupCrawler:
+    """Build the canonical HTTP crawler from one shared runtime."""
+
+    crawler_options = _common_crawler_options(
+        runtime=runtime,
+        max_requests=max_requests,
+        respect_robots_txt=respect_robots_txt,
+    )
     if http_client is not None:
         crawler_options["http_client"] = http_client
 
@@ -72,15 +87,11 @@ def build_adaptive_crawler(
     """Build Crawlee's native adaptive HTTP/Playwright crawler."""
 
     crawler = AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(
-        request_manager=runtime.request_manager,
-        storage_client=runtime.storage_client,
-        configuration=runtime.configuration,
-        event_manager=runtime.event_manager,
-        concurrency_settings=runtime.concurrency_settings,
-        max_request_retries=DEFAULT_MAX_REQUEST_RETRIES,
-        max_requests_per_crawl=max_requests,
-        request_handler_timeout=runtime.request_handler_timeout,
-        respect_robots_txt_file=respect_robots_txt,
+        **_common_crawler_options(
+            runtime=runtime,
+            max_requests=max_requests,
+            respect_robots_txt=respect_robots_txt,
+        ),
         result_checker=adaptive_result_is_meaningful,
         playwright_crawler_specific_kwargs={
             "navigation_timeout": runtime.request_handler_timeout,
@@ -108,16 +119,12 @@ def build_playwright_crawler(
     """Build the canonical browser crawler from one shared runtime."""
 
     crawler = PlaywrightCrawler(
-        request_manager=runtime.request_manager,
-        storage_client=runtime.storage_client,
-        configuration=runtime.configuration,
-        event_manager=runtime.event_manager,
-        concurrency_settings=runtime.concurrency_settings,
-        max_request_retries=DEFAULT_MAX_REQUEST_RETRIES,
-        max_requests_per_crawl=max_requests,
-        request_handler_timeout=runtime.request_handler_timeout,
+        **_common_crawler_options(
+            runtime=runtime,
+            max_requests=max_requests,
+            respect_robots_txt=respect_robots_txt,
+        ),
         navigation_timeout=runtime.request_handler_timeout,
-        respect_robots_txt_file=respect_robots_txt,
         **rendering_config.crawler_options(),
     )
 
