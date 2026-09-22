@@ -19,11 +19,10 @@ from crawlee.crawlers import (
 )
 from crawlee.errors import ContextPipelineInterruptedError
 from crawlee.http_clients import ImpitHttpClient
-from crawlee.request_loaders import RequestManagerTandem
 
 from docsync.config import Settings
 from docsync.crawl_engine import build_crawler
-from docsync.crawler_runtime import build_crawlee_runtime
+from docsync.crawler_runtime import attach_sitemap_loader, build_crawlee_runtime
 from docsync.incremental import (
     conditional_request_headers,
     content_is_unchanged,
@@ -393,10 +392,11 @@ async def run_crawler(
         http_client=sitemap_http_client,
         transform_request_function=transform_sitemap_request,
     )
-    runtime.request_manager = RequestManagerTandem(
-        sitemap_loader,
-        runtime.request_manager,
-    )  # type: ignore[assignment]
+    await attach_sitemap_loader(
+        runtime,
+        sitemap_loader=sitemap_loader,
+        sitemap_http_client=sitemap_http_client,
+    )
 
     _silence_crawlee_runtime_logs()
 
@@ -740,9 +740,8 @@ async def run_crawler(
             active_requests=0,
         )
         finalize_crawl()
-        await sitemap_loader.close()
-        await sitemap_http_client.cleanup()
-        await runtime.request_manager.drop()
+        await runtime.close()
+        await runtime.drop_request_storage()
         return stats
 
     if not incremental_urls:
@@ -796,8 +795,7 @@ async def run_crawler(
 
     await flush_committed_results()
     stats.sitemap_urls = await sitemap_loader.get_total_count()
-    await sitemap_loader.close()
-    await sitemap_http_client.cleanup()
+    await runtime.close()
 
     emit_event(
         phase="Finalizing",
@@ -807,5 +805,5 @@ async def run_crawler(
     )
 
     finalize_crawl()
-    await runtime.request_manager.drop()
+    await runtime.drop_request_storage()
     return stats
