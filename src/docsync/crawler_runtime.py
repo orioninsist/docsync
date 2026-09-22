@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
-from crawlee import ConcurrencySettings, service_locator
+from crawlee import ConcurrencySettings
 from crawlee._service_locator import ServiceLocator
 from crawlee.events import LocalEventManager
 from crawlee.configuration import Configuration
@@ -45,10 +45,7 @@ async def build_crawlee_runtime(
         purge_on_start=False,
     )
     storage_client = FileSystemStorageClient()
-    service_locator.set_configuration(configuration)
-    service_locator.set_storage_client(storage_client)
     event_manager = LocalEventManager().from_config(config=configuration)
-    service_locator.set_event_manager(event_manager)
 
     runtime_service_locator = ServiceLocator(
         configuration=configuration,
