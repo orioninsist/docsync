@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -166,6 +167,7 @@ def test_inventory_render_contains_required_fields() -> None:
 def test_inventory_discovers_links_and_writes_json(
     monkeypatch,
     tmp_path: Path,
+    caplog,
 ) -> None:
     response_data = {
         "https://example.com/robots.txt": (
@@ -224,6 +226,8 @@ def test_inventory_discovers_links_and_writes_json(
         lambda self: asyncio.sleep(0),
     )
 
+    caplog.set_level(logging.WARNING)
+
     report = asyncio.run(
         run_inventory(
             start_url="https://example.com/docs",
@@ -243,6 +247,7 @@ def test_inventory_discovers_links_and_writes_json(
     assert report.reachable_pages == 2
     assert report.remaining_urls == 0
     assert report.discovery_complete is True
+    assert "not using `ThrottlingRequestManager`" not in caplog.text
 
     report_path = tmp_path / "site-inventory.json"
     assert report_path.is_file()
