@@ -135,40 +135,22 @@ def test_filter_normalizes_deduplicates_and_records_skip(
     }
 
 
-def test_record_success_updates_state_stores(
+def test_record_success_updates_url_state(
     tmp_path: Path,
 ) -> None:
-    hashes: dict[str, str] = {}
     state: dict[str, dict[str, str]] = {}
-
-    saved_at = datetime(
-        2026,
-        7,
-        31,
-        12,
-        30,
-        tzinfo=UTC,
-    )
+    saved_at = datetime(2026, 7, 31, 12, 30, tzinfo=UTC)
 
     incremental.record_incremental_success(
         url="https://example.com/docs/",
         output_path=tmp_path / "docs.md",
         digest="ABC123",
-        hashes=hashes,
         url_state=state,
         saved_at=saved_at,
     )
 
-    assert hashes == {"abc123": "https://example.com/docs"}
-    assert state == {
-        "https://example.com/docs": {
-            "saved_at": saved_at.isoformat(),
-            "filename": "docs.md",
-            "content_hash": "abc123",
-            "etag": "",
-            "last_modified": "",
-        }
-    }
+    assert state["https://example.com/docs"]["content_hash"] == "abc123"
+    assert state["https://example.com/docs"]["filename"] == "docs.md"
 
 
 def test_content_is_unchanged() -> None:
@@ -187,41 +169,16 @@ def test_content_is_unchanged() -> None:
     )
 
 
-def test_loaders_do_not_modify_invalid_files(
+def test_url_state_loader_does_not_modify_invalid_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    content_hash_path = tmp_path / "content_hashes.json"
-    url_state_path = tmp_path / "url_state.json"
-
-    content_hash_path.write_text(
-        "{invalid",
-        encoding="utf-8",
-    )
-    url_state_path.write_text(
-        "{invalid",
-        encoding="utf-8",
-    )
-
-    content_hash_bytes = content_hash_path.read_bytes()
-    url_state_bytes = url_state_path.read_bytes()
-
-    monkeypatch.setattr(
-        incremental,
-        "CONTENT_HASH_FILE",
-        content_hash_path,
-    )
-    monkeypatch.setattr(
-        incremental,
-        "URL_STATE_FILE",
-        url_state_path,
-    )
-
-    assert incremental.load_content_hashes() == {}
+    path = tmp_path / "url_state.json"
+    path.write_text("{invalid", encoding="utf-8")
+    original = path.read_bytes()
+    monkeypatch.setattr(incremental, "URL_STATE_FILE", path)
     assert incremental.load_url_state() == {}
-
-    assert content_hash_path.read_bytes() == content_hash_bytes
-    assert url_state_path.read_bytes() == url_state_bytes
+    assert path.read_bytes() == original
 
 
 def test_url_state_loader_discards_invalid_records(
@@ -325,106 +282,16 @@ def test_response_validators_are_extracted_case_insensitively() -> None:
 
 
 
-def test_flat_per_host_state_files(tmp_path: Path) -> None:
-    hashes = {"abc123": "https://developers.openai.com/docs"}
-    state = {
-        "https://developers.openai.com/docs": {
-            "saved_at": "2026-09-22T12:00:00+00:00",
-            "filename": "docs.md",
-            "content_hash": "abc123",
-            "etag": "",
-            "last_modified": "",
-        }
-    }
-
-    incremental.save_content_hashes(
-        hashes,
-        tmp_path,
-        "developers.openai.com",
-    )
-    incremental.save_url_state(
-        state,
-        tmp_path,
-        "developers.openai.com",
-    )
-
-    assert (tmp_path / "developers.openai.com_content_hashes.json").is_file()
+def test_flat_per_host_state_file(tmp_path: Path) -> None:
+    state = {"https://developers.openai.com/docs": {"saved_at": "2026-09-22T12:00:00+00:00", "filename": "docs.md", "content_hash": "abc123", "etag": "", "last_modified": ""}}
+    incremental.save_url_state(state, tmp_path, "developers.openai.com")
     assert (tmp_path / "developers.openai.com_url_state.json").is_file()
-    assert not (tmp_path / "developers.openai.com").exists()
-    assert incremental.load_content_hashes(
-        tmp_path,
-        "developers.openai.com",
-    ) == hashes
-    assert incremental.load_url_state(
-        tmp_path,
-        "developers.openai.com",
-    ) == state
+    assert incremental.load_url_state(tmp_path, "developers.openai.com") == state
 
 
 def test_state_files_are_isolated_by_hostname(tmp_path: Path) -> None:
-    incremental.save_content_hashes(
-        {"one": "https://one.example/docs"},
-        tmp_path,
-        "one.example",
-    )
-    incremental.save_content_hashes(
-        {"two": "https://two.example/docs"},
-        tmp_path,
-        "two.example",
-    )
-
-    assert incremental.load_content_hashes(tmp_path, "one.example") == {
-        "one": "https://one.example/docs"
-    }
-    assert incremental.load_content_hashes(tmp_path, "two.example") == {
-        "two": "https://two.example/docs"
-    }
-
-
-
-def test_record_success_replaces_stale_hash_for_same_url(tmp_path: Path) -> None:
-    output_path = tmp_path / "docs.md"
-    hashes = {
-        "oldhash": "https://example.com/docs",
-        "otherhash": "https://example.com/other",
-    }
-    url_state = {
-        "https://example.com/docs": {
-            "saved_at": "2026-09-22T00:00:00+00:00",
-            "filename": "docs.md",
-            "content_hash": "oldhash",
-            "etag": "",
-            "last_modified": "",
-        }
-    }
-
-    incremental.record_incremental_success(
-        url="https://example.com/docs",
-        output_path=output_path,
-        digest="NEWHASH",
-        hashes=hashes,
-        url_state=url_state,
-    )
-
-    assert "oldhash" not in hashes
-    assert hashes["newhash"] == "https://example.com/docs"
-    assert hashes["otherhash"] == "https://example.com/other"
-    assert url_state["https://example.com/docs"]["content_hash"] == "newhash"
-
-
-def test_record_success_keeps_single_hash_when_content_is_unchanged(
-    tmp_path: Path,
-) -> None:
-    output_path = tmp_path / "docs.md"
-    hashes = {"samehash": "https://example.com/docs"}
-    url_state: dict[str, dict[str, str]] = {}
-
-    incremental.record_incremental_success(
-        url="https://example.com/docs",
-        output_path=output_path,
-        digest="SAMEHASH",
-        hashes=hashes,
-        url_state=url_state,
-    )
-
-    assert hashes == {"samehash": "https://example.com/docs"}
+    one = {"https://one.example/docs": {"saved_at": "2026-09-22T12:00:00+00:00"}}
+    two = {"https://two.example/docs": {"saved_at": "2026-09-22T12:00:00+00:00"}}
+    incremental.save_url_state(one, tmp_path, "one.example")
+    incremental.save_url_state(two, tmp_path, "two.example")
+    assert incremental.load_url_state(tmp_path, "one.example") != incremental.load_url_state(tmp_path, "two.example")
