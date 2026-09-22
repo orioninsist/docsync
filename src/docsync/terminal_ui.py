@@ -467,11 +467,6 @@ class DashboardRenderer:
             Text(f"Title: {snapshot.site.title}"),
             Text(f"Language: {snapshot.site.language}"),
             Text(f"Sitemap URLs: {snapshot.site.sitemap_urls}"),
-            Text(
-                f"Sitemaps: {snapshot.site.sitemap_files_found} found / "
-                f"{snapshot.site.sitemap_files_checked} checked / "
-                f"{snapshot.site.sitemap_errors} errors"
-            ),
             Text(f"Mode: {snapshot.site.mode}"),
             Text(f"Browser: {snapshot.site.browser_type or 'unknown'}"),
             Text(f"Headless: {_boolean_mark(snapshot.site.headless)}"),
@@ -520,14 +515,6 @@ class DashboardRenderer:
         table.add_row("Language", site.language)
         table.add_row("Mode", site.mode)
         table.add_row("robots.txt", _boolean_mark(site.robots_enabled))
-        table.add_row(
-            "Sitemaps",
-            (
-                f"{site.sitemap_files_found} found / "
-                f"{site.sitemap_files_checked} checked / "
-                f"{site.sitemap_errors} errors"
-            ),
-        )
         table.add_row("Sitemap URLs", str(site.sitemap_urls))
 
         if site.mode == "playwright":
