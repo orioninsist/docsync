@@ -37,6 +37,7 @@ def build_http_crawler(
     crawler_options: dict[str, Any] = {
         "request_manager": runtime.request_manager,
         "storage_client": runtime.storage_client,
+        "configuration": runtime.configuration,
         "concurrency_settings": runtime.concurrency_settings,
         "max_request_retries": DEFAULT_MAX_REQUEST_RETRIES,
         "max_requests_per_crawl": max_requests,
@@ -61,6 +62,7 @@ def build_playwright_crawler(
     crawler = PlaywrightCrawler(
         request_manager=runtime.request_manager,
         storage_client=runtime.storage_client,
+        configuration=runtime.configuration,
         concurrency_settings=runtime.concurrency_settings,
         max_request_retries=DEFAULT_MAX_REQUEST_RETRIES,
         max_requests_per_crawl=max_requests,
