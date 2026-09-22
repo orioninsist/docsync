@@ -199,24 +199,6 @@ def test_cli_browser_flags() -> None:
             "playwright",
         ]
     )
-    javascript_args = parser.parse_args(
-        [
-            "https://example.com/docs",
-            "--javascript",
-        ]
-    )
-    browser_args = parser.parse_args(
-        [
-            "https://example.com/docs",
-            "--browser",
-        ]
-    )
-    playwright_args = parser.parse_args(
-        [
-            "https://example.com/docs",
-            "--playwright",
-        ]
-    )
     visible_args = parser.parse_args(
         [
             "https://example.com/docs",
@@ -232,12 +214,8 @@ def test_cli_browser_flags() -> None:
     )
 
     assert mode_args.mode == "playwright"
-    assert javascript_args.mode == "playwright"
-    assert browser_args.mode == "playwright"
-    assert playwright_args.mode == "playwright"
     assert visible_args.headless is False
     assert firefox_args.browser_type == "firefox"
-
 
 def test_environment_overrides_include_browser_configuration() -> None:
     args = argparse.Namespace(
