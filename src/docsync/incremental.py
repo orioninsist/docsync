@@ -13,9 +13,7 @@ from typing import Protocol
 from docsync.url_security import normalize_url
 
 STATE_DIR = Path("storage/docsync")
-CONTENT_HASH_SUFFIX = "content_hashes.json"
 URL_STATE_SUFFIX = "url_state.json"
-CONTENT_HASH_FILE = STATE_DIR / CONTENT_HASH_SUFFIX
 URL_STATE_FILE = STATE_DIR / URL_STATE_SUFFIX
 
 
@@ -41,87 +39,6 @@ class IncrementalStats(Protocol):
     incremental_skipped: int
     incremental_skipped_urls: set[str]
 
-
-
-def load_content_hashes(
-    state_dir: Path | None = None,
-    hostname: str | None = None,
-) -> dict[str, str]:
-    """Load the content-hash mapping safely."""
-
-    content_hash_file = (
-        state_file_path(state_dir, hostname, CONTENT_HASH_SUFFIX)
-        if state_dir is not None and hostname is not None
-        else CONTENT_HASH_FILE
-    )
-
-    if not content_hash_file.exists():
-        return {}
-
-    try:
-        payload = json.loads(
-            content_hash_file.read_text(
-                encoding="utf-8",
-            )
-        )
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-    if not isinstance(payload, dict):
-        return {}
-
-    return {
-        str(key): str(value)
-        for key, value in payload.items()
-        if isinstance(key, str) and isinstance(value, str)
-    }
-
-
-def save_content_hashes(
-    hashes: dict[str, str],
-    state_dir: Path | None = None,
-    hostname: str | None = None,
-) -> None:
-    """Atomically replace the content-hash state file."""
-
-    content_hash_file = (
-        state_file_path(state_dir, hostname, CONTENT_HASH_SUFFIX)
-        if state_dir is not None and hostname is not None
-        else CONTENT_HASH_FILE
-    )
-
-    content_hash_file.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    serialized = json.dumps(
-        hashes,
-        indent=2,
-        sort_keys=True,
-    )
-
-    file_descriptor, temporary_name = tempfile.mkstemp(
-        dir=content_hash_file.parent,
-        prefix=f".{content_hash_file.name}.",
-        suffix=".tmp",
-        text=True,
-    )
-    temporary_path = Path(temporary_name)
-
-    try:
-        with os.fdopen(
-            file_descriptor,
-            mode="w",
-            encoding="utf-8",
-        ) as temporary_file:
-            temporary_file.write(serialized)
-            temporary_file.flush()
-            os.fsync(temporary_file.fileno())
-
-        temporary_path.replace(content_hash_file)
-    finally:
-        temporary_path.unlink(missing_ok=True)
 
 
 def load_url_state(
@@ -351,13 +268,12 @@ def record_incremental_success(
     url: str,
     output_path: Path,
     digest: str,
-    hashes: dict[str, str],
     url_state: dict[str, dict[str, str]],
     saved_at: datetime | None = None,
     etag: str = "",
     last_modified: str = "",
 ) -> None:
-    """Record successful output in both state stores."""
+    """Record successful output in URL state."""
 
     normalized = normalize_url(url)
     normalized_digest = digest.strip().lower()
@@ -367,15 +283,6 @@ def record_incremental_success(
 
     timestamp = saved_at.astimezone(UTC) if saved_at is not None else datetime.now(UTC)
 
-    stale_digests = [
-        existing_digest
-        for existing_digest, existing_url in hashes.items()
-        if existing_url == normalized and existing_digest != normalized_digest
-    ]
-    for stale_digest in stale_digests:
-        del hashes[stale_digest]
-
-    hashes[normalized_digest] = normalized
     url_state[normalized] = {
         "saved_at": timestamp.isoformat(),
         "filename": output_path.name,
