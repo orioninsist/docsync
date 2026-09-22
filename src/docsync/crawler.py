@@ -33,8 +33,7 @@ from docsync.incremental import (
     response_validators,
     save_url_state,
 )
-from docsync.language import EnglishPageDetector
-from docsync.language_strategy import LanguageStrategy
+from docsync.language import EnglishPageDetector, LanguagePolicy
 from docsync.markdown import MarkdownDocument, MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
 from docsync.progress_events import CrawlEvent, CrawlEventSink
@@ -314,7 +313,7 @@ async def run_crawler(
 
     markdown_exporter = MarkdownExporter(resolved_output_dir)
     language_detector = EnglishPageDetector()
-    language_strategy = LanguageStrategy(resolved_language)
+    language_strategy = LanguagePolicy(resolved_language)
 
     if language_strategy.should_skip_url(normalized_start_url):
         raise ValueError("The start URL language does not match requested language.")
