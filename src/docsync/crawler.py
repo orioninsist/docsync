@@ -42,7 +42,6 @@ from docsync.url_security import (
     validated_http_url,
 )
 
-
 def _silence_crawlee_runtime_logs() -> None:
     """Disable Crawlee internal terminal logging."""
 
@@ -56,7 +55,6 @@ def _silence_crawlee_runtime_logs() -> None:
         logger.handlers.clear()
         logger.setLevel(logging.WARNING)
         logger.propagate = False
-
 
 DEFAULT_REQUEST_TIMEOUT_SECONDS: Final[int] = 60
 DEFAULT_MAX_REQUESTS_PER_CRAWL: Final[int] = 100
@@ -76,14 +74,12 @@ EXCLUDED_URL_PATTERNS: Final[tuple[Pattern[str], ...]] = (
     ),
 )
 
-
 def normalize_start_url(start_url: str) -> str:
     """Normalize and validate the starting URL."""
 
     validated: str = validated_http_url(start_url)
     normalized: str = normalize_url(validated)
     return normalized
-
 
 def build_scope_pattern(start_url: str) -> Pattern[str]:
     """Build a regex restricted to the start URL origin and path tree."""
@@ -103,7 +99,6 @@ def build_scope_pattern(start_url: str) -> Pattern[str]:
         )
 
     return re.compile(expression, re.IGNORECASE)
-
 
 def transform_discovered_request(
     options: RequestOptions,
@@ -131,7 +126,6 @@ def transform_discovered_request(
     options["url"] = candidate_url
     return options
 
-
 async def discover_and_enqueue_in_scope_links(
     *,
     context: Any,
@@ -153,7 +147,6 @@ async def discover_and_enqueue_in_scope_links(
             should_skip_url=should_skip_url,
         ),
     )
-
 
 async def run_crawler(
     start_url: str,
@@ -248,7 +241,6 @@ async def run_crawler(
         raise ValueError(
             f"Unable to determine hostname from start URL: {normalized_start_url}"
         )
-
 
     url_state = load_url_state(
         resolved_state_dir,
@@ -390,8 +382,6 @@ async def run_crawler(
             scope_pattern=scope_pattern,
             should_skip_url=language_policy.should_skip_url,
         )
-        discovered_link_count = 0
-
         content_language = None
         if resolved_mode == "http":
             content_language = cast(Any, context).http_response.headers.get(
@@ -417,8 +407,7 @@ async def run_crawler(
                 {
                     "outcome": "non_english",
                     "url": context.request.url,
-                    "discovered_link_count": discovered_link_count,
-                }
+                        }
             )
             return
 
@@ -481,7 +470,6 @@ async def run_crawler(
         )
     )
 
-
     incremental_urls = filter_incremental_urls(
         initial_urls,
         refresh_hours=resolved_refresh_hours,
@@ -489,7 +477,6 @@ async def run_crawler(
         stats=stats,
         url_state=url_state,
     )
-
 
     async def flush_committed_results() -> None:
         """Apply only the handler results committed by Crawlee's selected renderer."""
@@ -548,9 +535,6 @@ async def run_crawler(
             start_hostname,
         )
 
-    def finalize_crawl() -> None:
-        persist_incremental_state()
-
     crawl_succeeded = False
     request_storage_complete = False
     try:
@@ -562,7 +546,7 @@ async def run_crawler(
             await sitemap_loader.mark_request_as_handled(sitemap_request)
 
         if not incremental_urls and await runtime.request_manager.is_finished():
-            finalize_crawl()
+            persist_incremental_state()
             crawl_succeeded = True
             request_storage_complete = True
             return stats
@@ -578,7 +562,6 @@ async def run_crawler(
                 context.request.url,
                 error,
             )
-
 
         try:
             final_statistics = await crawler.run(incremental_urls)
@@ -601,7 +584,7 @@ async def run_crawler(
 
         stats.sitemap_urls = await sitemap_loader.get_total_count()
 
-        finalize_crawl()
+        persist_incremental_state()
         crawl_succeeded = True
         return stats
     finally:
