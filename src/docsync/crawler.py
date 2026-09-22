@@ -106,40 +106,31 @@ def build_scope_pattern(start_url: str) -> Pattern[str]:
     return re.compile(expression, re.IGNORECASE)
 
 
-def filter_discovered_urls(
+def transform_discovered_request(
+    options: RequestOptions,
     *,
-    urls: list[str],
     base_url: str,
     scope_pattern: Pattern[str],
     should_skip_url: Any,
-) -> list[str]:
-    """Apply DocsSync URL policy consistently to discovered links."""
+) -> RequestOptions | str:
+    """Apply DocsSync policy through Crawlee's native enqueue transform."""
 
-    normalized_base_url = normalize_url(validated_http_url(base_url))
-    discovered_urls: list[str] = []
-    seen_urls: set[str] = set()
+    try:
+        candidate_url = normalize_url(validated_http_url(options["url"]))
+    except (TypeError, ValueError):
+        return "skip"
 
-    for url in urls:
-        try:
-            candidate_url = normalize_url(validated_http_url(url))
-        except (TypeError, ValueError):
-            continue
+    if candidate_url == normalize_url(validated_http_url(base_url)):
+        return "skip"
+    if scope_pattern.search(candidate_url) is None:
+        return "skip"
+    if any(pattern.search(candidate_url) for pattern in EXCLUDED_URL_PATTERNS):
+        return "skip"
+    if should_skip_url(candidate_url):
+        return "skip"
 
-        if candidate_url == normalized_base_url:
-            continue
-        if scope_pattern.search(candidate_url) is None:
-            continue
-        if any(pattern.search(candidate_url) for pattern in EXCLUDED_URL_PATTERNS):
-            continue
-        if should_skip_url(candidate_url):
-            continue
-        if candidate_url in seen_urls:
-            continue
-
-        seen_urls.add(candidate_url)
-        discovered_urls.append(candidate_url)
-
-    return discovered_urls
+    options["url"] = candidate_url
+    return options
 
 
 async def discover_and_enqueue_in_scope_links(
@@ -148,29 +139,21 @@ async def discover_and_enqueue_in_scope_links(
     base_url: str,
     scope_pattern: Pattern[str],
     should_skip_url: Any,
-) -> list[str]:
-    """Use Crawlee to extract and enqueue links while DocsSync owns URL policy."""
+) -> None:
+    """Let Crawlee discover/enqueue links while DocsSync supplies URL policy."""
 
-    extracted_requests = await context.extract_links(
+    await context.enqueue_links(
         selector="a",
         attribute="href",
         base_url=base_url,
         strategy="all",
+        transform_request_function=lambda options: transform_discovered_request(
+            options,
+            base_url=base_url,
+            scope_pattern=scope_pattern,
+            should_skip_url=should_skip_url,
+        ),
     )
-    discovered_urls = filter_discovered_urls(
-        urls=[request.url for request in extracted_requests],
-        base_url=base_url,
-        scope_pattern=scope_pattern,
-        should_skip_url=should_skip_url,
-    )
-
-    if discovered_urls:
-        await context.enqueue_links(
-            requests=discovered_urls,
-            strategy="all",
-        )
-
-    return discovered_urls
 
 
 async def run_crawler(
@@ -456,13 +439,13 @@ async def run_crawler(
                 current_url=context.request.url,
                 active_requests=active_requests,
             )
-            discovered_urls = await discover_and_enqueue_in_scope_links(
+            await discover_and_enqueue_in_scope_links(
                 context=cast(Any, context),
                 base_url=effective_url,
                 scope_pattern=scope_pattern,
                 should_skip_url=language_strategy.should_skip_url,
             )
-            discovered_link_count = len(discovered_urls)
+            discovered_link_count = 0
 
             content_language = None
             if resolved_mode == "http":
