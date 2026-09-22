@@ -96,9 +96,9 @@ def test_run_crawler_returns_crawl_stats() -> None:
     assert "stats" in return_names
 
 
-def test_request_handler_records_processed_and_saved() -> None:
-    request_handler = _function(_tree(CRAWLER_PATH), "request_handler")
-    metric_names = _augmented_metric_names(request_handler)
+def test_committed_result_finalizer_records_processed_and_saved() -> None:
+    finalizer = _function(_tree(CRAWLER_PATH), "flush_committed_results")
+    metric_names = _augmented_metric_names(finalizer)
 
     assert "processed" in metric_names
     assert "saved" in metric_names
