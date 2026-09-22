@@ -708,25 +708,85 @@ async def run_crawler(
             configuration=report_configuration,
         )
 
-    while not await sitemap_loader.is_finished():
-        sitemap_request = await sitemap_loader.fetch_next_request()
-        if sitemap_request is None:
-            break
-        await runtime.request_manager.add_request(sitemap_request)
-        await sitemap_loader.mark_request_as_handled(sitemap_request)
+    crawl_succeeded = False
+    try:
+        while not await sitemap_loader.is_finished():
+            sitemap_request = await sitemap_loader.fetch_next_request()
+            if sitemap_request is None:
+                continue
+            await runtime.request_manager.add_request(sitemap_request)
+            await sitemap_loader.mark_request_as_handled(sitemap_request)
 
-    if not incremental_urls and await runtime.request_manager.is_finished():
+        if not incremental_urls and await runtime.request_manager.is_finished():
+            emit_event(
+                phase="Nothing to crawl",
+                queued=0,
+                discovered=len(initial_urls),
+                active_requests=0,
+            )
+            finalize_crawl()
+            crawl_succeeded = True
+            return stats
+
+        if not incremental_urls:
+            emit_event(
+                phase="Resuming queue",
+                queued=0,
+                discovered=len(initial_urls),
+                active_requests=0,
+            )
+
+        @crawler.failed_request_handler
+        async def failed_handler(
+            context: BeautifulSoupCrawlingContext | BasicCrawlingContext,
+            error: Exception,
+        ) -> None:
+            nonlocal active_requests
+            stats.failed += 1
+            active_requests = max(0, active_requests - 1)
+            emit_event(
+                phase="Request failed",
+                current_url=context.request.url,
+                active_requests=active_requests,
+            )
+            context.log.error(
+                "Request permanently failed: url=%s error=%s",
+                context.request.url,
+                error,
+            )
+
         emit_event(
-            phase="Nothing to crawl",
+            phase="Crawling",
+            queued=len(incremental_urls),
+            discovered=len(initial_urls),
+            active_requests=0,
+        )
+
+        try:
+            await crawler.run(incremental_urls)
+        except BaseException:
+            await flush_committed_results()
+            persist_incremental_state()
+            raise
+
+        await flush_committed_results()
+        stats.sitemap_urls = await sitemap_loader.get_total_count()
+
+        emit_event(
+            phase="Finalizing",
             queued=0,
             discovered=len(initial_urls),
             active_requests=0,
         )
         finalize_crawl()
+        crawl_succeeded = True
+        return stats
+    finally:
         await sitemap_loader.close()
         await sitemap_http_client.cleanup()
-        await runtime.drop_request_storage()
-        return stats
+        if crawl_succeeded:
+            await runtime.drop_request_storage()
+
 
     if not incremental_urls:
         emit_event(
