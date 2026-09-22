@@ -13,35 +13,6 @@ CRAWLER_PATH = ROOT / "src" / "docsync" / "crawler.py"
 MARKDOWN_PATH = ROOT / "src" / "docsync" / "markdown.py"
 
 
-def _function(
-    tree: ast.Module,
-    name: str,
-) -> ast.AsyncFunctionDef:
-    matches = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == name
-    ]
-
-    assert len(matches) == 1
-    return matches[0]
-
-
-def _processed_augassign_lines(
-    function: ast.AsyncFunctionDef,
-) -> list[int]:
-    return [
-        node.lineno
-        for node in ast.walk(function)
-        if isinstance(node, ast.AugAssign)
-        and isinstance(node.target, ast.Attribute)
-        and isinstance(node.target.value, ast.Name)
-        and node.target.value.id == "stats"
-        and node.target.attr == "processed"
-        and isinstance(node.op, ast.Add)
-    ]
-
-
 def test_form_explanatory_text_is_preserved(
     tmp_path: Path,
 ) -> None:
