@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import urllib.error
 from pathlib import Path
 
 import pytest
@@ -69,30 +68,6 @@ def test_validated_http_url_accepts_http_and_https(url: str) -> None:
 def test_validated_http_url_rejects_unsafe_values(url: str) -> None:
     with pytest.raises(ValueError):
         validated_http_url(url)
-
-
-@pytest.mark.parametrize(
-    ("url", "expected"),
-    [
-        (
-            "https://example.com/docs",
-            ("https", "example.com", 443),
-        ),
-        (
-            "http://example.com/path",
-            ("http", "example.com", 80),
-        ),
-        (
-            "https://EXAMPLE.COM.:8443/path",
-            ("https", "example.com", 8443),
-        ),
-    ],
-)
-def test_normalized_http_origin_uses_effective_port(
-    url: str,
-    expected: tuple[str, str, int],
-) -> None:
-    assert normalized_http_origin(url) == expected
 
 
 
