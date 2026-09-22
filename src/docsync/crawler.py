@@ -48,19 +48,6 @@ from docsync.url_security import (
 )
 
 
-class _IncrementalRuntimeConfig:
-    """Resolved incremental controls for one crawl execution."""
-
-    def __init__(
-        self,
-        *,
-        refresh_hours: int,
-        force_refresh: bool,
-    ) -> None:
-        self.refresh_hours = refresh_hours
-        self.force_refresh = force_refresh
-
-
 def _silence_crawlee_runtime_logs() -> None:
     """Disable Crawlee internal terminal logging."""
 
@@ -361,11 +348,6 @@ async def run_crawler(
         request_timeout_seconds=settings.request_timeout_seconds,
     )
 
-    incremental_config = _IncrementalRuntimeConfig(
-        refresh_hours=resolved_refresh_hours,
-        force_refresh=resolved_force_refresh,
-    )
-
     def transform_sitemap_request(options: RequestOptions) -> RequestOptions | str:
         url = normalize_url(validated_http_url(options["url"]))
         if (
@@ -377,7 +359,7 @@ async def run_crawler(
 
         if not filter_incremental_urls(
             [url],
-            config=incremental_config,
+            config=settings,
             stats=stats,
             url_state=url_state,
         ):
@@ -624,7 +606,7 @@ async def run_crawler(
 
     incremental_urls = filter_incremental_urls(
         initial_urls,
-        config=incremental_config,
+        config=settings,
         stats=stats,
         url_state=url_state,
     )
