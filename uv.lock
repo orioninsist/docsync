@@ -442,7 +442,6 @@ dependencies = [
     { name = "crawlee", extra = ["adaptive-crawler", "beautifulsoup", "curl-impersonate", "playwright"] },
     { name = "lingua-language-detector" },
     { name = "markdownify" },
-    { name = "rich" },
 ]
 
 [package.dev-dependencies]
@@ -460,7 +459,6 @@ requires-dist = [
     { name = "crawlee", extras = ["adaptive-crawler", "beautifulsoup", "curl-impersonate", "playwright"], specifier = "==1.10.1" },
     { name = "lingua-language-detector", specifier = ">=2.2.0" },
     { name = "markdownify", specifier = ">=1.2.3" },
-    { name = "rich", specifier = ">=15.0.0" },
 ]
 
 [package.metadata.requires-dev]
