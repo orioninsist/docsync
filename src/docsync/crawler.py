@@ -27,12 +27,10 @@ from docsync.incremental import (
     conditional_request_headers,
     content_is_unchanged,
     filter_incremental_urls,
-    load_content_hashes,
     load_url_state,
     record_incremental_skip,
     record_incremental_success,
     response_validators,
-    save_content_hashes,
     save_url_state,
 )
 from docsync.language import EnglishPageDetector
@@ -321,10 +319,6 @@ async def run_crawler(
         active_requests=0,
     )
 
-    content_hashes = load_content_hashes(
-        resolved_state_dir,
-        start_hostname,
-    )
     url_state = load_url_state(
         resolved_state_dir,
         start_hostname,
@@ -680,7 +674,6 @@ async def run_crawler(
                 url=document.url,
                 output_path=document.output_path,
                 digest=document.content_hash,
-                hashes=content_hashes,
                 url_state=url_state,
                 etag=etag,
                 last_modified=last_modified,
@@ -690,11 +683,6 @@ async def run_crawler(
         await dataset.drop()
 
     def persist_incremental_state() -> None:
-        save_content_hashes(
-            content_hashes,
-            resolved_state_dir,
-            start_hostname,
-        )
         save_url_state(
             url_state,
             resolved_state_dir,
