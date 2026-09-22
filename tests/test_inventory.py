@@ -320,6 +320,10 @@ def test_inventory_reports_incomplete_when_request_limit_is_reached(
     assert report.remaining_urls == 2
     assert report.discovery_complete is False
 
+    request_storage = tmp_path / "crawlee" / "inventory" / "example.com"
+    assert request_storage.exists()
+    assert any(request_storage.rglob("*"))
+
 
 def test_inventory_preserves_directory_seed_slash(
     monkeypatch,
