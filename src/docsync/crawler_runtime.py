@@ -6,14 +6,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
-from crawlee import ConcurrencySettings, service_locator
+from crawlee import ConcurrencySettings
+from crawlee._service_locator import ServiceLocator
 from crawlee.configuration import Configuration
 from crawlee.events import EventManager, LocalEventManager
 from crawlee.request_loaders import RequestManager, ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient, StorageClient
 from crawlee.storages import RequestQueue
-
-_GLOBAL_CRAWLEE_CONFIGURATION = Configuration()
 
 
 @dataclass(slots=True)
@@ -44,12 +43,6 @@ async def build_crawlee_runtime(
 ) -> CrawleeRuntime:
     """Build one persistent Crawlee runtime using only public components."""
 
-    # BasicCrawler always enters Crawlee's global event manager in addition to
-    # the crawler-local one. Initialize that global service explicitly once so
-    # Crawlee does not create it lazily as a side effect. Runtime storage still
-    # uses the explicit per-crawl configuration below.
-    service_locator.set_configuration(_GLOBAL_CRAWLEE_CONFIGURATION)
-
     resolved_storage_dir = Path(storage_dir).expanduser().resolve()
     resolved_storage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -59,6 +52,11 @@ async def build_crawlee_runtime(
     )
     storage_client = FileSystemStorageClient()
     event_manager = LocalEventManager().from_config(config=configuration)
+    service_locator = ServiceLocator(
+        configuration=configuration,
+        storage_client=storage_client,
+        event_manager=event_manager,
+    )
 
     request_queue = await RequestQueue.open(
         name="docsync-main",
