@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import urllib.error
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -146,10 +145,6 @@ def test_normalize_markdown_normalizes_newlines_and_spacing() -> None:
 def test_filter_incremental_urls_normalizes_deduplicates_and_records_skips(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = SimpleNamespace(
-        refresh_hours=24,
-        force_refresh=False,
-    )
     stats = CrawlStats(
         started_at="2026-01-01T00:00:00Z",
         mode="http",
@@ -159,7 +154,7 @@ def test_filter_incremental_urls_normalizes_deduplicates_and_records_skips(
     monkeypatch.setattr(
         incremental,
         "is_recently_saved",
-        lambda url, config, state: url.endswith("/recent"),
+        lambda url, refresh_hours, force_refresh, state: url.endswith("/recent"),
     )
 
     selected = incremental.filter_incremental_urls(
@@ -169,7 +164,8 @@ def test_filter_incremental_urls_normalizes_deduplicates_and_records_skips(
             "https://example.com/recent/",
             "https://example.com/b?utm_source=test",
         ],
-        config,
+        24,
+        False,
         stats,
         url_state,
     )
