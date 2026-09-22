@@ -9,7 +9,8 @@ from pathlib import Path
 from crawlee import ConcurrencySettings
 from crawlee.configuration import Configuration
 from crawlee.events import EventManager, LocalEventManager
-from crawlee.request_loaders import RequestManager, ThrottlingRequestManager
+from crawlee.request_loaders import RequestManager
+from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient, StorageClient
 from crawlee.storages import RequestQueue
 
@@ -52,10 +53,27 @@ async def build_crawlee_runtime(
         configuration=configuration,
     )
 
+    async def open_runtime_request_queue(
+        *,
+        alias: str | None = None,
+        storage_client: StorageClient | None = None,
+        configuration: Configuration | None = None,
+    ) -> RequestQueue:
+        """Open throttled sub-queues on this runtime's persistent backend."""
+
+        return await RequestQueue.open(
+            alias=alias,
+            storage_client=runtime_storage_client,
+            configuration=runtime_configuration,
+        )
+
+    runtime_storage_client = storage_client
+    runtime_configuration = configuration
+
     request_manager = ThrottlingRequestManager(
-        request_queue,
+        inner=request_queue,
         domains=[hostname],
-        request_manager_opener=RequestQueue.open,
+        request_manager_opener=open_runtime_request_queue,
     )
 
     concurrency_settings = ConcurrencySettings(
