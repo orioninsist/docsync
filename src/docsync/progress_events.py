@@ -15,7 +15,6 @@ class CrawlEvent:
     current_title: str | None = None
     processed: int | None = None
     saved: int | None = None
-    duplicate_content: int | None = None
     incremental_skipped: int | None = None
     rejected_urls: int | None = None
     empty_pages: int | None = None
