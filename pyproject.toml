@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.15.0",
-    "crawlee[beautifulsoup,curl-impersonate,playwright]==1.10.1",
+    "crawlee[adaptive-crawler,beautifulsoup,curl-impersonate,playwright]==1.10.1",
     "defusedxml>=0.7.1",
     "httpx>=0.28.1",
     "langdetect>=1.0.9",
