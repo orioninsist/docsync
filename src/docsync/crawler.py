@@ -47,7 +47,6 @@ def _silence_crawlee_runtime_logs() -> None:
 
     for logger_name in (
         "crawlee",
-        "crawlee._autoscaling",
         "BeautifulSoupCrawler",
         "PlaywrightCrawler",
     ):
@@ -435,7 +434,6 @@ async def run_crawler(
                     {
                         "outcome": "empty",
                         "url": context.request.url,
-                        "discovered_link_count": discovered_link_count,
                     }
                 )
                 return
