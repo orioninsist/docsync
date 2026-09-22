@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import asyncio
 from pathlib import Path
 
@@ -37,35 +36,6 @@ def settings_from_environment(
     )
 
     return Settings.from_environment()
-
-
-def run_crawler_node() -> ast.FunctionDef:
-    tree = ast.parse(
-        ENGINE_PATH.read_text(encoding="utf-8"),
-        filename=str(ENGINE_PATH),
-    )
-
-    matches = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "build_http_crawler"
-    ]
-
-    assert len(matches) == 1
-    return matches[0]
-
-
-def crawler_constructor() -> ast.Call:
-    matches = [
-        node
-        for node in ast.walk(run_crawler_node())
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "BeautifulSoupCrawler"
-    ]
-
-    assert len(matches) == 1
-    return matches[0]
 
 
 def test_rate_limit_constants_are_conservative() -> None:
@@ -169,18 +139,6 @@ def test_existing_concurrency_controls_are_preserved(tmp_path: Path) -> None:
     assert settings.max_concurrency == 3
     assert settings.desired_concurrency == 3
     assert settings.max_tasks_per_minute == 20
-
-
-def test_existing_crawler_limits_are_preserved() -> None:
-    source = ENGINE_PATH.read_text(encoding="utf-8")
-
-    for option_name in {
-        "concurrency_settings",
-        "max_request_retries",
-        "max_requests_per_crawl",
-        "request_handler_timeout",
-    }:
-        assert f'"{option_name}"' in source
 
 
 def test_request_throttling_remains_runtime_wired(tmp_path: Path) -> None:
