@@ -43,9 +43,6 @@ class SiteInformation:
     language: str = "en"
     robots_enabled: bool = True
     sitemap_urls: int = 0
-    sitemap_files_checked: int = 0
-    sitemap_files_found: int = 0
-    sitemap_errors: int = 0
     browser_type: str = ""
     headless: bool = True
 
@@ -246,11 +243,6 @@ class DashboardRenderer:
             f"Browser: {snapshot.site.browser_type}",
             f"Headless: {_boolean_mark(snapshot.site.headless)}",
             f"Sitemap URLs: {snapshot.site.sitemap_urls}",
-            (
-                f"Sitemaps: {snapshot.site.sitemap_files_found} found / "
-                f"{snapshot.site.sitemap_files_checked} checked / "
-                f"{snapshot.site.sitemap_errors} errors"
-            ),
             "",
             "Discovery",
             f"Discovered: {snapshot.discovered}",
@@ -416,14 +408,6 @@ class DashboardRenderer:
         site_summary.add_row(
             "Sitemap URLs",
             str(snapshot.site.sitemap_urls),
-        )
-        site_summary.add_row(
-            "Sitemaps",
-            (
-                f"{snapshot.site.sitemap_files_found} found / "
-                f"{snapshot.site.sitemap_files_checked} checked / "
-                f"{snapshot.site.sitemap_errors} errors"
-            ),
         )
 
         if snapshot.site.mode == "playwright":
