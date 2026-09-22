@@ -79,10 +79,11 @@ def test_throttling_manager_wraps_request_queue() -> None:
     assert "runtime = await build_crawlee_runtime(" in crawler_source
 
 
-def test_http_and_playwright_share_throttling_manager() -> None:
+def test_all_crawlers_share_common_runtime_options() -> None:
     source = ENGINE_PATH.read_text(encoding="utf-8")
+    assert "def _common_crawler_options(" in source
     assert '"request_manager": runtime.request_manager' in source
-    assert "request_manager=runtime.request_manager" in source
+    assert source.count("_common_crawler_options(") >= 4
 
 
 def test_legacy_handler_wait_is_removed() -> None:
