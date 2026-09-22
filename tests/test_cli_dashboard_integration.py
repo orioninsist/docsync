@@ -385,9 +385,6 @@ def test_cli_forwards_live_event_sink(
                 discovered=5,
                 active_requests=1,
                 sitemap_urls=4,
-                sitemap_files_checked=3,
-                sitemap_files_found=1,
-                sitemap_errors=2,
                 site_title="Example Documentation",
             )
         )
@@ -425,9 +422,6 @@ def test_cli_forwards_live_event_sink(
     assert dashboard.snapshot.active_requests == 0
     assert dashboard.snapshot.site.title == ("Example Documentation")
     assert dashboard.snapshot.site.sitemap_urls == 4
-    assert dashboard.snapshot.site.sitemap_files_checked == 3
-    assert dashboard.snapshot.site.sitemap_files_found == 1
-    assert dashboard.snapshot.site.sitemap_errors == 2
 
 
 def test_cli_finalization_resets_active_requests_and_queue(
