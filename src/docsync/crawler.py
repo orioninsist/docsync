@@ -22,7 +22,7 @@ from crawlee.http_clients import ImpitHttpClient
 
 from docsync.config import Settings
 from docsync.crawl_engine import build_crawler
-from docsync.crawler_runtime import attach_sitemap_loader, build_crawlee_runtime
+from docsync.crawler_runtime import build_crawlee_runtime
 from docsync.incremental import (
     conditional_request_headers,
     content_is_unchanged,
@@ -392,11 +392,6 @@ async def run_crawler(
         http_client=sitemap_http_client,
         transform_request_function=transform_sitemap_request,
     )
-    await attach_sitemap_loader(
-        runtime,
-        sitemap_loader=sitemap_loader,
-        sitemap_http_client=sitemap_http_client,
-    )
 
     _silence_crawlee_runtime_logs()
 
@@ -732,6 +727,13 @@ async def run_crawler(
             configuration=report_configuration,
         )
 
+    while not await sitemap_loader.is_finished():
+        sitemap_request = await sitemap_loader.fetch_next_request()
+        if sitemap_request is None:
+            break
+        await runtime.request_manager.add_request(sitemap_request)
+        await sitemap_loader.mark_request_as_handled(sitemap_request)
+
     if not incremental_urls and await runtime.request_manager.is_finished():
         emit_event(
             phase="Nothing to crawl",
@@ -740,6 +742,8 @@ async def run_crawler(
             active_requests=0,
         )
         finalize_crawl()
+        await sitemap_loader.close()
+        await sitemap_http_client.cleanup()
         await runtime.close()
         await runtime.drop_request_storage()
         return stats
@@ -791,10 +795,15 @@ async def run_crawler(
         # persist DocsSync state so the request queue can resume unfinished work.
         await flush_committed_results()
         persist_incremental_state()
+        await sitemap_loader.close()
+        await sitemap_http_client.cleanup()
+        await runtime.close()
         raise
 
     await flush_committed_results()
     stats.sitemap_urls = await sitemap_loader.get_total_count()
+    await sitemap_loader.close()
+    await sitemap_http_client.cleanup()
     await runtime.close()
 
     emit_event(
