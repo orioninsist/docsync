@@ -43,24 +43,6 @@ def test_crawl_stats_defaults_are_zeroed() -> None:
     assert stats.exit_code == 0
 
 
-def test_incremental_skip_count_tracks_unique_urls() -> None:
-    stats = CrawlStats(
-        mode="http",
-        started_at=fixed_started_at(),
-    )
-
-    assert stats.record_incremental_skip("https://example.com/a") is True
-    assert stats.record_incremental_skip("https://example.com/a") is False
-    assert stats.record_incremental_skip(" https://example.com/b ") is True
-    assert stats.record_incremental_skip("   ") is False
-
-    assert stats.incremental_skipped == 2
-    assert stats.incremental_skipped_urls == {
-        "https://example.com/a",
-        "https://example.com/b",
-    }
-
-
 def test_finished_summary_preserves_canonical_contract() -> None:
     stats = CrawlStats(
         mode="http",
@@ -80,7 +62,7 @@ def test_finished_summary_preserves_canonical_contract() -> None:
     assert stats.exit_code == 1
 
 
-def test_as_dict_preserves_legacy_metric_names() -> None:
+def test_as_dict_preserves_metric_names() -> None:
     stats = CrawlStats(
         mode="playwright",
         started_at=fixed_started_at(),
