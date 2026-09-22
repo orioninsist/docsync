@@ -121,7 +121,6 @@ reports/
 
 *.checkpoint
 checkpoint.json
-content_hashes.json
 url_state.json
 
 # ------------------------------------------------------------------------------
@@ -225,7 +224,6 @@ NOTES.local.md
 !.python-version
 !README.md
 !TODO.md
-!main.py
 !pyproject.toml
 !uv.lock
 
@@ -233,8 +231,6 @@ NOTES.local.md
 !src/**
 !tests/
 !tests/**
-!tools/
-!tools/**
 
 !data/
 !data/markdown/
