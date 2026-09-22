@@ -6,8 +6,8 @@ import os
 from collections.abc import Sequence
 from pathlib import Path
 
-from docsync.config import Settings
 from docsync.metrics import CrawlStats
+
 from .crawler import run_crawler
 
 
