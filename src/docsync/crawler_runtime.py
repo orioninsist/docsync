@@ -45,12 +45,14 @@ async def build_crawlee_runtime(
         purge_on_start=False,
     )
     storage_client = FileSystemStorageClient()
-    event_manager = LocalEventManager().from_config(config=configuration)
     runtime_service_locator = ServiceLocator(
         configuration=configuration,
-        event_manager=event_manager,
         storage_client=storage_client,
     )
+    event_manager = LocalEventManager().from_config(
+        config=runtime_service_locator.get_configuration()
+    )
+    runtime_service_locator.set_event_manager(event_manager)
 
     request_queue = await RequestQueue.open(
         name="docsync-main",
