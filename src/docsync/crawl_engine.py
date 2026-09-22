@@ -119,7 +119,6 @@ def build_crawler(
     respect_robots_txt: bool,
     headless: bool,
     browser_type: str,
-    request_timeout_seconds: int,
     http_client: HttpClient | None = None,
 ) -> Any:
     """Build the canonical crawler for an HTTP or Playwright workflow."""
