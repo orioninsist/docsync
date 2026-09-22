@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from docsync.config import Settings
-from docsync.inventory import run_inventory
 from docsync.metrics import CrawlStats
 from docsync.progress_events import CrawlEvent
 from docsync.terminal_ui import (
@@ -131,15 +130,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Maximum requests per minute. Overrides DOCSYNC_REQUESTS_PER_MINUTE.",
     )
-    parser.add_argument(
-        "--inventory-only",
-        action="store_true",
-        help=(
-            "Discover and classify in-scope URLs without writing Markdown. "
-            "Writes site-inventory.json to --state-dir."
-        ),
-    )
-
     return parser
 
 
@@ -300,25 +290,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     _apply_environment_overrides(args)
     settings = Settings.from_environment()
-
-    if args.inventory_only:
-        report = asyncio.run(
-            run_inventory(
-                start_url=settings.start_url,
-                state_dir=settings.state_dir,
-                max_requests=settings.max_requests,
-                max_concurrency=settings.max_concurrency,
-                requests_per_minute=settings.requests_per_minute,
-                request_timeout_seconds=settings.request_timeout_seconds,
-                language=settings.language,
-                respect_robots_txt=settings.respect_robots_txt,
-            )
-        )
-
-        print(report.render())
-        print(f"Inventory report: {settings.state_dir / 'site-inventory.json'}")
-
-        return 0 if report.discovery_complete else 2
 
     dashboard = _build_dashboard(settings)
     args._docsync_event_sink = lambda event: _apply_crawl_event(dashboard, event)
