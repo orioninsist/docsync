@@ -575,12 +575,7 @@ class DashboardRenderer:
         table.add_column("Metric")
         table.add_column("Value", justify="right")
 
-        table.add_row(
-            "Processed",
-            str(snapshot.processed),
-            "Queued",
-            str(snapshot.queued),
-        )
+        table.add_row("Processed", str(snapshot.processed), "Queued", str(snapshot.queued))
         table.add_row(
             "Discovered",
             str(snapshot.discovered),
@@ -597,25 +592,25 @@ class DashboardRenderer:
             "Rejected",
             str(snapshot.rejected_urls),
             "Empty",
-            str(snapshot.rejected_urls),
+            str(snapshot.empty_pages),
         )
         table.add_row(
             "Non-English",
             str(snapshot.non_english),
-            "Incremental",
-            str(snapshot.non_english),
-        )
-        table.add_row(
             "Failed",
             str(snapshot.failed),
-            "Observed RPM",
-            f"{snapshot.average_requests_per_minute:.1f}",
         )
         table.add_row(
+            "Observed RPM",
+            f"{snapshot.average_requests_per_minute:.1f}",
             "RPM limit",
             str(snapshot.requests_per_minute),
+        )
+        table.add_row(
             "Concurrency",
-            (f"{snapshot.active_requests}/{snapshot.max_concurrency}"),
+            f"{snapshot.active_requests}/{snapshot.max_concurrency}",
+            "",
+            "",
         )
 
         return Panel(
