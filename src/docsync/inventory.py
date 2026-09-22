@@ -8,10 +8,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from crawlee import RequestOptions
 from crawlee.crawlers import (
     BasicCrawlingContext,
     BeautifulSoupCrawlingContext,
 )
+from crawlee.http_clients import ImpitHttpClient
+from crawlee.request_loaders import RequestManagerTandem
 from crawlee.errors import (
     HttpStatusCodeError,
     RequestHandlerError,
@@ -22,7 +25,7 @@ from docsync.crawl_engine import build_http_crawler
 from docsync.crawler_runtime import build_crawlee_runtime
 from docsync.language import EnglishPageDetector
 from docsync.language_strategy import LanguageStrategy
-from docsync.sitemap import discover_sitemap_urls
+from docsync.sitemap import build_sitemap_request_loader
 from docsync.url_security import (
     normalize_url,
     validated_http_url,
@@ -285,27 +288,10 @@ async def run_inventory(
     if seed_url is not None:
         initial_urls.append(seed_url)
 
-    sitemap_result = await discover_sitemap_urls(
-        start_url=normalized_seed_url,
-        timeout_seconds=request_timeout_seconds,
-        max_urls=max_requests,
-    )
-
-    report.sitemap_urls = len(sitemap_result.urls)
-    report.sitemap_files_checked = sitemap_result.sitemap_files_checked
-    report.sitemap_files_found = sitemap_result.sitemap_files_found
-    report.sitemap_errors = len(sitemap_result.errors)
-
-    for sitemap_url in sitemap_result.urls:
-        registered_url = register_discovered_url(sitemap_url)
-
-        if registered_url is not None:
-            initial_urls.append(registered_url)
-
     print(
         "Inventory discovery started | "
         f"seed={normalized_seed_url} | "
-        f"sitemap_urls={report.sitemap_urls} | "
+        "sitemap_source=native-crawlee | "
         f"initial_discovered={len(discovered_urls)} | "
         f"max_requests={max_requests}",
         flush=True,
@@ -318,6 +304,24 @@ async def run_inventory(
         requests_per_minute=requests_per_minute,
         request_timeout_seconds=request_timeout_seconds,
     )
+
+    def transform_sitemap_request(options: RequestOptions) -> RequestOptions | str:
+        registered_url = register_discovered_url(str(options["url"]))
+        if registered_url is None:
+            return "skip"
+        options["url"] = registered_url
+        return options
+
+    sitemap_http_client = ImpitHttpClient()
+    sitemap_loader = build_sitemap_request_loader(
+        start_url=normalized_seed_url,
+        http_client=sitemap_http_client,
+        transform_request_function=transform_sitemap_request,
+    )
+    runtime.request_manager = RequestManagerTandem(
+        sitemap_loader,
+        runtime.request_manager,
+    )  # type: ignore[assignment]
 
     crawler = build_http_crawler(
         runtime=runtime,
@@ -430,6 +434,10 @@ async def run_inventory(
         print_progress()
 
     await crawler.run(initial_urls)
+
+    report.sitemap_urls = await sitemap_loader.get_total_count()
+    await sitemap_loader.close()
+    await sitemap_http_client.cleanup()
 
     report.discovered_urls = len(discovered_urls)
     report.remaining_urls = max(
