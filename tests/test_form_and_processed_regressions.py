@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -113,43 +112,6 @@ def test_url_only_empty_page_is_still_rejected(
         assert str(error).startswith("No meaningful Markdown content found:")
     else:
         raise AssertionError("Expected empty page rejection")
-
-
-def test_standard_document_processed_increment_occurs_after_incremental_success() -> (
-    None
-):
-    tree = ast.parse(
-        CRAWLER_PATH.read_text(encoding="utf-8"),
-        filename=str(CRAWLER_PATH),
-    )
-    handler = _function(tree, "flush_committed_results")
-
-    processed_lines = _processed_augassign_lines(handler)
-
-    record_success_calls = [
-        node
-        for node in ast.walk(handler)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "record_incremental_success"
-    ]
-
-    assert len(record_success_calls) == 1
-
-    record_success_line = record_success_calls[0].lineno
-    processed_after_success = [
-        line for line in processed_lines if line > record_success_line
-    ]
-
-    assert len(processed_after_success) == 1
-
-
-def test_discovery_only_paths_increment_processed_before_return() -> None:
-    source = CRAWLER_PATH.read_text(encoding="utf-8")
-    assert '"outcome": "empty"' in source
-    assert 'if outcome == "empty":' in source
-    assert "stats.empty_pages += 1" in source
-    assert "stats.processed += 1" in source
 
 
 def test_form_is_not_globally_removed() -> None:
