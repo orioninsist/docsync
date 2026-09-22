@@ -213,11 +213,6 @@ def test_inventory_discovers_links_and_writes_json(
         lambda **_: FakeSitemapLoader(),
     )
     monkeypatch.setattr(
-        inventory,
-        "RequestManagerTandem",
-        lambda _loader, manager: manager,
-    )
-    monkeypatch.setattr(
         inventory.ImpitHttpClient,
         "cleanup",
         lambda self: asyncio.sleep(0),
@@ -290,7 +285,6 @@ def test_inventory_reports_incomplete_when_request_limit_is_reached(
             return None
 
     monkeypatch.setattr(inventory, "build_sitemap_request_loader", lambda **_: FakeSitemapLoader())
-    monkeypatch.setattr(inventory, "RequestManagerTandem", lambda _loader, manager: manager)
     monkeypatch.setattr(inventory.ImpitHttpClient, "cleanup", lambda self: asyncio.sleep(0))
 
     report = asyncio.run(
@@ -375,7 +369,6 @@ def test_inventory_preserves_directory_seed_slash(
             return None
 
     monkeypatch.setattr(inventory, "build_sitemap_request_loader", lambda **_: FakeSitemapLoader())
-    monkeypatch.setattr(inventory, "RequestManagerTandem", lambda _loader, manager: manager)
     monkeypatch.setattr(inventory.ImpitHttpClient, "cleanup", lambda self: asyncio.sleep(0))
 
     report = asyncio.run(
