@@ -20,7 +20,6 @@ class CrawlStats:
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     processed: int = 0
     saved: int = 0
-    duplicate_content: int = 0
     rejected_urls: int = 0
     empty_pages: int = 0
     non_english: int = 0
@@ -40,7 +39,6 @@ class CrawlStats:
             "mode": self.mode,
             "processed": self.processed,
             "saved": self.saved,
-            "duplicate_content": self.duplicate_content,
             "rejected_urls": self.rejected_urls,
             "empty_pages": self.empty_pages,
             "non_english": self.non_english,
@@ -57,7 +55,6 @@ class CrawlStats:
             "Finished: "
             f"processed={self.processed} "
             f"saved={self.saved} "
-            f"duplicate={self.duplicate_content} "
             f"incremental_skipped={self.incremental_skipped} "
             f"non_english={self.non_english} "
             f"failed={self.failed}"
