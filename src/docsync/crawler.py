@@ -12,8 +12,8 @@ from urllib.parse import urlsplit
 from bs4 import BeautifulSoup
 from crawlee import HttpHeaders, RequestOptions
 from crawlee.crawlers import (
-    BasicCrawlingContext,
     AdaptivePlaywrightCrawlingContext,
+    BasicCrawlingContext,
     BeautifulSoupCrawlingContext,
     PlaywrightCrawlingContext,
 )
