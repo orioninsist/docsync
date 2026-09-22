@@ -744,7 +744,6 @@ async def run_crawler(
         finalize_crawl()
         await sitemap_loader.close()
         await sitemap_http_client.cleanup()
-        await runtime.close()
         await runtime.drop_request_storage()
         return stats
 
@@ -797,14 +796,12 @@ async def run_crawler(
         persist_incremental_state()
         await sitemap_loader.close()
         await sitemap_http_client.cleanup()
-        await runtime.close()
         raise
 
     await flush_committed_results()
     stats.sitemap_urls = await sitemap_loader.get_total_count()
     await sitemap_loader.close()
     await sitemap_http_client.cleanup()
-    await runtime.close()
 
     emit_event(
         phase="Finalizing",
