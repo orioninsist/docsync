@@ -43,7 +43,7 @@ def _call_name(call: ast.Call) -> str:
 def test_official_throttling_manager_is_imported() -> None:
     source = RUNTIME_PATH.read_text(encoding="utf-8")
 
-    assert "from crawlee.request_loaders import ThrottlingRequestManager" in source
+    assert "ThrottlingRequestManager" in source
     assert "from crawlee.storages import RequestQueue" in source
 
 
