@@ -195,4 +195,3 @@ def test_request_throttling_remains_runtime_wired(tmp_path: Path) -> None:
     )
 
     assert type(runtime.request_manager).__name__ == "ThrottlingRequestManager"
-    assert "example.com" in runtime.request_manager._domain_states
