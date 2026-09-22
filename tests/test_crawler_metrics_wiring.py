@@ -108,29 +108,22 @@ def test_incremental_filter_uses_canonical_stats() -> None:
     run_crawler = _function(_tree(CRAWLER_PATH), "run_crawler")
     calls = _calls(run_crawler, "filter_incremental_urls")
 
-    assert len(calls) == 1
+    assert len(calls) == 2
 
-    stats_keywords = [
-        keyword.value for keyword in calls[0].keywords if keyword.arg == "stats"
-    ]
+    for call in calls:
+        stats_keywords = [
+            keyword.value for keyword in call.keywords if keyword.arg == "stats"
+        ]
+        assert len(stats_keywords) == 1
+        assert isinstance(stats_keywords[0], ast.Name)
+        assert stats_keywords[0].id == "stats"
 
-    assert len(stats_keywords) == 1
-    assert isinstance(stats_keywords[0], ast.Name)
-    assert stats_keywords[0].id == "stats"
 
-
-def test_sitemap_metrics_are_recorded() -> None:
+def test_sitemap_metrics_use_native_loader_counts() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
-    expected_assignments = {
-        "stats.sitemap_urls = len(sitemap_result.urls)",
-        "stats.sitemap_files_checked = sitemap_result.sitemap_files_checked",
-        "stats.sitemap_files_found = sitemap_result.sitemap_files_found",
-        "stats.sitemap_errors = len(sitemap_result.errors)",
-    }
-    normalized_lines = {line.strip() for line in source.splitlines()}
-
-    assert expected_assignments <= normalized_lines
+    assert "stats.sitemap_urls = await sitemap_loader.get_total_count()" in source
+    assert "sitemap_result" not in source
 
 
 def test_failed_request_handler_records_failure() -> None:
