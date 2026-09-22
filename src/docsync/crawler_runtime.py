@@ -7,7 +7,6 @@ from datetime import timedelta
 from pathlib import Path
 
 from crawlee import ConcurrencySettings
-from crawlee._service_locator import ServiceLocator
 from crawlee.configuration import Configuration
 from crawlee.events import EventManager, LocalEventManager
 from crawlee.request_loaders import RequestManager, ThrottlingRequestManager
@@ -52,23 +51,29 @@ async def build_crawlee_runtime(
     )
     storage_client = FileSystemStorageClient()
     event_manager = LocalEventManager().from_config(config=configuration)
-    service_locator = ServiceLocator(
-        configuration=configuration,
-        storage_client=storage_client,
-        event_manager=event_manager,
-    )
-
     request_queue = await RequestQueue.open(
         name="docsync-main",
         storage_client=storage_client,
         configuration=configuration,
     )
 
+    async def open_throttled_queue(**kwargs: object) -> RequestQueue:
+        """Open Crawlee's aliased throttle queue on this runtime's storage."""
+
+        alias = kwargs.get("alias")
+        if not isinstance(alias, str):
+            raise TypeError("Throttled request queue alias must be a string.")
+
+        return await RequestQueue.open(
+            alias=alias,
+            storage_client=storage_client,
+            configuration=configuration,
+        )
+
     request_manager = ThrottlingRequestManager(
         inner=request_queue,
         domains=[hostname],
-        request_manager_opener=RequestQueue.open,
-        service_locator=service_locator,
+        request_manager_opener=open_throttled_queue,
     )
 
     concurrency_settings = ConcurrencySettings(
