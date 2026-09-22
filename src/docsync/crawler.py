@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from pathlib import Path
 from re import Pattern
@@ -42,19 +41,6 @@ from docsync.url_security import (
     validated_http_url,
 )
 
-
-def _silence_crawlee_runtime_logs() -> None:
-    """Disable Crawlee internal terminal logging."""
-
-    for logger_name in (
-        "crawlee",
-        "BeautifulSoupCrawler",
-        "PlaywrightCrawler",
-    ):
-        logger = logging.getLogger(logger_name)
-        logger.handlers.clear()
-        logger.setLevel(logging.WARNING)
-        logger.propagate = False
 
 EXCLUDED_URL_PATTERNS: Final[tuple[Pattern[str], ...]] = (
     re.compile(
@@ -288,7 +274,6 @@ async def run_crawler(
         transform_request_function=transform_sitemap_request,
     )
 
-    _silence_crawlee_runtime_logs()
 
     crawler = build_crawler(
         mode=resolved_mode,
