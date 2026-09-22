@@ -342,8 +342,14 @@ async def run_crawler(
         active_requests=0,
     )
 
-    content_hashes = load_content_hashes(resolved_state_dir)
-    url_state = load_url_state(resolved_state_dir)
+    content_hashes = load_content_hashes(
+        resolved_state_dir,
+        start_hostname,
+    )
+    url_state = load_url_state(
+        resolved_state_dir,
+        start_hostname,
+    )
 
     markdown_exporter = MarkdownExporter(resolved_output_dir)
     language_detector = EnglishPageDetector()
@@ -817,10 +823,12 @@ async def run_crawler(
         save_content_hashes(
             content_hashes,
             resolved_state_dir,
+            start_hostname,
         )
         save_url_state(
             url_state,
             resolved_state_dir,
+            start_hostname,
         )
         write_crawl_report(
             output_dir=resolved_output_dir,
