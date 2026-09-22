@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
-from crawlee import ConcurrencySettings, service_locator
+from crawlee import ConcurrencySettings
 from crawlee.configuration import Configuration
 from crawlee.events import EventManager, LocalEventManager
 from crawlee.request_loaders import RequestManager, ThrottlingRequestManager
@@ -51,7 +51,6 @@ async def build_crawlee_runtime(
     )
     storage_client = FileSystemStorageClient()
     event_manager = LocalEventManager().from_config(config=configuration)
-    service_locator.set_event_manager(event_manager)
 
     request_queue = await RequestQueue.open(
         name="docsync-main",
