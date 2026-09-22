@@ -162,16 +162,10 @@ def test_dashboard_site_update(
     updated = dashboard.update_site(
         title="tmux Wiki",
         sitemap_urls=17,
-        sitemap_files_checked=3,
-        sitemap_files_found=1,
-        sitemap_errors=2,
     )
 
     assert updated.site.title == "tmux Wiki"
     assert updated.site.sitemap_urls == 17
-    assert updated.site.sitemap_files_checked == 3
-    assert updated.site.sitemap_files_found == 1
-    assert updated.site.sitemap_errors == 2
 
 
 def test_completion_report_contains_release_summary(
@@ -363,9 +357,6 @@ def test_richer_completion_report_contains_site_and_performance_details(
         site,
         title="Example Documentation",
         sitemap_urls=12,
-        sitemap_files_checked=3,
-        sitemap_files_found=2,
-        sitemap_errors=1,
     )
 
     snapshot = CrawlProgressSnapshot(
@@ -408,7 +399,6 @@ def test_richer_completion_report_contains_site_and_performance_details(
     assert "Example Documentation" in rendered
     assert "Sitemap URLs" in rendered
     assert "12" in rendered
-    assert "2 found / 3 checked / 1 errors" in rendered
     assert "https://example.com/docs" in rendered
     assert "playwright" in rendered
     assert "Browser" in rendered
