@@ -47,10 +47,10 @@ def test_throttled_runtime_contains_requested_domain(tmp_path: Path) -> None:
     assert "example.com" in runtime.request_manager._domain_states
 
 
-def test_runtime_uses_native_request_queue_opener(tmp_path: Path) -> None:
+def test_runtime_subqueues_use_same_persistent_backend(tmp_path: Path) -> None:
     runtime = build_runtime(tmp_path / "crawlee")
 
-    assert runtime.request_manager._request_manager_opener == RequestQueue.open
+    assert runtime.request_manager._request_manager_opener != RequestQueue.open
 
 
 def test_runtime_uses_public_event_manager(tmp_path: Path) -> None:
