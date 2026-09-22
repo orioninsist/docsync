@@ -14,7 +14,6 @@ from crawlee.crawlers import (
     BeautifulSoupCrawlingContext,
 )
 from crawlee.http_clients import ImpitHttpClient
-from crawlee.request_loaders import RequestManagerTandem
 from crawlee.errors import (
     HttpStatusCodeError,
     RequestHandlerError,
@@ -22,7 +21,7 @@ from crawlee.errors import (
 )
 
 from docsync.crawl_engine import build_http_crawler
-from docsync.crawler_runtime import build_crawlee_runtime
+from docsync.crawler_runtime import attach_sitemap_loader, build_crawlee_runtime
 from docsync.language import EnglishPageDetector
 from docsync.language_strategy import LanguageStrategy
 from docsync.sitemap import build_sitemap_request_loader
@@ -315,10 +314,11 @@ async def run_inventory(
         http_client=sitemap_http_client,
         transform_request_function=transform_sitemap_request,
     )
-    runtime.request_manager = RequestManagerTandem(
-        sitemap_loader,
-        runtime.request_manager,
-    )  # type: ignore[assignment]
+    await attach_sitemap_loader(
+        runtime,
+        sitemap_loader=sitemap_loader,
+        sitemap_http_client=sitemap_http_client,
+    )
 
     crawler = build_http_crawler(
         runtime=runtime,
@@ -433,8 +433,7 @@ async def run_inventory(
     await crawler.run(initial_urls)
 
     report.sitemap_urls = await sitemap_loader.get_total_count()
-    await sitemap_loader.close()
-    await sitemap_http_client.cleanup()
+    await runtime.close()
 
     report.discovered_urls = len(discovered_urls)
     report.remaining_urls = max(
@@ -455,6 +454,6 @@ async def run_inventory(
         report=report,
         state_dir=Path(state_dir),
     )
-    await runtime.request_manager.drop()
+    await runtime.drop_request_storage()
 
     return report
