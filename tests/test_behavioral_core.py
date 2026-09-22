@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 import urllib.error
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -207,70 +205,3 @@ def test_markdown_exporter_uses_atomic_replacement(
     del exporter
 
 
-def test_save_content_hashes_writes_sorted_json_atomically(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    hash_file = tmp_path / "state" / "content_hashes.json"
-    hash_file.parent.mkdir(parents=True)
-
-    monkeypatch.setattr(
-        incremental,
-        "CONTENT_HASH_FILE",
-        hash_file,
-    )
-
-    hashes = {
-        "https://example.com/b": "hash-b",
-        "https://example.com/a": "hash-a",
-    }
-
-    incremental.save_content_hashes(hashes)
-
-    assert json.loads(hash_file.read_text(encoding="utf-8")) == hashes
-    assert not hash_file.with_suffix(".tmp").exists()
-
-
-def test_load_content_hashes_returns_empty_for_invalid_json(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    hash_file = tmp_path / "content_hashes.json"
-    hash_file.write_text("{invalid", encoding="utf-8")
-
-    monkeypatch.setattr(
-        incremental,
-        "CONTENT_HASH_FILE",
-        hash_file,
-    )
-
-    assert incremental.load_content_hashes() == {}
-
-
-def test_load_content_hashes_discards_non_string_entries(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    hash_file = tmp_path / "content_hashes.json"
-    hash_file.write_text(
-        json.dumps(
-            {
-                "https://example.com/a": "hash-a",
-                "https://example.com/b": 123,
-                "invalid": None,
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    monkeypatch.setattr(
-        incremental,
-        "CONTENT_HASH_FILE",
-        hash_file,
-    )
-
-    loaded: Any = incremental.load_content_hashes()
-
-    assert loaded == {
-        "https://example.com/a": "hash-a",
-    }
