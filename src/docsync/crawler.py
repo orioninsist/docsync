@@ -320,9 +320,6 @@ async def run_crawler(
                 discovered=discovered,
                 active_requests=active_requests,
                 sitemap_urls=stats.sitemap_urls,
-                sitemap_files_checked=stats.sitemap_files_checked,
-                sitemap_files_found=stats.sitemap_files_found,
-                sitemap_errors=stats.sitemap_errors,
                 site_title=site_title,
             )
         )
