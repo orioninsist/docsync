@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import inspect
 import os
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from docsync.config import Settings
 from docsync.inventory import run_inventory
@@ -175,79 +174,25 @@ def _apply_environment_overrides(args: argparse.Namespace) -> None:
         os.environ["DOCSYNC_REQUESTS_PER_MINUTE"] = str(args.requests_per_minute)
 
 
-def _resolve_crawler_result(result: Any) -> Any:
-    """Execute awaitable crawler results while preserving synchronous support."""
+def _invoke_run_crawler(args: argparse.Namespace) -> CrawlStats:
+    """Run the canonical crawler with the resolved CLI arguments."""
 
-    if inspect.isawaitable(result):
-        return asyncio.run(_await_crawler_result(result))
-
-    return result
-
-
-def _invoke_run_crawler(args: argparse.Namespace) -> Any:
-    # DOCSYNC_DYNAMIC_RUN_CRAWLER_BOUNDARY
-    # CLI compatibility dispatch intentionally builds arguments dynamically.
-    # Preserve CrawlStats typing without changing runtime call behavior.
-    dynamic_run_crawler = cast(
-        Callable[..., Awaitable[CrawlStats]],
-        run_crawler,
+    return asyncio.run(
+        run_crawler(
+            start_url=args.start_url,
+            output_dir=args.output_dir,
+            state_dir=args.state_dir,
+            max_concurrency=args.max_concurrency,
+            max_requests=args.max_requests,
+            language=args.language,
+            refresh_hours=args.refresh_hours,
+            force_refresh=args.force_refresh,
+            mode=args.mode,
+            headless=args.headless,
+            browser_type=args.browser_type,
+            event_sink=getattr(args, "_docsync_event_sink", None),
+        )
     )
-
-    signature = inspect.signature(run_crawler)
-    parameters = signature.parameters
-
-    supported_values: dict[str, object] = {
-        "start_url": args.start_url,
-        "output_dir": args.output_dir,
-        "state_dir": args.state_dir,
-        "max_concurrency": args.max_concurrency,
-        "max_requests": args.max_requests,
-        "language": args.language,
-        "refresh_hours": args.refresh_hours,
-        "force_refresh": args.force_refresh,
-        "mode": args.mode,
-        "headless": args.headless,
-        "browser_type": args.browser_type,
-        "event_sink": getattr(
-            args,
-            "_docsync_event_sink",
-            None,
-        ),
-    }
-
-    keyword_arguments = {
-        name: supported_values[name]
-        for name in parameters
-        if name in supported_values and supported_values[name] is not None
-    }
-
-    if not parameters:
-        return _resolve_crawler_result(dynamic_run_crawler())
-
-    if set(parameters) == {"start_url"}:
-        return _resolve_crawler_result(dynamic_run_crawler(args.start_url))
-
-    if keyword_arguments:
-        return _resolve_crawler_result(dynamic_run_crawler(**keyword_arguments))
-
-    if len(parameters) == 1:
-        parameter = next(iter(parameters.values()))
-        annotation_text = str(parameter.annotation).lower()
-
-        if "setting" in parameter.name.lower() or "setting" in annotation_text:
-            settings = Settings.from_environment()
-            return _resolve_crawler_result(dynamic_run_crawler(settings))
-
-    detected = ", ".join(parameters) or "<none>"
-    raise RuntimeError(
-        f"Unsupported dynamic_run_crawler() signature. Detected parameters: {detected}"
-    )
-
-
-async def _await_crawler_result(awaitable: Awaitable[Any]) -> Any:
-    """Convert an arbitrary awaitable into a native coroutine."""
-
-    return await awaitable
 
 
 def _build_dashboard(settings: Settings) -> CrawlDashboard:
@@ -404,8 +349,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         dashboard.finish()
         raise
 
-    if inspect.isawaitable(result):
-        result = asyncio.run(_await_crawler_result(result))
 
     if isinstance(result, CrawlStats):
         _apply_stats_to_dashboard(
@@ -419,7 +362,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         dashboard.finish()
 
-        # Preserve the canonical machine-readable compatibility summary.
         print(result.finished_summary())
         return int(result.exit_code)
 
