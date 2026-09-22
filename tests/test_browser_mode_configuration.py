@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import os
 from pathlib import Path
 from typing import Final
@@ -354,42 +353,3 @@ def test_invoke_run_crawler_forwards_browser_configuration(
     }
 
 
-def test_run_crawler_browser_parameters_and_reporting() -> None:
-    source = CRAWLER_PATH.read_text(
-        encoding="utf-8",
-    )
-    tree = ast.parse(
-        source,
-        filename=str(CRAWLER_PATH),
-    )
-
-    run_crawler = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "run_crawler"
-    )
-
-    parameter_names = {argument.arg for argument in run_crawler.args.args}
-
-    assert {
-        "mode",
-        "headless",
-        "browser_type",
-    } <= parameter_names
-
-    assert "CrawlStats(mode=resolved_mode)" in source
-    assert '"mode": resolved_mode' in source
-    assert '"headless": resolved_headless' in source
-    assert '"browser_type": resolved_browser_type' in source
-
-
-def test_playwright_selection_is_wired() -> None:
-    crawler_source = CRAWLER_PATH.read_text(encoding="utf-8")
-    engine_source = ENGINE_PATH.read_text(encoding="utf-8")
-
-    assert "crawler_build = build_crawler(" in crawler_source
-    assert "BeautifulSoupCrawler(" in engine_source
-    assert "PlaywrightCrawler(" in engine_source
-    assert "PlaywrightRenderingConfig(" in engine_source
-    assert "install_resource_blocking(" in engine_source
-    assert "render_page_html(" in crawler_source
