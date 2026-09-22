@@ -85,20 +85,20 @@ def test_crawler_loads_persistent_url_state() -> None:
     assert calls[0].args[0].id == "resolved_state_dir"
 
 
-def test_crawler_filters_initial_urls() -> None:
+def test_crawler_filters_seed_and_sitemap_urls_incrementally() -> None:
     calls = _calls("filter_incremental_urls")
 
-    assert len(calls) == 1
+    assert len(calls) == 2
 
-    keyword_names = {
-        keyword.arg for keyword in calls[0].keywords if keyword.arg is not None
-    }
-
-    assert "config" in keyword_names
-    assert {"url_state", "state"} & keyword_names or any(
-        isinstance(argument, ast.Name) and argument.id == "url_state"
-        for argument in calls[0].args
-    )
+    for call in calls:
+        keyword_names = {
+            keyword.arg for keyword in call.keywords if keyword.arg is not None
+        }
+        assert "config" in keyword_names
+        assert {"url_state", "state"} & keyword_names or any(
+            isinstance(argument, ast.Name) and argument.id == "url_state"
+            for argument in call.args
+        )
 
 
 def test_crawlee_run_uses_filtered_urls() -> None:
