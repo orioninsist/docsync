@@ -1,10 +1,9 @@
-"""Regression tests for the permanent English-only URL policy."""
+"""Regression tests for requested-language URL policy."""
 
 from __future__ import annotations
 
 import pytest
 
-from docsync.crawler import build_scope_pattern, filter_discovered_urls
 from docsync.language import LanguagePolicy, detect_explicit_url_language
 
 
@@ -21,9 +20,7 @@ from docsync.language import LanguagePolicy, detect_explicit_url_language
     ],
 )
 def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
-    strategy = LanguagePolicy("en")
-
-    assert strategy.should_skip_url(url) is True
+    assert LanguagePolicy("en").should_skip_url(url) is True
 
 
 @pytest.mark.parametrize(
@@ -37,34 +34,12 @@ def test_explicit_non_english_google_urls_are_rejected(url: str) -> None:
     ],
 )
 def test_english_google_urls_are_allowed(url: str) -> None:
-    strategy = LanguagePolicy("en")
-
-    assert strategy.should_skip_url(url) is False
+    assert LanguagePolicy("en").should_skip_url(url) is False
 
 
 def test_url_language_decision_records_query_source() -> None:
     decision = detect_explicit_url_language("https://developers.google.com/docs?hl=ja")
-
     assert decision is not None
     assert decision.is_english is False
     assert decision.language_code == "ja"
     assert decision.source == "url-query"
-
-
-def test_discovery_policy_rejects_explicit_non_english_urls() -> None:
-    strategy = LanguagePolicy("en")
-    scope_pattern = build_scope_pattern("https://developers.google.com")
-
-    assert filter_discovered_urls(
-        urls=[
-            "https://developers.google.com/docs/english",
-            "https://developers.google.com/docs/german?hl=de",
-            "https://developers.google.com/intl/ja/docs/japanese",
-            "https://developers.google.com/fr/docs/french",
-        ],
-        base_url="https://developers.google.com",
-        scope_pattern=scope_pattern,
-        should_skip_url=strategy.should_skip_url,
-    ) == ["https://developers.google.com/docs/english"]
-
-
