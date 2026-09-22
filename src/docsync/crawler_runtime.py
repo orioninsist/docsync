@@ -66,27 +66,11 @@ async def build_crawlee_runtime(
         configuration=configuration,
     )
 
-    async def open_runtime_request_queue(
-        *,
-        alias: str | None = None,
-        storage_client: StorageClient | None = None,
-        configuration: Configuration | None = None,
-    ) -> RequestQueue:
-        """Open throttled sub-queues on this runtime's persistent backend."""
-
-        return await RequestQueue.open(
-            alias=alias,
-            storage_client=runtime_storage_client,
-            configuration=runtime_configuration,
-        )
-
-    runtime_storage_client = storage_client
-    runtime_configuration = configuration
-
     request_manager = ThrottlingRequestManager(
         inner=request_queue,
         domains=[hostname],
-        request_manager_opener=open_runtime_request_queue,
+        request_manager_opener=RequestQueue.open,
+        service_locator=service_locator,
     )
 
     concurrency_settings = ConcurrencySettings(
