@@ -16,10 +16,26 @@ from docsync.url_security import normalize_url
 DEFAULT_REFRESH_HOURS = 0
 
 STATE_DIR = Path("storage/docsync")
-CONTENT_HASH_FILENAME = "content_hashes.json"
-URL_STATE_FILENAME = "url_state.json"
-CONTENT_HASH_FILE = STATE_DIR / CONTENT_HASH_FILENAME
-URL_STATE_FILE = STATE_DIR / URL_STATE_FILENAME
+CONTENT_HASH_SUFFIX = "content_hashes.json"
+URL_STATE_SUFFIX = "url_state.json"
+CONTENT_HASH_FILE = STATE_DIR / CONTENT_HASH_SUFFIX
+URL_STATE_FILE = STATE_DIR / URL_STATE_SUFFIX
+
+
+def state_file_path(
+    state_dir: Path,
+    hostname: str,
+    suffix: str,
+) -> Path:
+    """Return the flat per-host state file path."""
+
+    normalized_hostname = hostname.strip().lower().rstrip(".")
+    if not normalized_hostname:
+        raise ValueError("hostname cannot be empty")
+    if "/" in normalized_hostname or "\\" in normalized_hostname:
+        raise ValueError("hostname must not contain path separators")
+
+    return state_dir.resolve() / f"{normalized_hostname}_{suffix}"
 
 
 class IncrementalConfig(Protocol):
@@ -49,12 +65,13 @@ def content_hash(markdown: str) -> str:
 
 def load_content_hashes(
     state_dir: Path | None = None,
+    hostname: str | None = None,
 ) -> dict[str, str]:
     """Load the legacy content-hash mapping safely."""
 
     content_hash_file = (
-        state_dir.resolve() / CONTENT_HASH_FILENAME
-        if state_dir is not None
+        state_file_path(state_dir, hostname, CONTENT_HASH_SUFFIX)
+        if state_dir is not None and hostname is not None
         else CONTENT_HASH_FILE
     )
 
@@ -83,12 +100,13 @@ def load_content_hashes(
 def save_content_hashes(
     hashes: dict[str, str],
     state_dir: Path | None = None,
+    hostname: str | None = None,
 ) -> None:
     """Atomically replace the content-hash state file."""
 
     content_hash_file = (
-        state_dir.resolve() / CONTENT_HASH_FILENAME
-        if state_dir is not None
+        state_file_path(state_dir, hostname, CONTENT_HASH_SUFFIX)
+        if state_dir is not None and hostname is not None
         else CONTENT_HASH_FILE
     )
 
@@ -128,12 +146,13 @@ def save_content_hashes(
 
 def load_url_state(
     state_dir: Path | None = None,
+    hostname: str | None = None,
 ) -> dict[str, dict[str, str]]:
     """Load valid legacy URL-state records safely."""
 
     url_state_file = (
-        state_dir.resolve() / URL_STATE_FILENAME
-        if state_dir is not None
+        state_file_path(state_dir, hostname, URL_STATE_SUFFIX)
+        if state_dir is not None and hostname is not None
         else URL_STATE_FILE
     )
 
@@ -181,12 +200,13 @@ def load_url_state(
 def save_url_state(
     state: dict[str, dict[str, str]],
     state_dir: Path | None = None,
+    hostname: str | None = None,
 ) -> None:
     """Atomically replace the URL-state file."""
 
     url_state_file = (
-        state_dir.resolve() / URL_STATE_FILENAME
-        if state_dir is not None
+        state_file_path(state_dir, hostname, URL_STATE_SUFFIX)
+        if state_dir is not None and hostname is not None
         else URL_STATE_FILE
     )
 
