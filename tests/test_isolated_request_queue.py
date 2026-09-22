@@ -53,13 +53,10 @@ def test_runtime_uses_native_request_queue_opener(tmp_path: Path) -> None:
     assert runtime.request_manager._request_manager_opener == RequestQueue.open
 
 
-def test_runtime_uses_explicit_service_lifecycle(tmp_path: Path) -> None:
+def test_runtime_uses_public_event_manager(tmp_path: Path) -> None:
     runtime = build_runtime(tmp_path / "crawlee")
 
-    assert runtime.service_locator.get_configuration() is runtime.configuration
-    assert runtime.service_locator.get_storage_client() is runtime.storage_client
-    assert isinstance(runtime.service_locator.get_event_manager(), LocalEventManager)
-    assert runtime.request_manager._service_locator is runtime.service_locator
+    assert isinstance(runtime.event_manager, LocalEventManager)
 
 
 def test_throttled_queue_survives_simulated_restart(tmp_path: Path) -> None:
@@ -84,7 +81,9 @@ def test_throttled_queue_survives_simulated_restart(tmp_path: Path) -> None:
         assert first is not None
         await runtime.request_manager.mark_request_as_handled(first)
 
-        runtime.service_locator.storage_instance_manager.clear_cache()
+        from crawlee import service_locator
+
+        service_locator.storage_instance_manager.clear_cache()
 
         restarted = await build_crawlee_runtime(
             hostname="example.com",
