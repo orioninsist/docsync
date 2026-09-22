@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
-
+from typing import Any, cast
 
 from crawlee.browsers import BrowserType
 from crawlee.crawlers import (
@@ -15,17 +14,9 @@ from crawlee.http_clients import HttpClient
 
 from docsync.crawler_runtime import CrawleeRuntime
 
-
 DEFAULT_MAX_REQUEST_RETRIES = 2
 
-
-class AdaptiveResult(Protocol):
-    """Minimal public shape consumed from Crawlee adaptive results."""
-
-    push_data_calls: list[dict[str, Any]]
-
-
-def adaptive_result_is_meaningful(result: AdaptiveResult) -> bool:
+def adaptive_result_is_meaningful(result: Any) -> bool:
     """Accept terminal static results while forcing empty content to Playwright."""
 
     for call in result.push_data_calls:
@@ -35,7 +26,6 @@ def adaptive_result_is_meaningful(result: AdaptiveResult) -> bool:
             if isinstance(value, dict) and value.get("outcome") != "empty":
                 return True
     return False
-
 
 def _common_crawler_options(
     *,
@@ -57,7 +47,6 @@ def _common_crawler_options(
         "respect_robots_txt_file": respect_robots_txt,
     }
 
-
 def build_http_crawler(
     *,
     runtime: CrawleeRuntime,
@@ -76,7 +65,6 @@ def build_http_crawler(
         crawler_options["http_client"] = http_client
 
     return BeautifulSoupCrawler(**crawler_options)
-
 
 def build_adaptive_crawler(
     *,
@@ -102,7 +90,6 @@ def build_adaptive_crawler(
         },
     )
 
-
 def build_playwright_crawler(
     *,
     runtime: CrawleeRuntime,
@@ -123,7 +110,6 @@ def build_playwright_crawler(
         headless=headless,
         browser_type=browser_type,
     )
-
 
 def build_crawler(
     *,
