@@ -820,7 +820,7 @@ async def run_crawler(
         "throttled_domains": [start_hostname],
     }
 
-    def finalize_crawl() -> None:
+    def persist_incremental_state() -> None:
         save_content_hashes(
             content_hashes,
             resolved_state_dir,
@@ -831,15 +831,29 @@ async def run_crawler(
             resolved_state_dir,
             start_hostname,
         )
+
+    def finalize_crawl() -> None:
+        persist_incremental_state()
         write_crawl_report(
             output_dir=resolved_output_dir,
             stats=stats,
             configuration=report_configuration,
         )
 
+    if not incremental_urls and await runtime.request_manager.is_finished():
+        emit_event(
+            phase="Nothing to crawl",
+            queued=0,
+            discovered=len(initial_urls),
+            active_requests=0,
+        )
+        finalize_crawl()
+        await runtime.request_manager.drop()
+        return stats
+
     if not incremental_urls:
         emit_event(
-            phase="Resuming queue or nothing to crawl",
+            phase="Resuming queue",
             queued=0,
             discovered=len(initial_urls),
             active_requests=0,
@@ -882,16 +896,7 @@ async def run_crawler(
     except BaseException:
         # Preserve DocsSync content state for requests Crawlee already marked handled.
         # The persistent RequestQueue can then resume only the unfinished requests.
-        save_content_hashes(
-            content_hashes,
-            resolved_state_dir,
-            start_hostname,
-        )
-        save_url_state(
-            url_state,
-            resolved_state_dir,
-            start_hostname,
-        )
+        persist_incremental_state()
         raise
     finally:
         if fallback_renderer is not None:
