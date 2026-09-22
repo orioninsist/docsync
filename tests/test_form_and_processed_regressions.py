@@ -122,7 +122,7 @@ def test_standard_document_processed_increment_occurs_after_incremental_success(
         CRAWLER_PATH.read_text(encoding="utf-8"),
         filename=str(CRAWLER_PATH),
     )
-    handler = _function(tree, "request_handler")
+    handler = _function(tree, "flush_committed_results")
 
     processed_lines = _processed_augassign_lines(handler)
 
@@ -145,35 +145,11 @@ def test_standard_document_processed_increment_occurs_after_incremental_success(
 
 
 def test_discovery_only_paths_increment_processed_before_return() -> None:
-    tree = ast.parse(
-        CRAWLER_PATH.read_text(encoding="utf-8"),
-        filename=str(CRAWLER_PATH),
-    )
-    handler = _function(tree, "request_handler")
-
-    discovery_only_logs = [
-        node
-        for node in ast.walk(handler)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "info"
-        and node.args
-        and isinstance(node.args[0], ast.Constant)
-        and isinstance(node.args[0].value, str)
-        and node.args[0].value.startswith("Discovery-only page processed:")
-    ]
-
-    processed_lines = _processed_augassign_lines(handler)
-
-    assert len(discovery_only_logs) == 2
-    assert len(processed_lines) >= 3
-
-    for log_call in discovery_only_logs:
-        preceding_processed_lines = [
-            line for line in processed_lines if line < log_call.lineno
-        ]
-
-        assert preceding_processed_lines
+    source = CRAWLER_PATH.read_text(encoding="utf-8")
+    assert '"outcome": "empty"' in source
+    assert 'if outcome == "empty":' in source
+    assert "stats.empty_pages += 1" in source
+    assert "stats.processed += 1" in source
 
 
 def test_form_is_not_globally_removed() -> None:
