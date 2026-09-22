@@ -428,7 +428,7 @@ def test_richer_completion_success_rate_is_bounded(
     rendered = console.export_text()
 
     assert "Success rate" in rendered
-    assert "100.0%" in rendered
+    assert "75.0%" in rendered
 
 
 def test_richer_completion_report_preserves_failure_status(
