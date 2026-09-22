@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from crawlee.crawlers import (
@@ -13,10 +12,6 @@ from crawlee.crawlers import (
 from crawlee.http_clients import HttpClient
 
 from docsync.crawler_runtime import CrawleeRuntime
-from docsync.playwright_rendering import (
-    PlaywrightRenderingConfig,
-    install_resource_blocking,
-)
 
 DEFAULT_MAX_REQUEST_RETRIES = 2
 
@@ -31,13 +26,6 @@ def adaptive_result_is_meaningful(result: Any) -> bool:
                 return True
     return False
 
-
-@dataclass(slots=True)
-class CrawlerBuildResult:
-    """Crawler plus optional Playwright rendering configuration."""
-
-    crawler: Any
-    rendering_config: PlaywrightRenderingConfig | None = None
 
 
 def _common_crawler_options(
@@ -86,11 +74,12 @@ def build_adaptive_crawler(
     runtime: CrawleeRuntime,
     max_requests: int,
     respect_robots_txt: bool,
-    rendering_config: PlaywrightRenderingConfig,
+    headless: bool,
+    browser_type: str,
 ) -> AdaptivePlaywrightCrawler:
     """Build Crawlee's native adaptive HTTP/Playwright crawler."""
 
-    crawler = AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(
+    return AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(
         **_common_crawler_options(
             runtime=runtime,
             max_requests=max_requests,
@@ -99,18 +88,10 @@ def build_adaptive_crawler(
         result_checker=adaptive_result_is_meaningful,
         playwright_crawler_specific_kwargs={
             "navigation_timeout": runtime.request_handler_timeout,
-            **rendering_config.crawler_options(),
+            "headless": headless,
+            "browser_type": browser_type,
         },
     )
-
-    async def install_browser_controls(context: Any) -> None:
-        await install_resource_blocking(
-            context.page,
-            blocked_resource_types=rendering_config.blocked_resource_types,
-        )
-
-    crawler.pre_navigation_hook(install_browser_controls, playwright_only=True)
-    return crawler
 
 
 def build_playwright_crawler(
@@ -118,28 +99,21 @@ def build_playwright_crawler(
     runtime: CrawleeRuntime,
     max_requests: int,
     respect_robots_txt: bool,
-    rendering_config: PlaywrightRenderingConfig,
+    headless: bool,
+    browser_type: str,
 ) -> PlaywrightCrawler:
-    """Build the canonical browser crawler from one shared runtime."""
+    """Build Crawlee's native browser crawler."""
 
-    crawler = PlaywrightCrawler(
+    return PlaywrightCrawler(
         **_common_crawler_options(
             runtime=runtime,
             max_requests=max_requests,
             respect_robots_txt=respect_robots_txt,
         ),
         navigation_timeout=runtime.request_handler_timeout,
-        **rendering_config.crawler_options(),
+        headless=headless,
+        browser_type=browser_type,
     )
-
-    async def install_browser_controls(context: Any) -> None:
-        await install_resource_blocking(
-            context.page,
-            blocked_resource_types=rendering_config.blocked_resource_types,
-        )
-
-    crawler.pre_navigation_hook(install_browser_controls)
-    return crawler
 
 
 def build_crawler(
@@ -152,49 +126,33 @@ def build_crawler(
     browser_type: str,
     request_timeout_seconds: int,
     http_client: HttpClient | None = None,
-) -> CrawlerBuildResult:
+) -> Any:
     """Build the canonical crawler for an HTTP or Playwright workflow."""
 
     if mode == "playwright":
-        rendering_config = PlaywrightRenderingConfig(
+        return build_playwright_crawler(
+            runtime=runtime,
+            max_requests=max_requests,
+            respect_robots_txt=respect_robots_txt,
             headless=headless,
             browser_type=browser_type,
-            request_timeout_seconds=request_timeout_seconds,
-        )
-        return CrawlerBuildResult(
-            crawler=build_playwright_crawler(
-                runtime=runtime,
-                max_requests=max_requests,
-                respect_robots_txt=respect_robots_txt,
-                rendering_config=rendering_config,
-            ),
-            rendering_config=rendering_config,
         )
 
     if mode == "http":
         if http_client is not None:
-            return CrawlerBuildResult(
-                crawler=build_http_crawler(
-                    runtime=runtime,
-                    max_requests=max_requests,
-                    respect_robots_txt=respect_robots_txt,
-                    http_client=http_client,
-                )
-            )
-
-        rendering_config = PlaywrightRenderingConfig(
-            headless=headless,
-            browser_type=browser_type,
-            request_timeout_seconds=request_timeout_seconds,
-        )
-        return CrawlerBuildResult(
-            crawler=build_adaptive_crawler(
+            return build_http_crawler(
                 runtime=runtime,
                 max_requests=max_requests,
                 respect_robots_txt=respect_robots_txt,
-                rendering_config=rendering_config,
-            ),
-            rendering_config=rendering_config,
+                http_client=http_client,
+            )
+
+        return build_adaptive_crawler(
+            runtime=runtime,
+            max_requests=max_requests,
+            respect_robots_txt=respect_robots_txt,
+            headless=headless,
+            browser_type=browser_type,
         )
 
     raise ValueError("mode must be 'http' or 'playwright'.")
