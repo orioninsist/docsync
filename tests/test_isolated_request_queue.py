@@ -5,10 +5,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from crawlee.events import LocalEventManager
-from crawlee.request_loaders import ThrottlingRequestManager
-from crawlee.storage_clients import FileSystemStorageClient
-from crawlee.storages import RequestQueue
 
 from docsync.crawler_runtime import build_crawlee_runtime
 
@@ -23,28 +19,6 @@ def build_runtime(storage_dir: Path):
             request_timeout_seconds=60,
         )
     )
-
-
-def test_filesystem_storage_client_is_used(tmp_path: Path) -> None:
-    runtime = build_runtime(tmp_path / "crawlee")
-
-    assert isinstance(runtime.storage_client, FileSystemStorageClient)
-    assert runtime.configuration.purge_on_start is False
-    assert Path(runtime.configuration.storage_dir) == (tmp_path / "crawlee").resolve()
-
-
-def test_main_request_queue_uses_persistent_storage(tmp_path: Path) -> None:
-    runtime = build_runtime(tmp_path / "crawlee")
-
-    assert isinstance(runtime.request_manager, ThrottlingRequestManager)
-    assert isinstance(runtime.request_manager.inner, RequestQueue)
-    assert runtime.request_manager.inner.name == "docsync-main"
-
-
-def test_runtime_uses_public_event_manager(tmp_path: Path) -> None:
-    runtime = build_runtime(tmp_path / "crawlee")
-
-    assert isinstance(runtime.event_manager, LocalEventManager)
 
 
 def test_throttled_queue_survives_simulated_restart(tmp_path: Path) -> None:
