@@ -114,7 +114,6 @@ def test_cli_starts_updates_and_finishes_dashboard(
         mode="http",
         processed=8,
         saved=5,
-        duplicate_content=1,
         incremental_skipped=1,
         rejected_urls=2,
         empty_pages=3,
@@ -161,7 +160,6 @@ def test_cli_starts_updates_and_finishes_dashboard(
 
     assert dashboard.snapshot.processed == 8
     assert dashboard.snapshot.saved == 5
-    assert dashboard.snapshot.duplicate_content == 1
     assert dashboard.snapshot.incremental_skipped == 1
     assert dashboard.snapshot.rejected_urls == 2
     assert dashboard.snapshot.empty_pages == 3
@@ -169,7 +167,7 @@ def test_cli_starts_updates_and_finishes_dashboard(
     assert dashboard.snapshot.failed == 0
 
     assert capsys.readouterr().out == (
-        "Finished: processed=8 saved=5 duplicate=1 "
+        "Finished: processed=8 saved=5 "
         "incremental_skipped=1 non_english=4 failed=0\n"
     )
 
