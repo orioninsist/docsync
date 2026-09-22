@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from crawlee import HttpHeaders
 from crawlee.crawlers import (
     BasicCrawlingContext,
+    AdaptivePlaywrightCrawlingContext,
     BeautifulSoupCrawlingContext,
     PlaywrightCrawlingContext,
 )
@@ -37,10 +38,7 @@ from docsync.language import EnglishPageDetector
 from docsync.language_strategy import LanguageStrategy
 from docsync.markdown import MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
-from docsync.playwright_rendering import (
-    PlaywrightFallbackRenderer,
-    render_page_html,
-)
+from docsync.playwright_rendering import render_page_html
 from docsync.progress_events import CrawlEvent, CrawlEventSink
 from docsync.sitemap import discover_sitemap_urls
 from docsync.url_security import (
@@ -284,16 +282,6 @@ async def run_crawler(
 
     stats = CrawlStats(mode=resolved_mode)
 
-    fallback_renderer = (
-        PlaywrightFallbackRenderer(
-            headless=resolved_headless,
-            browser_type=resolved_browser_type,
-            request_timeout_seconds=settings.request_timeout_seconds,
-        )
-        if resolved_mode == "http"
-        else None
-    )
-
     def record_non_english_page() -> None:
         """Record one successfully handled non-English page."""
 
@@ -429,7 +417,11 @@ async def run_crawler(
 
     @crawler.router.default_handler
     async def request_handler(
-        context: BeautifulSoupCrawlingContext | PlaywrightCrawlingContext,
+        context: (
+            AdaptivePlaywrightCrawlingContext
+            | BeautifulSoupCrawlingContext
+            | PlaywrightCrawlingContext
+        ),
     ) -> None:
         nonlocal active_requests
 
@@ -440,8 +432,6 @@ async def run_crawler(
                 current_url=context.request.url,
                 active_requests=active_requests,
             )
-
-            used_browser_fallback = False
 
             if resolved_mode == "playwright":
                 playwright_context = cast(Any, context)
@@ -456,21 +446,14 @@ async def run_crawler(
                         else 10_000
                     ),
                 )
-                soup = BeautifulSoup(
-                    html,
-                    "lxml",
-                )
+                soup = BeautifulSoup(html, "lxml")
                 effective_url = str(playwright_context.page.url)
             else:
-                http_context = cast(Any, context)
-                soup = http_context.soup
+                adaptive_context = cast(Any, context)
+                soup = await adaptive_context.parse_with_static_parser()
                 html = str(soup)
                 effective_url = str(
-                    getattr(
-                        context.request,
-                        "loaded_url",
-                        None,
-                    )
+                    getattr(context.request, "loaded_url", None)
                     or context.request.url
                 )
 
@@ -479,13 +462,9 @@ async def run_crawler(
                     validated_http_url(effective_url)
                 )
             except (TypeError, ValueError):
-                stats.rejected_urls += 1
-                stats.processed += 1
                 return
 
             if scope_pattern.search(normalized_effective_url) is None:
-                stats.rejected_urls += 1
-                stats.processed += 1
                 context.log.warning(
                     "Redirected outside crawl scope; skipping content: %s",
                     effective_url,
@@ -499,8 +478,6 @@ async def run_crawler(
                 should_skip_url=language_strategy.should_skip_url,
             )
 
-            discovered_link_count = len(discovered_urls)
-
             content_language = None
             if resolved_mode == "http":
                 content_language = cast(Any, context).http_response.headers.get(
@@ -512,40 +489,19 @@ async def run_crawler(
                 html=html,
                 content_language=content_language,
             )
-
             if not language_strategy.accepts(
                 language_decision
             ) and language_decision.source not in {
                 "insufficient-text",
                 "language-detector-no-result",
             }:
-                record_non_english_page()
-                context.log.info(
-                    "Non-English page skipped after discovery: "
-                    "url=%s source=%s language=%s discovered_links=%s",
-                    effective_url,
-                    language_decision.source,
-                    language_decision.language_code or "unknown",
-                    discovered_link_count,
-                )
                 return
 
             title_element = soup.title
             title = (
-                title_element.get_text(
-                    " ",
-                    strip=True,
-                )
+                title_element.get_text(" ", strip=True)
                 if title_element is not None
                 else ""
-            )
-
-            emit_event(
-                phase="Extracting",
-                current_url=context.request.url,
-                current_title=title,
-                active_requests=active_requests,
-                site_title=(title if stats.processed == 0 and title else None),
             )
 
             try:
@@ -557,138 +513,13 @@ async def run_crawler(
                     write=False,
                 )
             except ValueError as error:
-                empty_markdown_error = str(error).startswith(
-                    "No meaningful Markdown content found:"
-                )
-
-                if (
-                    empty_markdown_error
-                    and discovered_link_count > 0
-                    and resolved_mode == "playwright"
-                ):
-                    stats.empty_pages += 1
-                    stats.processed += 1
-
-                    context.log.info(
-                        "Discovery-only page processed: "
-                        "url=%s discovered_links=%s renderer=playwright",
-                        context.request.url,
-                        discovered_link_count,
-                    )
+                if str(error).startswith("No meaningful Markdown content found:"):
+                    # For AdaptivePlaywrightCrawler an empty static result intentionally
+                    # emits no dataset item. Its native result_checker then retries the
+                    # request with Playwright. Browser discovery-only results still
+                    # commit their enqueued links even without a dataset item.
                     return
-
-                if resolved_mode != "http" or not empty_markdown_error:
-                    raise
-
-                context.log.warning(
-                    "HTTP extraction returned no meaningful content; "
-                    "retrying with Playwright: %s",
-                    context.request.url,
-                )
-
-                assert fallback_renderer is not None
-                fallback_html, fallback_links = await fallback_renderer.render(
-                    context.request.url
-                )
-
-                soup = BeautifulSoup(
-                    fallback_html,
-                    "lxml",
-                )
-                used_browser_fallback = True
-
-                fallback_urls = filter_discovered_urls(
-                    urls=fallback_links,
-                    base_url=context.request.url,
-                    scope_pattern=scope_pattern,
-                    should_skip_url=language_strategy.should_skip_url,
-                )
-
-                if fallback_urls:
-                    fallback_context = cast(Any, context)
-                    await fallback_context.enqueue_links(
-                        requests=fallback_urls,
-                        strategy="all",
-                    )
-
-                discovered_link_count = len(fallback_urls)
-
-                fallback_language_decision = language_detector.detect_from_html(
-                    url=context.request.url,
-                    html=fallback_html,
-                )
-
-                if not language_strategy.accepts(
-                    fallback_language_decision
-                ) and fallback_language_decision.source not in {
-                    "insufficient-text",
-                    "language-detector-no-result",
-                }:
-                    record_non_english_page()
-                    context.log.info(
-                        "Non-English fallback page skipped after discovery: "
-                        "url=%s source=%s language=%s discovered_links=%s",
-                        context.request.url,
-                        fallback_language_decision.source,
-                        fallback_language_decision.language_code or "unknown",
-                        discovered_link_count,
-                    )
-                    return
-
-                title_element = soup.title
-                title = (
-                    title_element.get_text(
-                        " ",
-                        strip=True,
-                    )
-                    if title_element is not None
-                    else ""
-                )
-
-                try:
-                    document = markdown_exporter.export(
-                        url=context.request.url,
-                        soup=soup,
-                        title=title,
-                        language=resolved_language,
-                        write=False,
-                    )
-                except ValueError as fallback_error:
-                    fallback_empty_error = str(fallback_error).startswith(
-                        "No meaningful Markdown content found:"
-                    )
-
-                    if fallback_empty_error and discovered_link_count > 0:
-                        stats.empty_pages += 1
-                        stats.processed += 1
-
-                        context.log.info(
-                            "Discovery-only page processed: "
-                            "url=%s discovered_links=%s "
-                            "renderer=playwright-fallback",
-                            context.request.url,
-                            discovered_link_count,
-                        )
-                        return
-
-                    raise
-
-            unchanged = content_is_unchanged(
-                url=document.url,
-                digest=document.content_hash,
-                url_state=url_state,
-            )
-
-            if not unchanged:
-                markdown_exporter.write(document)
-                stats.saved += 1
-
-            context.log.info(
-                "Page synchronized: url=%s title=%s output=%s",
-                document.url,
-                document.title or "<no title>",
-                document.output_path,
-            )
+                raise
 
             await context.push_data(
                 {
@@ -697,35 +528,11 @@ async def run_crawler(
                     "language": document.language,
                     "output_path": str(document.output_path),
                     "content_hash": document.content_hash,
-                    "browser_fallback": used_browser_fallback,
+                    "markdown": document.markdown,
                 }
             )
-
-            validator_url = normalize_url(document.url)
-            etag, last_modified = pending_http_validators.pop(
-                validator_url,
-                ("", ""),
-            )
-            if used_browser_fallback:
-                etag = ""
-                last_modified = ""
-
-            record_incremental_success(
-                url=document.url,
-                output_path=document.output_path,
-                digest=document.content_hash,
-                hashes=content_hashes,
-                url_state=url_state,
-                etag=etag,
-                last_modified=last_modified,
-            )
-
-            stats.processed += 1
         finally:
-            active_requests = max(
-                0,
-                active_requests - 1,
-            )
+            active_requests = max(0, active_requests - 1)
             emit_event(
                 phase="Crawling",
                 current_url=context.request.url,
@@ -899,8 +706,7 @@ async def run_crawler(
         persist_incremental_state()
         raise
     finally:
-        if fallback_renderer is not None:
-            await fallback_renderer.close()
+        pass
 
     emit_event(
         phase="Finalizing",
