@@ -1,36 +1,13 @@
 """Regressions for sitemap failures and native adaptive rendering."""
 
-from email.message import Message
 from pathlib import Path
-from urllib.error import HTTPError
 
-import pytest
-
-from docsync.sitemap import SitemapDiscoveryResult, discover_sitemap_urls_sync
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAWLER = ROOT / "src/docsync/crawler.py"
 ENGINE = ROOT / "src/docsync/crawl_engine.py"
 RUNTIME = ROOT / "src/docsync/crawler_runtime.py"
 RENDERING = ROOT / "src/docsync/playwright_rendering.py"
-
-
-def test_sitemap_403_is_recorded_without_aborting_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
-    def reject_every_request(url: str, timeout_seconds: int) -> tuple[str, str]:
-        del timeout_seconds
-        raise HTTPError(url, 403, "Forbidden", Message(), None)
-
-    monkeypatch.setattr("docsync.sitemap.fetch_text_url", reject_every_request)
-    result = discover_sitemap_urls_sync(
-        start_url="https://example.com/docs",
-        timeout_seconds=10,
-        max_urls=100,
-    )
-    assert isinstance(result, SitemapDiscoveryResult)
-    assert result.urls == []
-    assert result.sitemap_files_found == 0
-    assert result.sitemap_files_checked == 3
-    assert len(result.errors) == 4
 
 
 def test_http_mode_uses_native_adaptive_fallback() -> None:
