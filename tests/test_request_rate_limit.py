@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
 import pytest
 
@@ -14,9 +13,6 @@ from docsync.config import (
     Settings,
 )
 from docsync.crawler_runtime import build_crawlee_runtime
-
-ROOT = Path(__file__).resolve().parents[1]
-ENGINE_PATH = ROOT / "src" / "docsync" / "crawl_engine.py"
 
 
 def settings_from_environment(
