@@ -6,10 +6,15 @@ from collections.abc import Callable
 from urllib.parse import urljoin, urlsplit
 
 from crawlee import RequestOptions, RequestTransformAction
+from crawlee.configuration import Configuration
 from crawlee.http_clients import HttpClient
 from crawlee.request_loaders import SitemapRequestLoader
+from crawlee.storage_clients import StorageClient
+from crawlee.storages import KeyValueStore
 
 from docsync.url_security import normalize_url, validated_http_url
+
+SITEMAP_STATE_KEY = "DOCSYNC_SITEMAP_REQUEST_LOADER_STATE"
 
 
 def sitemap_seed_urls(start_url: str) -> list[str]:
@@ -41,6 +46,16 @@ def build_sitemap_request_loader(
         sitemap_urls=sitemap_seed_urls(start_url),
         http_client=http_client,
         enqueue_strategy="same-hostname",
-        persist_state_key="DOCSYNC_SITEMAP_REQUEST_LOADER_STATE",
+        persist_state_key=SITEMAP_STATE_KEY,
         transform_request_function=transform_request_function,
     )
+
+
+async def clear_sitemap_state(*, storage_client: StorageClient, configuration: Configuration) -> None:
+    """Clear completed sitemap-loader state before the next incremental run."""
+
+    store = await KeyValueStore.open(
+        storage_client=storage_client,
+        configuration=configuration,
+    )
+    await store.delete_value(SITEMAP_STATE_KEY)
