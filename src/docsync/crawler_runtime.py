@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
-from crawlee import ConcurrencySettings
+from crawlee import ConcurrencySettings, service_locator
 from crawlee.configuration import Configuration
-from crawlee import service_locator
 from crawlee.events import EventManager, LocalEventManager
 from crawlee.request_loaders import RequestManager, ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient, StorageClient
