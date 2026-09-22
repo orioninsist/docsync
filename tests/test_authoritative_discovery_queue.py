@@ -20,11 +20,11 @@ def test_primary_links_use_crawlee_native_discovery() -> None:
     assert "await context.enqueue_links(" in source
 
 
-def test_fallback_links_use_crawlee_native_enqueue() -> None:
+def test_adaptive_renderers_share_native_enqueue() -> None:
     source = _source()
 
-    assert source.count("await fallback_context.enqueue_links(") == 1
-    assert "await fallback_context.add_requests(" not in source
+    assert source.count("await context.enqueue_links(") == 1
+    assert "fallback_context" not in source
 
 
 def test_handler_does_not_bypass_context_lifecycle() -> None:
@@ -47,45 +47,19 @@ def test_throttling_manager_remains_crawler_request_manager() -> None:
 
 def test_primary_discovery_precedes_url_language_rejection() -> None:
     source = _source()
-
-    discovery = source.index(
-        "discovered_urls = await discover_and_enqueue_in_scope_links("
-    )
-    insertion = source.index(
-        "discovered_link_count = len(discovered_urls)",
-        discovery,
-    )
-    detection = source.index(
-        "language_decision = language_detector.detect_from_html(",
-        insertion,
-    )
-
-    assert discovery < insertion < detection
+    discovery = source.index("discovered_urls = await discover_and_enqueue_in_scope_links(")
+    detection = source.index("language_decision = language_detector.detect_from_html(", discovery)
+    assert discovery < detection
 
 
 def test_primary_discovery_precedes_text_language_rejection() -> None:
     source = _source()
-
-    insertion = source.index("discovered_link_count = len(discovered_urls)")
-    rejection = source.index(
-        "language_decision = language_detector.detect_from_html(",
-        insertion,
-    )
-
-    assert insertion < rejection
+    discovery = source.index("discovered_urls = await discover_and_enqueue_in_scope_links(")
+    rejection = source.index("language_decision = language_detector.detect_from_html(", discovery)
+    assert discovery < rejection
 
 
-def test_fallback_discovery_precedes_language_rejection() -> None:
+def test_adaptive_discovery_has_no_separate_fallback_queue_path() -> None:
     source = _source()
-
-    discovery = source.index("fallback_urls = filter_discovered_urls(")
-    insertion = source.index(
-        "await fallback_context.enqueue_links(",
-        discovery,
-    )
-    rejection = source.index(
-        "fallback_language_decision =",
-        insertion,
-    )
-
-    assert discovery < insertion < rejection
+    assert "fallback_context" not in source
+    assert source.count("discover_and_enqueue_in_scope_links(") == 2
