@@ -129,8 +129,8 @@ def test_http_and_playwright_use_official_throttling_manager() -> None:
     assert '"request_manager": runtime.request_manager' in engine_source
     assert "request_manager=runtime.request_manager" in engine_source
     assert "request_manager = ThrottlingRequestManager(" in runtime_source
-    assert "request_manager_opener=open_run_request_queue" in runtime_source
-    assert 'alias="docsync-main"' in runtime_source
-    assert "MemoryStorageClient" in runtime_source
-    assert "request_manager_opener=RequestQueue.open" not in runtime_source
-    assert "await crawl_delay_throttle.wait()" not in crawler_source
+    assert "request_manager_opener=RequestQueue.open" in runtime_source
+    assert 'name="docsync-main"' in runtime_source
+    assert "FileSystemStorageClient" in runtime_source
+assert "MemoryStorageClient" not in runtime_source
+        assert "await crawl_delay_throttle.wait()" not in crawler_source
