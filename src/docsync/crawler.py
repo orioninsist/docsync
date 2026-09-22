@@ -209,16 +209,6 @@ async def run_crawler(
     if not 0 <= resolved_refresh_hours <= 8760:
         raise ValueError("refresh_hours must be between 0 and 8760.")
 
-    mode_aliases = {
-        "browser": "playwright",
-        "javascript": "playwright",
-        "js": "playwright",
-    }
-    resolved_mode = mode_aliases.get(
-        resolved_mode,
-        resolved_mode,
-    )
-
     if resolved_mode not in {
         "http",
         "playwright",
@@ -625,8 +615,6 @@ async def run_crawler(
         "mode": resolved_mode,
         "headless": resolved_headless,
         "browser_type": resolved_browser_type,
-        "request_manager": "ThrottlingRequestManager",
-        "request_storage": "FileSystemStorageClient",
         "request_storage_dir": resolved_state_dir / "crawlee" / "crawl" / start_hostname,
         "throttled_domains": [start_hostname],
     }
