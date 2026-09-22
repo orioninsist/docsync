@@ -36,7 +36,7 @@ from docsync.incremental import (
 )
 from docsync.language import EnglishPageDetector
 from docsync.language_strategy import LanguageStrategy
-from docsync.markdown import MarkdownExporter
+from docsync.markdown import MarkdownDocument, MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
 from docsync.playwright_rendering import render_page_html
 from docsync.progress_events import CrawlEvent, CrawlEventSink
@@ -627,6 +627,48 @@ async def run_crawler(
         "throttled_domains": [start_hostname],
     }
 
+    async def flush_committed_results() -> None:
+        """Apply only the handler results committed by Crawlee's selected renderer."""
+
+        dataset = await crawler.get_dataset()
+        page = await dataset.get_data()
+
+        for item in page.items:
+            document = MarkdownDocument(
+                url=str(item["url"]),
+                title=str(item["title"]),
+                language=str(item["language"]),
+                markdown=str(item["markdown"]),
+                output_path=Path(str(item["output_path"])),
+                content_hash=str(item["content_hash"]),
+            )
+            unchanged = content_is_unchanged(
+                url=document.url,
+                digest=document.content_hash,
+                url_state=url_state,
+            )
+            if not unchanged:
+                markdown_exporter.write(document)
+                stats.saved += 1
+
+            validator_url = normalize_url(document.url)
+            etag, last_modified = pending_http_validators.pop(
+                validator_url,
+                ("", ""),
+            )
+            record_incremental_success(
+                url=document.url,
+                output_path=document.output_path,
+                digest=document.content_hash,
+                hashes=content_hashes,
+                url_state=url_state,
+                etag=etag,
+                last_modified=last_modified,
+            )
+            stats.processed += 1
+
+        await dataset.drop()
+
     def persist_incremental_state() -> None:
         save_content_hashes(
             content_hashes,
@@ -701,12 +743,13 @@ async def run_crawler(
     try:
         await crawler.run(incremental_urls)
     except BaseException:
-        # Preserve DocsSync content state for requests Crawlee already marked handled.
-        # The persistent RequestQueue can then resume only the unfinished requests.
+        # Commit only results that Crawlee selected before interruption, then
+        # persist DocsSync state so the request queue can resume unfinished work.
+        await flush_committed_results()
         persist_incremental_state()
         raise
-    finally:
-        pass
+
+    await flush_committed_results()
 
     emit_event(
         phase="Finalizing",
