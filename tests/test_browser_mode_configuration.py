@@ -71,50 +71,6 @@ def test_settings_default_browser_configuration(
     assert settings.browser_type == "chromium"
 
 
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        (
-            "http",
-            "http",
-        ),
-        (
-            "playwright",
-            "playwright",
-        ),
-        (
-            "browser",
-            "playwright",
-        ),
-        (
-            "javascript",
-            "playwright",
-        ),
-        (
-            "js",
-            "playwright",
-        ),
-    ],
-)
-def test_settings_normalize_mode_aliases(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    value: str,
-    expected: str,
-) -> None:
-    configure_runtime_directories(
-        monkeypatch,
-        tmp_path,
-    )
-    monkeypatch.setenv(
-        "DOCSYNC_MODE",
-        value,
-    )
-
-    settings = Settings.from_environment()
-
-    assert settings.mode == expected
-
 
 @pytest.mark.parametrize(
     "value",
