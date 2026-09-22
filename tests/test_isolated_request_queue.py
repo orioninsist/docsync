@@ -69,10 +69,6 @@ def test_throttled_queue_survives_simulated_restart(tmp_path: Path) -> None:
         assert first is not None
         await runtime.request_manager.mark_request_as_handled(first)
 
-        from crawlee import service_locator
-
-        service_locator.storage_instance_manager.clear_cache()
-
         restarted = await build_crawlee_runtime(
             hostname="example.com",
             storage_dir=storage_dir,
