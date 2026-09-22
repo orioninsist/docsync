@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
-from crawlee import RequestHandlerRunResult
 
 from crawlee.browsers import BrowserType
 from crawlee.crawlers import (
@@ -16,13 +15,17 @@ from crawlee.http_clients import HttpClient
 
 from docsync.crawler_runtime import CrawleeRuntime
 
-if TYPE_CHECKING:
-    from crawlee._types import RequestHandlerRunResult
 
 DEFAULT_MAX_REQUEST_RETRIES = 2
 
 
-def adaptive_result_is_meaningful(result: RequestHandlerRunResult) -> bool:
+class AdaptiveResult(Protocol):
+    """Minimal public shape consumed from Crawlee adaptive results."""
+
+    push_data_calls: list[dict[str, Any]]
+
+
+def adaptive_result_is_meaningful(result: AdaptiveResult) -> bool:
     """Accept terminal static results while forcing empty content to Playwright."""
 
     for call in result.push_data_calls:
