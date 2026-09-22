@@ -45,7 +45,9 @@ async def build_crawlee_runtime(
         purge_on_start=False,
     )
     storage_client = FileSystemStorageClient()
-    global_event_manager = service_locator.get_event_manager()
+    if service_locator._event_manager is None:
+        service_locator.set_event_manager(LocalEventManager())
+
     event_manager = LocalEventManager().from_config(config=configuration)
 
     runtime_service_locator = ServiceLocator(
