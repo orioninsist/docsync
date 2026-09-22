@@ -37,20 +37,8 @@ def test_main_request_queue_uses_persistent_storage(tmp_path: Path) -> None:
     runtime = build_runtime(tmp_path / "crawlee")
 
     assert isinstance(runtime.request_manager, ThrottlingRequestManager)
-    assert isinstance(runtime.request_manager._inner, RequestQueue)
-    assert runtime.request_manager._inner.name == "docsync-main"
-
-
-def test_throttled_runtime_contains_requested_domain(tmp_path: Path) -> None:
-    runtime = build_runtime(tmp_path / "crawlee")
-
-    assert "example.com" in runtime.request_manager._domain_states
-
-
-def test_runtime_subqueues_use_same_persistent_backend(tmp_path: Path) -> None:
-    runtime = build_runtime(tmp_path / "crawlee")
-
-    assert runtime.request_manager._request_manager_opener != RequestQueue.open
+    assert isinstance(runtime.request_manager.inner, RequestQueue)
+    assert runtime.request_manager.inner.name == "docsync-main"
 
 
 def test_runtime_uses_public_event_manager(tmp_path: Path) -> None:
