@@ -78,14 +78,13 @@ def test_discovery_policy_rejects_explicit_non_english_urls() -> None:
     ) == ["https://developers.google.com/docs/english"]
 
 
-def test_http_and_playwright_use_the_same_filtered_url_list() -> None:
+def test_adaptive_renderers_use_the_same_filtered_url_list() -> None:
     source = CRAWLER_PATH.read_text(encoding="utf-8")
 
     assert "await context.extract_links(" in source
     assert "await context.enqueue_links(" in source
     assert "await queue_context.add_requests(" not in source
-    assert "await fallback_context.enqueue_links(" in source
-    assert "await fallback_context.add_requests(" not in source
+    assert "fallback_context" not in source
     assert "should_skip_url=language_strategy.should_skip_url" in source
 
 
