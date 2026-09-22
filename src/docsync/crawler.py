@@ -36,10 +36,7 @@ from docsync.language import EnglishPageDetector, LanguagePolicy
 from docsync.markdown import MarkdownDocument, MarkdownExporter
 from docsync.metrics import CrawlStats
 from docsync.sitemap import build_sitemap_request_loader
-from docsync.url_security import (
-    normalize_url,
-    validated_http_url,
-)
+from docsync.url_security import normalize_url, validated_http_url
 
 
 EXCLUDED_URL_PATTERNS: Final[tuple[Pattern[str], ...]] = (
