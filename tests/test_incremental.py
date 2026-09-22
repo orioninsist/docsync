@@ -329,3 +329,60 @@ def test_response_validators_are_extracted_case_insensitively() -> None:
         '"docs-v2"',
         "Sat, 19 Sep 2026 12:00:00 GMT",
     )
+
+
+
+def test_flat_per_host_state_files(tmp_path: Path) -> None:
+    hashes = {"abc123": "https://developers.openai.com/docs"}
+    state = {
+        "https://developers.openai.com/docs": {
+            "saved_at": "2026-09-22T12:00:00+00:00",
+            "filename": "docs.md",
+            "content_hash": "abc123",
+            "etag": "",
+            "last_modified": "",
+        }
+    }
+
+    incremental.save_content_hashes(
+        hashes,
+        tmp_path,
+        "developers.openai.com",
+    )
+    incremental.save_url_state(
+        state,
+        tmp_path,
+        "developers.openai.com",
+    )
+
+    assert (tmp_path / "developers.openai.com_content_hashes.json").is_file()
+    assert (tmp_path / "developers.openai.com_url_state.json").is_file()
+    assert not (tmp_path / "developers.openai.com").exists()
+    assert incremental.load_content_hashes(
+        tmp_path,
+        "developers.openai.com",
+    ) == hashes
+    assert incremental.load_url_state(
+        tmp_path,
+        "developers.openai.com",
+    ) == state
+
+
+def test_state_files_are_isolated_by_hostname(tmp_path: Path) -> None:
+    incremental.save_content_hashes(
+        {"one": "https://one.example/docs"},
+        tmp_path,
+        "one.example",
+    )
+    incremental.save_content_hashes(
+        {"two": "https://two.example/docs"},
+        tmp_path,
+        "two.example",
+    )
+
+    assert incremental.load_content_hashes(tmp_path, "one.example") == {
+        "one": "https://one.example/docs"
+    }
+    assert incremental.load_content_hashes(tmp_path, "two.example") == {
+        "two": "https://two.example/docs"
+    }
