@@ -5,7 +5,6 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -321,38 +320,6 @@ class MarkdownExporter:
         slug = DUPLICATE_HYPHENS_PATTERN.sub("-", slug)
         return slug.strip("-._") or "page"
 
-    @staticmethod
-    def _yaml_string(value: str) -> str:
-        escaped = (
-            value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ").strip()
-        )
-        return f'"{escaped}"'
-
-    def _build_document(
-        self,
-        *,
-        url: str,
-        title: str,
-        language: str,
-        content_hash: str,
-        markdown_body: str,
-    ) -> str:
-        generated_at = datetime.now(UTC).isoformat()
-
-        frontmatter = "\n".join(
-            (
-                "---",
-                f"title: {self._yaml_string(title)}",
-                f"url: {self._yaml_string(url)}",
-                f"language: {self._yaml_string(language)}",
-                f"content_hash: {self._yaml_string(content_hash)}",
-                f"generated_at: {self._yaml_string(generated_at)}",
-                "---",
-                "",
-            )
-        )
-
-        return f"{frontmatter}{markdown_body}"
 
     @staticmethod
     def _atomic_write(
