@@ -10,7 +10,6 @@ from docsync.config import (
     MAX_REFRESH_HOURS,
     Settings,
 )
-from docsync.crawler import run_crawler
 
 
 def _clear_incremental_environment(
