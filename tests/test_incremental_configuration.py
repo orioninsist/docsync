@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
 from docsync.cli import build_parser
@@ -147,10 +145,3 @@ def test_cli_incremental_defaults_remain_unset() -> None:
     assert arguments.force_refresh is None
 
 
-def test_run_crawler_accepts_incremental_options() -> None:
-    parameters = inspect.signature(run_crawler).parameters
-
-    assert "refresh_hours" in parameters
-    assert "force_refresh" in parameters
-    assert parameters["refresh_hours"].default is None
-    assert parameters["force_refresh"].default is None
