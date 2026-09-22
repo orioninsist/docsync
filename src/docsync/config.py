@@ -127,13 +127,13 @@ class Settings:
         return settings
 
     def validate(self) -> None:
+        """Validate configuration before starting the crawler."""
+
         if not MIN_REFRESH_HOURS <= self.refresh_hours <= MAX_REFRESH_HOURS:
             raise ValueError(
                 "refresh_hours must be between "
                 f"{MIN_REFRESH_HOURS} and {MAX_REFRESH_HOURS}."
             )
-
-        """Validate configuration before starting the crawler."""
 
         if not (
             MIN_REQUESTS_PER_MINUTE
