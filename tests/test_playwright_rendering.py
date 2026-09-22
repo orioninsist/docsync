@@ -110,7 +110,7 @@ class FakePage:
         "Image",
     ],
 )
-def test_should_block_legacy_resource_types(
+def test_should_block_blocked_resource_types(
     resource_type: str,
 ) -> None:
     assert should_block_resource(resource_type) is True
@@ -134,7 +134,7 @@ def test_should_continue_required_resource_types(
     assert should_block_resource(resource_type) is False
 
 
-def test_default_blocking_contract_matches_legacy_runtime() -> None:
+def test_default_blocking_contract_matches_runtime_defaults() -> None:
     assert {
         "font",
         "image",
@@ -343,7 +343,7 @@ def test_render_timeout_configuration_is_validated(
     asyncio.run(scenario())
 
 
-def test_rendering_config_preserves_legacy_browser_options() -> None:
+def test_rendering_config_preserves_browser_options() -> None:
     config = PlaywrightRenderingConfig(
         headless=False,
     )
