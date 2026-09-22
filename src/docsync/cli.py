@@ -8,14 +8,6 @@ from pathlib import Path
 
 from docsync.config import Settings
 from docsync.metrics import CrawlStats
-from docsync.progress_events import CrawlEvent
-from docsync.terminal_ui import (
-    CrawlDashboard,
-    CrawlProgressSnapshot,
-    SiteInformation,
-    build_console,
-)
-
 from .crawler import run_crawler
 
 
@@ -170,116 +162,8 @@ def _invoke_run_crawler(args: argparse.Namespace) -> CrawlStats:
             mode=args.mode,
             headless=args.headless,
             browser_type=args.browser_type,
-            event_sink=getattr(args, "_docsync_event_sink", None),
         )
     )
-
-
-def _build_dashboard(settings: Settings) -> CrawlDashboard:
-    """Create the canonical CLI dashboard from resolved runtime settings."""
-
-    site = SiteInformation.from_start_url(
-        settings.start_url,
-        mode=settings.mode,
-        language=settings.language,
-        robots_enabled=settings.respect_robots_txt,
-        browser_type=settings.browser_type,
-        headless=settings.headless,
-    )
-
-    snapshot = CrawlProgressSnapshot(
-        site=site,
-        output_dir=settings.output_dir.resolve(),
-        state_dir=settings.state_dir.resolve(),
-        max_requests=settings.max_requests,
-        max_concurrency=settings.max_concurrency,
-        requests_per_minute=settings.requests_per_minute,
-        phase="Starting crawler",
-    )
-
-    return CrawlDashboard(
-        snapshot,
-        console=build_console(),
-    )
-
-
-def _apply_stats_to_dashboard(
-    dashboard: CrawlDashboard,
-    stats: CrawlStats,
-) -> None:
-    """Copy canonical crawl metrics into the dashboard snapshot."""
-
-    dashboard.update(
-        processed=stats.processed,
-        saved=stats.saved,
-        incremental_skipped=stats.incremental_skipped,
-        rejected_urls=stats.rejected_urls,
-        empty_pages=stats.empty_pages,
-        non_english=stats.non_english,
-        failed=stats.failed,
-        phase="Finalizing",
-    )
-
-
-def _apply_crawl_event(
-    dashboard: CrawlDashboard,
-    event: CrawlEvent,
-) -> None:
-    """Apply one crawler lifecycle event to the live dashboard."""
-
-    snapshot_changes: dict[str, object] = {}
-
-    for field_name in (
-        "phase",
-        "current_url",
-        "current_title",
-        "processed",
-        "saved",
-        "incremental_skipped",
-        "rejected_urls",
-        "empty_pages",
-        "non_english",
-        "failed",
-        "queued",
-        "discovered",
-        "active_requests",
-    ):
-        value = getattr(
-            event,
-            field_name,
-        )
-
-        if value is not None:
-            snapshot_changes[field_name] = value
-
-    if snapshot_changes:
-        dashboard.update(
-            **snapshot_changes,
-        )
-
-    site_changes: dict[str, object] = {}
-
-    if event.site_title:
-        site_changes["title"] = event.site_title
-
-    for event_field, site_field in (
-        (
-            "sitemap_urls",
-            "sitemap_urls",
-        ),
-    ):
-        value = getattr(
-            event,
-            event_field,
-        )
-
-        if value is not None:
-            site_changes[site_field] = value
-
-    if site_changes:
-        dashboard.update_site(
-            **site_changes,
-        )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -289,45 +173,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     _apply_environment_overrides(args)
-    settings = Settings.from_environment()
-
-    dashboard = _build_dashboard(settings)
-    args._docsync_event_sink = lambda event: _apply_crawl_event(dashboard, event)
-    dashboard.start()
-
-    try:
-        result = _invoke_run_crawler(args)
-    except KeyboardInterrupt:
-        dashboard.finish(interrupted=True)
-        raise
-    except BaseException:
-        dashboard.update(
-            failed=dashboard.snapshot.failed + 1,
-            phase="Failed",
-        )
-        dashboard.finish()
-        raise
-
-
-    if isinstance(result, CrawlStats):
-        _apply_stats_to_dashboard(
-            dashboard,
-            result,
-        )
-        dashboard.update(
-            active_requests=0,
-            queued=0,
-            phase="Finalizing",
-        )
-        dashboard.finish()
-
-        print(result.finished_summary())
-        return int(result.exit_code)
-
-    dashboard.update(
-        active_requests=0,
-        queued=0,
-        phase="Finalizing",
-    )
-    dashboard.finish()
-    return 0
+    result = _invoke_run_crawler(args)
+    print(result.finished_summary())
+    return int(result.exit_code)
