@@ -71,7 +71,7 @@ def test_throttling_manager_wraps_request_queue() -> None:
     assert "inner=request_queue" in runtime_source
     assert "domains=[hostname]" in runtime_source
     assert "async def open_run_request_queue(" not in runtime_source
-    assert "request_manager_opener=RequestQueue.open" in runtime_source
+    assert "request_manager_opener=open_runtime_request_queue" in runtime_source
     assert 'name="docsync-main"' in runtime_source
     assert "FileSystemStorageClient" in runtime_source
     assert "MemoryStorageClient" not in runtime_source
