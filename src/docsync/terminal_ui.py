@@ -198,7 +198,7 @@ class DashboardRenderer:
         )
 
         successful_outcomes = (
-            snapshot.saved + snapshot.duplicate_content + snapshot.incremental_skipped
+            snapshot.saved + snapshot.incremental_skipped
         )
 
         success_rate = min(
@@ -214,8 +214,7 @@ class DashboardRenderer:
             f"Saved: {snapshot.saved}",
             f"Skipped total: {
                 (
-                    snapshot.duplicate_content
-                    + snapshot.incremental_skipped
+                    snapshot.incremental_skipped
                     + snapshot.rejected_urls
                     + snapshot.empty_pages
                     + snapshot.non_english
@@ -246,7 +245,6 @@ class DashboardRenderer:
             f"Discovered: {snapshot.discovered}",
             "",
             "Counters",
-            f"Duplicate content: {snapshot.duplicate_content}",
             f"Incremental skipped: {snapshot.incremental_skipped}",
             f"Non English: {snapshot.non_english}",
             f"Rejected URLs: {snapshot.rejected_urls}",
@@ -268,15 +266,14 @@ class DashboardRenderer:
         status_text, _border_style = self._completion_status(snapshot)
 
         skipped_total = (
-            snapshot.duplicate_content
-            + snapshot.incremental_skipped
+            snapshot.incremental_skipped
             + snapshot.rejected_urls
             + snapshot.empty_pages
             + snapshot.non_english
         )
 
         successful_outcomes = (
-            snapshot.saved + snapshot.duplicate_content + snapshot.incremental_skipped
+            snapshot.saved + snapshot.incremental_skipped
         )
 
         terminal_outcomes = max(
@@ -311,11 +308,6 @@ class DashboardRenderer:
             "Skipped total",
             str(skipped_total),
             "pages",
-        )
-        crawl_summary.add_row(
-            "Duplicate",
-            str(snapshot.duplicate_content),
-            "content matches",
         )
         crawl_summary.add_row(
             "Incremental skipped",
@@ -598,19 +590,19 @@ class DashboardRenderer:
         table.add_row(
             "Saved",
             str(snapshot.saved),
-            "Duplicate",
-            str(snapshot.duplicate_content),
-        )
-        table.add_row(
             "Incremental",
             str(snapshot.incremental_skipped),
+        )
+        table.add_row(
             "Rejected",
+            str(snapshot.rejected_urls),
+            "Empty",
             str(snapshot.rejected_urls),
         )
         table.add_row(
-            "Empty",
-            str(snapshot.empty_pages),
             "Non-English",
+            str(snapshot.non_english),
+            "Incremental",
             str(snapshot.non_english),
         )
         table.add_row(
