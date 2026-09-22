@@ -143,7 +143,7 @@ def test_default_blocking_contract_matches_runtime_defaults() -> None:
     } == BLOCKED_RESOURCE_TYPES
 
 
-def test_default_browser_arguments_match_legacy_runtime() -> None:
+def test_default_browser_arguments_match_runtime_defaults() -> None:
     assert DEFAULT_BROWSER_ARGUMENTS == (
         "--disable-background-networking",
         "--disable-component-update",
