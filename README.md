@@ -44,6 +44,12 @@ data/
 
 If you delete `data/state/`, the next crawl loses previous ETag/Last-Modified/hash history and behaves like a fresh synchronization. Deleting `data/markdown/` removes the generated documentation itself.
 
+Crawlee's request queue is process-local memory storage in the normal docsync runtime. The persistent state directory is owned by docsync and contains synchronization metadata; docsync does not create or depend on a `.crawlee/` directory for incremental synchronization. An old `.crawlee/` directory left by earlier versions can be removed while no crawl is running.
+
+For multiple independent sites, use a separate state directory per site/host. This prevents unrelated URL histories from sharing the same JSON state while still allowing all generated Markdown to share one output tree when desired.
+
+For Playwright on memory-constrained systems, start with `--max-concurrency 2`. This means at most two crawler tasks are allowed to run in parallel. It does not limit the total number of pages and it is separate from `--requests-per-minute`, which controls request rate over time.
+
 ### Choose your own output folder
 
 Yes. You can put the Markdown output anywhere:
@@ -677,9 +683,9 @@ Defines synchronization state storage.
 
 The state directory stores:
 
-* Crawl progress
-* Request history
-* Synchronization metadata
+* Incremental URL synchronization metadata
+* Content hashes and HTTP validators
+* Inventory metadata when inventory mode is used
 
 Example:
 
@@ -699,7 +705,7 @@ Example:
 --max-concurrency 10
 ```
 
-Higher values increase speed but require more resources.
+Higher values increase parallelism but require more CPU and memory. In Playwright mode, each concurrent task can involve an active browser page/context, so `--max-concurrency 2` is a safer starting point on a roughly 4 GB machine. This does not mean only two pages are crawled; it means no more than two crawler tasks run at the same time.
 
 ---
 
@@ -1337,19 +1343,19 @@ Example:
 ```text
 storage/
 
-├── request_queues/
+├── content_hashes.json
 
-├── datasets/
+├── url_state.json
 
-└── metadata/
+└── site-inventory.json  # only when inventory mode is used
 ```
 
 The state directory stores:
 
-* Crawl progress
-* Request history
-* Synchronization metadata
-* Incremental crawl information
+* URL save timestamps and output filenames
+* Content hashes
+* ETag and Last-Modified validators
+* Incremental synchronization information
 
 ---
 
