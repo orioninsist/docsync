@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from typing import Final
 
 import pytest
 
@@ -16,13 +15,6 @@ from docsync.cli import (
 )
 from docsync.config import Settings
 from docsync.metrics import CrawlStats
-
-ROOT: Final[Path] = Path(__file__).resolve().parents[1]
-CONFIG_PATH: Final[Path] = ROOT / "src/docsync/config.py"
-CLI_PATH: Final[Path] = ROOT / "src/docsync/cli.py"
-CRAWLER_PATH: Final[Path] = ROOT / "src/docsync/crawler.py"
-ENGINE_PATH: Final[Path] = ROOT / "src/docsync/crawl_engine.py"
-
 
 def configure_runtime_directories(
     monkeypatch: pytest.MonkeyPatch,
