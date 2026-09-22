@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Collection
 from email.message import Message
-from pathlib import PurePosixPath
 from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -27,85 +25,6 @@ TRACKING_QUERY_KEYS = frozenset(
         "source",
     }
 )
-
-DEFAULT_SKIPPED_EXTENSIONS = frozenset(
-    {
-        ".7z",
-        ".avi",
-        ".avif",
-        ".bin",
-        ".bmp",
-        ".bz2",
-        ".css",
-        ".csv",
-        ".doc",
-        ".docx",
-        ".eot",
-        ".exe",
-        ".gif",
-        ".gz",
-        ".ico",
-        ".iso",
-        ".jpeg",
-        ".jpg",
-        ".js",
-        ".json",
-        ".m4a",
-        ".m4v",
-        ".mov",
-        ".mp3",
-        ".mp4",
-        ".mpeg",
-        ".mpg",
-        ".odp",
-        ".ods",
-        ".odt",
-        ".ogg",
-        ".ogv",
-        ".otf",
-        ".pdf",
-        ".png",
-        ".ppt",
-        ".pptx",
-        ".rar",
-        ".rss",
-        ".svg",
-        ".tar",
-        ".tgz",
-        ".tif",
-        ".tiff",
-        ".ttf",
-        ".wav",
-        ".webm",
-        ".webp",
-        ".woff",
-        ".woff2",
-        ".xls",
-        ".xlsx",
-        ".xml",
-        ".xz",
-        ".zip",
-    }
-)
-
-DEFAULT_SKIPPED_PATH_PARTS = frozenset(
-    {
-        "account",
-        "admin",
-        "auth",
-        "cart",
-        "checkout",
-        "download",
-        "downloads",
-        "login",
-        "logout",
-        "register",
-        "search",
-        "signin",
-        "signup",
-    }
-)
-
 
 def validated_http_url(value: str) -> str:
     """Validate a credential-free absolute HTTP or HTTPS URL."""
@@ -303,50 +222,4 @@ def normalize_url(url: str) -> str:
     )
     return normalized_url
 
-
-def is_safe_in_scope_url(
-    url: str,
-    *,
-    start_url: str,
-    skipped_extensions: Collection[str] = (DEFAULT_SKIPPED_EXTENSIONS),
-    skipped_path_parts: Collection[str] = (DEFAULT_SKIPPED_PATH_PARTS),
-) -> bool:
-    """Return whether a URL is safe and inside the start path tree."""
-
-    try:
-        normalized = normalize_url(url)
-        normalized_start = normalize_url(start_url)
-
-        parts = urlsplit(normalized)
-        start_parts = urlsplit(normalized_start)
-    except (TypeError, ValueError):
-        return False
-
-    if normalized_http_origin(normalized) != normalized_http_origin(normalized_start):
-        return False
-
-    path = parts.path.lower()
-    suffix = PurePosixPath(path).suffix.lower()
-
-    normalized_extensions = {value.lower() for value in skipped_extensions}
-
-    if suffix in normalized_extensions:
-        return False
-
-    normalized_skipped_parts = {value.lower() for value in skipped_path_parts}
-
-    path_parts = {part for part in path.split("/") if part}
-
-    if path_parts.intersection(normalized_skipped_parts):
-        return False
-
-    start_path = start_parts.path or "/"
-
-    if start_path != "/":
-        scoped_start = start_path.rstrip("/").lower()
-
-        if path != scoped_start and not path.startswith(f"{scoped_start}/"):
-            return False
-
-    return True
 
