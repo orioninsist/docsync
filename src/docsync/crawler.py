@@ -359,7 +359,7 @@ async def run_crawler(
 
         if not filter_incremental_urls(
             [url],
-            config=settings,
+            config=type("IncrementalConfig", (), {"refresh_hours": resolved_refresh_hours, "force_refresh": resolved_force_refresh})(),
             stats=stats,
             url_state=url_state,
         ):
