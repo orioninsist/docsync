@@ -1,1621 +1,204 @@
 # docsync
 
-A documentation crawling and synchronization engine built with Python, Crawlee, Playwright, and uv.
-
-docsync crawls documentation websites, extracts clean Markdown content, validates language requirements, and maintains incremental synchronization state.
-
-## Quick usage
-
-The normal command is:
-
-```bash
-uv run docsync https://example.com/docs --language en
-```
-
-By default, generated Markdown is written under:
-
-```text
-data/markdown/
-```
-
-and persistent incremental state is written under:
-
-```text
-data/state/
-```
-
-The Markdown files are the human-facing crawl result. The state files are not documents; they are required only if you want later runs to revalidate/update the same crawl incrementally.
-
-### Keep vs delete after a crawl
-
-For a normal crawl with default directories:
-
-```text
-data/
-├── markdown/                  KEEP: generated Markdown documents
-│   ├── <host>/.../*.md       KEEP: documentation output
-│   └── crawl-report.json     OPTIONAL: machine-readable crawl summary
-└── state/
-    ├── content_hashes.json    KEEP for incremental sync
-    └── url_state.json         KEEP for incremental sync
-```
-
-`logs/` contains runtime/validation logs. You may delete generated log files when you no longer need diagnostics. The tracked `logs/.gitkeep` file should stay in the repository.
-
-If you delete `data/state/`, the next crawl loses previous ETag/Last-Modified/hash history and behaves like a fresh synchronization. Deleting `data/markdown/` removes the generated documentation itself.
-
-Crawlee's request queue is process-local memory storage in the normal docsync runtime. The persistent state directory is owned by docsync and contains synchronization metadata; docsync does not create or depend on a `.crawlee/` directory for incremental synchronization. An old `.crawlee/` directory left by earlier versions can be removed while no crawl is running.
-
-For multiple independent sites, use a separate state directory per site/host. This prevents unrelated URL histories from sharing the same JSON state while still allowing all generated Markdown to share one output tree when desired.
-
-For Playwright on memory-constrained systems, start with `--max-concurrency 2`. This means at most two crawler tasks are allowed to run in parallel. It does not limit the total number of pages and it is separate from `--requests-per-minute`, which controls request rate over time.
-
-### Choose your own output folder
-
-Yes. You can put the Markdown output anywhere:
-
-```bash
-uv run docsync https://example.com/docs \
-  --language en \
-  --output-dir /mnt/local/docs/example
-```
-
-For reliable incremental synchronization, give that crawl its own state directory too:
-
-```bash
-uv run docsync https://example.com/docs \
-  --language en \
-  --output-dir /mnt/local/docs/example/markdown \
-  --state-dir /mnt/local/docs/example/state
-```
-
-After the first run, use the same `--output-dir` and `--state-dir` again. Existing logical pages are updated in place and unchanged pages can be skipped/revalidated using saved state.
-
-### JavaScript-rendered documentation
-
-```bash
-uv run docsync https://example.com/docs \
-  --language en \
-  --mode playwright \
-  --browser-type chromium
-```
-
-Aliases `--javascript`, `--browser`, and `--playwright` also select Playwright mode.
-
-### Inventory only
-
-To discover/classify the scoped site without writing Markdown:
-
-```bash
-uv run docsync https://example.com/docs \
-  --language en \
-  --inventory-only
-```
-
-This writes `site-inventory.json` into the selected state directory and does not write Markdown.
-
-### Full CLI reference
-
-```text
-uv run docsync [URL] [OPTIONS]
-
-URL
-  start_url
-      Initial URL to crawl. If omitted, DOCSYNC_START_URL is used.
-
-OPTIONS
-  --output-dir PATH
-  --output-folder PATH
-      Directory for generated Markdown files.
-      Default: data/markdown
-
-  --state-dir PATH
-      Persistent incremental state directory.
-      Default: data/state
-
-  --max-concurrency N
-      Maximum concurrent crawler tasks.
-      Environment default: 5
-
-  --max-requests N
-      Maximum requests in one crawl.
-      Environment default: 10000
-
-  --requests-per-minute N
-      Maximum request rate.
-      Valid configured range: 1..60
-      Environment default: 6
-
-  --language {en,tr}
-      Target language. Only English and Turkish are supported.
-      Default: en
-
-  --refresh-hours N
-      Skip recently saved URLs for this many hours.
-      0 disables the refresh window.
-      Valid range: 0..8760
-      Default: 0
-
-  --force-refresh
-      Ignore incremental URL state and request pages again.
-
-  --mode {http,playwright}
-      Crawler mode.
-      Default: http
-
-  --javascript
-  --browser
-  --playwright
-      Aliases for --mode playwright.
-
-  --show-browser
-      Show the Playwright browser window.
-      Default: headless.
-
-  --browser-type {chromium,firefox,webkit}
-      Playwright browser engine.
-      Default: chromium
-
-  --inventory-only
-      Discover/classify URLs without writing Markdown.
-      Writes site-inventory.json to the state directory.
-
-  -h, --help
-      Show CLI help.
-```
-
-Environment variables are also supported:
-
-```text
-DOCSYNC_START_URL
-DOCSYNC_OUTPUT_DIR
-DOCSYNC_STATE_DIR
-DOCSYNC_LOG_DIR
-DOCSYNC_MAX_CONCURRENCY
-DOCSYNC_MAX_REQUESTS
-DOCSYNC_REQUEST_TIMEOUT_SECONDS
-DOCSYNC_RESPECT_ROBOTS_TXT
-DOCSYNC_LANGUAGE
-DOCSYNC_REQUESTS_PER_MINUTE
-DOCSYNC_REFRESH_HOURS
-DOCSYNC_FORCE_REFRESH
-DOCSYNC_MODE
-DOCSYNC_HEADLESS
-DOCSYNC_BROWSER_TYPE
-```
-
----
-
-# 1. Overview
-
-docsync is a modular documentation crawler and synchronization engine.
-
-The project discovers documentation pages from websites, processes HTML content, converts pages into Markdown, and stores synchronization metadata for future incremental updates.
-
-docsync is built for modern documentation platforms that may contain:
-
-- Static HTML pages
-- JavaScript-rendered pages
-- Large documentation trees
-- Multiple language versions
-- Frequently changing content
-
-
-Main objectives:
-
-- Reliable documentation crawling
-- Language-aware page selection
-- Incremental synchronization
-- Clean Markdown generation
-- Scalable crawling architecture
-
-
-Core workflow:
-
-```
-
-Website
-
-|
-
-v
-
-URL Discovery
-
-|
-
-v
-
-Language Validation
-
-|
-
-v
-
-Crawlee Processing
-
-|
-
-v
-
-Markdown Export
-
-|
-
-v
-
-Synchronization Storage
-
-````
-
-
----
-
-# 2. Features
-
-| Feature | Support |
-|---|---|
-| Python | 3.13+ |
-| Crawlee Python | 1.9.1 |
-| HTTP crawling | Yes |
-| Playwright crawling | Yes |
-| BeautifulSoup extraction | Yes |
-| Chromium support | Yes |
-| Firefox support | Yes |
-| WebKit support | Yes |
-| Sitemap discovery | Yes |
-| HTML link discovery | Yes |
-| Incremental synchronization | Yes |
-| Request rate limiting | Yes |
-| Concurrency control | Yes |
-| Request retry handling | Yes |
-| Markdown conversion | Yes |
-| Language-aware crawling | Yes |
-| CLI application | Yes |
-| Persistent crawl state | Yes |
-| Inventory generation | Yes |
-
-
----
-
-# 3. Architecture
-
-docsync follows a modular crawler architecture based on separation of responsibilities.
-
-## High Level Architecture
-
-```mermaid
-flowchart TD
-
-A[CLI Entry Point]
-
-A --> B[Configuration Loader]
-
-B --> C[Crawler Runtime]
-
-C --> D[HTTP Crawler]
-
-C --> E[Playwright Crawler]
-
-D --> F[HTML Extraction]
-
-E --> F
-
-F --> G[Language Detection]
-
-G --> H[Language Strategy]
-
-H --> I[Markdown Converter]
-
-I --> J[Output Storage]
-
-C --> K[Request Queue]
-
-C --> L[Synchronization State]
-````
-
----
-
-## Crawling Pipeline
-
-```
-START
-
- |
-
- v
-
-Target URL
-
- |
-
- v
-
-Configuration
-
- |
-
- v
-
-Crawler Runtime
-
- |
-
- +--------------------+
- |                    |
- v                    v
-
-HTTP Mode       Playwright Mode
-
-
- |                    |
-
- +---------+----------+
-
-           |
-
-           v
-
-     HTML Extraction
-
-           |
-
-           v
-
-    Language Strategy
-
-           |
-
-           v
-
-      Request Queue
-
-           |
-
-           v
-
-     Crawlee Worker
-
-           |
-
-           v
-
-   HTML Verification
-
-           |
-
-      +----+----+
-
-      |         |
-
-      v         v
-
-    Save      Skip
-
-      |
-
-      v
-
- Markdown Export
-```
-
----
-
-# 4. Installation
+Documentation crawler and incremental Markdown synchronizer built on Crawlee Python 1.10.1.
 
 ## Requirements
 
-Before installation:
+- Python 3.13+
+- uv
+- Playwright browser binaries only when using `--mode playwright`
 
-* Git
-* Python 3.13+
-* uv package manager
-
----
-
-## Install uv
-
-### Linux / macOS
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-### Windows PowerShell
-
-```powershell
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-Verify:
-
-```bash
-uv --version
-```
-
----
-
-## Install docsync from GitHub
-
-Clone repository:
-
-```bash
-git clone https://github.com/orioninsist/docsync.git
-
-cd docsync
-```
-
-Install project:
+Install:
 
 ```bash
 uv sync
-```
-
-This installs:
-
-* docsync dependencies
-* Crawlee Python
-* BeautifulSoup crawler support
-* Playwright crawler support
-* curl impersonation support
-* Required Python packages
-
----
-
-## Crawlee Installation
-
-docsync uses Crawlee Python as the crawling engine.
-
-No separate Crawlee installation is required.
-
-Crawlee is installed automatically with:
-
-```bash
-uv sync
-```
-
-Verify:
-
-```bash
-uv run python -c "import crawlee; print(crawlee.__version__)"
-```
-
-Expected:
-
-```text
-1.9.1
-```
-
----
-
-## Playwright Browser Installation
-
-Install browser binaries:
-
-```bash
 uv run playwright install chromium
 ```
 
-Supported browsers:
+## Usage
 
-* Chromium
-* Firefox
-* WebKit
-
----
-
-## Verify Installation
-
-Run:
-
-```bash
-uv run docsync --help
-```
-
-If CLI help appears, installation is complete.
-
----
-
-# 5. Quick Start
-
-## Basic HTTP Crawl
-
-For static documentation websites:
+Static or automatically escalated crawling:
 
 ```bash
 uv run docsync https://example.com/docs
 ```
 
-HTTP mode provides fast crawling without browser rendering.
-
----
-
-## JavaScript Documentation Crawl
-
-For JavaScript-rendered websites:
+Explicit browser mode:
 
 ```bash
-uv run docsync \
-  https://example.com/docs \
+uv run docsync https://example.com/docs \
   --mode playwright \
   --browser-type chromium
 ```
 
-Playwright mode is recommended for:
-
-* React documentation
-* Vue documentation
-* Angular documentation
-* Dynamic documentation portals
-
----
-
-## Language Specific Crawl
-
-English documentation:
+Inventory-only discovery:
 
 ```bash
-uv run docsync \
-  https://example.com/docs \
-  --language en
+uv run docsync https://example.com/docs --inventory-only
 ```
 
-Turkish documentation:
-
-```bash
-uv run docsync \
-  https://example.com/docs \
-  --language tr
-```
-
----
-
-## Large Documentation Crawl
-
-Example:
-
-```bash
-uv run docsync \
-  https://example.com/docs \
-  --max-requests 5000 \
-  --max-concurrency 10 \
-  --requests-per-minute 60
-```
-
-This configuration is suitable for large documentation websites.
-
----
-
-# 6. CLI Usage
-
-## Command Format
-
-```bash
-uv run docsync URL [OPTIONS]
-```
-
-Example:
-
-```bash
-uv run docsync \
-  https://example.com/docs \
-  --language en \
-  --mode playwright
-```
-
-CLI controls:
-
-* Crawl target
-* Output location
-* Synchronization state
-* Language selection
-* Browser engine
-* Request limits
-* Concurrency
-
-# 7. Configuration Parameters
-
-docsync provides CLI parameters to control crawling behavior, synchronization, language selection, storage location, and browser execution.
-
-
-## CLI Options
-
-| Option | Description |
-|---|---|
-| `URL` | Starting documentation website URL |
-| `--output-dir` | Markdown output directory |
-| `--state-dir` | Synchronization state directory |
-| `--max-concurrency` | Maximum parallel requests |
-| `--max-requests` | Maximum crawl request limit |
-| `--requests-per-minute` | Request rate limit |
-| `--language` | Target language (`en` or `tr`) |
-| `--refresh-hours` | Refresh interval for synchronization |
-| `--mode` | Crawling mode (`http` or `playwright`) |
-| `--browser-type` | Browser engine (`chromium`, `firefox`, `webkit`) |
-
-
----
-
-## Parameter Details
-
-
-### URL
-
-Starting point of the crawl.
-
-Example:
-
-```bash
-uv run docsync https://example.com/docs
-````
-
----
-
-### --output-dir
-
-Defines where generated Markdown files are stored.
-
-Example:
-
-```bash
---output-dir ./output
-```
-
-Result:
+Useful options:
 
 ```text
-output/
-
-└── pages/
-
-    ├── index.md
-
-    ├── getting-started.md
-
-    └── api-reference.md
+--output-dir PATH
+--state-dir PATH
+--max-concurrency N
+--max-requests N
+--requests-per-minute N
+--language {en,tr}
+--refresh-hours N
+--force-refresh
+--mode {http,playwright}
+--show-browser
+--browser-type {chromium,firefox,webkit}
+--inventory-only
 ```
 
----
+Run `uv run docsync --help` for the canonical CLI reference.
 
-### --state-dir
+## Current architecture
 
-Defines synchronization state storage.
-
-The state directory stores:
-
-* Incremental URL synchronization metadata
-* Content hashes and HTTP validators
-* Inventory metadata when inventory mode is used
-
-Example:
-
-```bash
---state-dir ./storage
-```
-
----
-
-### --max-concurrency
-
-Controls the number of parallel crawling tasks.
-
-Example:
-
-```bash
---max-concurrency 10
-```
-
-Higher values increase parallelism but require more CPU and memory. In Playwright mode, each concurrent task can involve an active browser page/context, so `--max-concurrency 2` is a safer starting point on a roughly 4 GB machine. This does not mean only two pages are crawled; it means no more than two crawler tasks run at the same time.
-
----
-
-### --max-requests
-
-Limits the maximum number of processed requests.
-
-Example:
-
-```bash
---max-requests 5000
-```
-
-Useful for:
-
-* Testing
-* Large website control
-* Resource management
-
----
-
-### --requests-per-minute
-
-Controls request rate.
-
-Example:
-
-```bash
---requests-per-minute 60
-```
-
-This helps avoid aggressive crawling behavior.
-
----
-
-### --language
-
-Defines the target documentation language.
-
-Supported:
-
-| Language | Code |
-| -------- | ---- |
-| English  | `en` |
-| Turkish  | `tr` |
-
-Example:
-
-```bash
---language en
-```
-
-or:
-
-```bash
---language tr
-```
-
----
-
-### --refresh-hours
-
-Defines synchronization refresh interval.
-
-Example:
-
-```bash
---refresh-hours 24
-```
-
-Used for repeated documentation synchronization.
-
----
-
-### --mode
-
-Selects crawler engine.
-
-Available modes:
-
-| Mode         | Usage                |
-| ------------ | -------------------- |
-| `http`       | Static HTML websites |
-| `playwright` | JavaScript websites  |
-
-Example:
-
-```bash
---mode playwright
-```
-
----
-
-### --browser-type
-
-Defines Playwright browser engine.
-
-Supported:
-
-| Browser  | Value      |
-| -------- | ---------- |
-| Chromium | `chromium` |
-| Firefox  | `firefox`  |
-| WebKit   | `webkit`   |
-
-Example:
-
-```bash
---browser-type chromium
-```
-
----
-
-## Full CLI Example
-
-```bash
-uv run docsync \
-  https://example.com/docs \
-  --output-dir ./output \
-  --state-dir ./storage \
-  --max-concurrency 4 \
-  --max-requests 5000 \
-  --requests-per-minute 60 \
-  --language en \
-  --mode playwright \
-  --browser-type chromium
-```
-
----
-
-# 8. Crawl Modes
-
-docsync supports two crawling modes.
-
----
-
-## HTTP Mode
-
-HTTP mode is optimized for static documentation websites.
-
-Flow:
+docsync keeps Crawlee responsibilities in Crawlee and only owns project-specific policy.
 
 ```text
-URL
-
- |
-
- v
-
-HTTP Request
-
- |
-
- v
-
-HTML Response
-
- |
-
- v
-
-BeautifulSoup Extraction
-
- |
-
- v
-
-Markdown Export
+docsync
+├── Crawlee runtime
+│   ├── persistent FileSystemStorageClient
+│   ├── named RequestQueue
+│   ├── ThrottlingRequestManager
+│   ├── concurrency / RPM limits
+│   ├── retries and robots.txt handling
+│   ├── native sitemap loading
+│   ├── native link extraction / enqueueing
+│   └── HTTP / adaptive / Playwright crawler execution
+└── docsync policy
+    ├── URL scope and normalization
+    ├── language policy
+    ├── Markdown conversion
+    ├── incremental URL state
+    ├── crawl / inventory reports
+    └── terminal UI
 ```
 
-Usage:
+### Crawl modes
+
+`http` uses Crawlee's `AdaptivePlaywrightCrawler` with the BeautifulSoup static parser. Static parsing is attempted first and Crawlee owns escalation to browser rendering when the adaptive result is not meaningful.
+
+`playwright` uses Crawlee's `PlaywrightCrawler` directly.
+
+There is no separate custom HTTP-to-browser fallback subsystem.
+
+### Persistent request storage
+
+Crawl request state is persistent on disk under the selected state directory.
+
+For a crawl:
+
+```text
+<state-dir>/
+├── <hostname>_url_state.json
+└── crawlee/
+    └── crawl/
+        └── <hostname>/
+            └── ...
+```
+
+For inventory:
+
+```text
+<state-dir>/
+├── site-inventory.json
+└── crawlee/
+    └── inventory/
+        └── <hostname>/
+            └── ...
+```
+
+A completed crawl may drop its request storage. Interrupted or otherwise incomplete crawls preserve request storage so the run can resume.
+
+The URL-state JSON is the single docsync incremental metadata store. It contains save timestamps, output filenames, content hashes, ETag values, and Last-Modified values.
+
+## Incremental synchronization
+
+Use the same `--state-dir` across repeated runs.
 
 ```bash
-uv run docsync \
-  https://example.com/docs \
-  --mode http
+uv run docsync https://example.com/docs \
+  --output-dir /mnt/local/docs/example/markdown \
+  --state-dir /mnt/local/docs/example/state \
+  --refresh-hours 24
 ```
 
-Recommended for:
+`--force-refresh` ignores the refresh-window decision and requests pages again.
 
-* Static HTML documentation
-* Simple websites
-* Fast crawling
+## Sitemap and discovery
 
----
-
-## Playwright Mode
-
-Playwright mode uses browser automation.
-
-Flow:
+docsync uses Crawlee's native `SitemapRequestLoader`. It probes these conventional sitemap locations on the target origin:
 
 ```text
-URL
-
- |
-
- v
-
-Browser Launch
-
- |
-
- v
-
-JavaScript Execution
-
- |
-
- v
-
-Rendered HTML
-
- |
-
- v
-
-Content Extraction
-
- |
-
- v
-
-Markdown Export
+/sitemap.xml
+/sitemap_index.xml
+/sitemap.txt
+/sitemap.xml.gz
 ```
 
-Usage:
+HTML link discovery uses Crawlee context link extraction and enqueueing. docsync applies only its scope and language policy around that native behavior.
 
-```bash
-uv run docsync \
-  https://example.com/docs \
-  --mode playwright \
-  --browser-type chromium
-```
+## Language policy
 
-Recommended for:
-
-* React applications
-* Vue applications
-* Angular applications
-* Dynamic documentation portals
-
----
-
-# 9. Language System
-
-docsync uses a centralized language decision architecture.
-
-The system is based on:
-
-```text
-Language Detection
-
-        |
-
-        v
-
-LanguageDecision
-
-        |
-
-        v
-
-LanguageStrategy
-
-        |
-
-        v
-
-Accept / Skip
-```
-
-Supported languages:
-
-| Language | Code |
-| -------- | ---- |
-| English  | `en` |
-| Turkish  | `tr` |
-
----
-
-## Language Processing Pipeline
-
-```text
-Target URL
-
-      |
-
-      v
-
-Requested Language
-
-      |
-
-      v
-
-LanguageStrategy
-
-      |
-
-      v
-
-URL Discovery
-
-      |
-
-      v
-
-Language Pre Filter
-
-      |
-
-      v
-
-Request Queue
-
-      |
-
-      v
-
-HTML Download
-
-      |
-
-      v
-
-Language Detection
-
-      |
-
-      v
-
-Final Language Decision
-```
-
----
-
-## URL Language Filtering
-
-Before entering the Crawlee queue:
-
-```text
-URL
-
- |
-
- v
-
-LanguageStrategy.should_skip_url()
-
- |
-
- +-------------+
- |             |
- v             v
-
-Accept       Reject
-```
-
-Example:
-
-Requested:
+Supported target languages:
 
 ```text
 en
+tr
 ```
 
-URL:
+URL language hints are used as an early filter. Downloaded HTML is then classified before Markdown is saved.
+
+## Project structure
 
 ```text
-/example/en/docs
+src/docsync/
+├── __main__.py
+├── cli.py
+├── config.py
+├── crawl_engine.py
+├── crawler.py
+├── crawler_runtime.py
+├── incremental.py
+├── inventory.py
+├── language.py
+├── language_strategy.py
+├── markdown.py
+├── metrics.py
+├── playwright_rendering.py
+├── progress_events.py
+├── sitemap.py
+├── terminal_ui.py
+└── url_security.py
 ```
 
-Result:
+The canonical application entry points are:
 
 ```text
-Accepted
+docsync              -> docsync.cli:main
+python -m docsync    -> docsync.__main__
 ```
 
-URL:
+There is no root `main.py` compatibility launcher.
 
-```text
-/example/tr/docs
-```
+## Development
 
-Result:
-
-```text
-Skipped
-```
-
----
-
-## HTML Language Verification
-
-URL patterns are not always enough.
-
-docsync validates the downloaded page content.
-
-Flow:
-
-```text
-HTML Content
-
-      |
-
-      v
-
-Language Detector
-
-      |
-
-      v
-
-LanguageStrategy.accepts()
-
-      |
-
- +----+----+
-
- |         |
-
- v         v
-
-Save      Skip
-```
-
-This prevents incorrect language pages from being exported.
-
----
-
-# 10. Sitemap and Link Discovery
-
-docsync separates URL discovery from language validation.
-
-## Sitemap Discovery
-
-Supported:
-
-* sitemap.xml
-* sitemap index files
-* multiple sitemap locations
-
-Flow:
-
-```text
-robots.txt
-
-      |
-
-      v
-
-sitemap.xml
-
-      |
-
-      v
-
-URL Extraction
-
-      |
-
-      v
-
-Language Strategy
-
-      |
-
-      v
-
-Request Queue
-```
-
----
-
-## HTML Link Discovery
-
-Documentation pages can discover additional pages.
-
-Flow:
-
-```text
-Documentation Page
-
-        |
-
-        v
-
-HTML Link Extraction
-
-        |
-
-        v
-
-Scope Validation
-
-        |
-
-        v
-
-Language Filtering
-
-        |
-
-        v
-
-Crawlee Queue
-```
-
-Both HTTP and Playwright modes use the same discovery and language rules.
-
-
-# 11. Project Structure
-
-
-docsync follows a modular Python project architecture.
-
-Each module has a single responsibility.
-
-
-Project tree:
-
-```text
-docsync/
-
-├── src/
-
-│   └── docsync/
-
-│       ├── cli.py
-│       │   Command line interface
-
-│       ├── crawler.py
-│       │   Main crawler workflow
-
-│       ├── crawler_runtime.py
-│       │   Crawlee runtime configuration
-
-│       ├── config.py
-│       │   Application configuration
-
-│       ├── inventory.py
-│       │   Website inventory generation
-
-│       ├── language.py
-│       │   Language detection engine
-
-│       ├── language_strategy.py
-│       │   Language decision rules
-
-│       ├── sitemap.py
-│       │   Sitemap discovery
-
-│       ├── markdown.py
-│       │   Markdown conversion
-
-│       └── models.py
-│           Pydantic data models
-
-
-├── tests/
-
-│   Automated test suite
-
-
-├── output/
-
-│   Generated Markdown files
-
-
-├── storage/
-
-│   Crawl state and synchronization metadata
-
-
-├── pyproject.toml
-
-│   Python project configuration
-
-
-└── uv.lock
-
-    Locked dependency versions
-````
-
----
-
-## Module Responsibilities
-
-| Module                 | Responsibility                                     |
-| ---------------------- | -------------------------------------------------- |
-| `cli.py`               | Command line interface and application entry point |
-| `crawler.py`           | Main Crawlee crawling workflow                     |
-| `crawler_runtime.py`   | Crawlee runtime, queue, and crawler settings       |
-| `config.py`            | Configuration loading and validation               |
-| `inventory.py`         | Website inventory generation                       |
-| `language.py`          | Language detection and language decisions          |
-| `language_strategy.py` | Requested language policy                          |
-| `sitemap.py`           | Sitemap URL discovery                              |
-| `markdown.py`          | Markdown generation                                |
-| `models.py`            | Typed data models                                  |
-
----
-
-# 12. Output Structure
-
-docsync generates Markdown documentation and keeps synchronization data separately.
-
-## Markdown Output
-
-Example:
-
-```text
-output/
-
-└── pages/
-
-    ├── index.md
-
-    ├── getting-started.md
-
-    ├── configuration.md
-
-    └── api-reference.md
-```
-
-Each Markdown file contains cleaned documentation content extracted from the original website.
-
----
-
-## Synchronization Storage
-
-Example:
-
-```text
-storage/
-
-├── content_hashes.json
-
-├── url_state.json
-
-└── site-inventory.json  # only when inventory mode is used
-```
-
-The state directory stores:
-
-* URL save timestamps and output filenames
-* Content hashes
-* ETag and Last-Modified validators
-* Incremental synchronization information
-
----
-
-## Inventory Output
-
-Inventory mode generates:
-
-```text
-site-inventory.json
-```
-
-Example:
-
-```json
-{
-  "english_urls": 450,
-  "non_english_urls": 120,
-  "duplicate_urls": 20,
-  "discovery_complete": true
-}
-```
-
-Inventory is useful for:
-
-* Website analysis
-* Documentation auditing
-* Language coverage checking
-
----
-
-# 13. Synchronization System
-
-docsync supports incremental synchronization.
-
-Instead of downloading everything on every run, it keeps crawl state and processes only required updates.
-
----
-
-## Synchronization Flow
-
-```text
-First Crawl
-
-    |
-
-    v
-
-Discover Pages
-
-    |
-
-    v
-
-Download Content
-
-    |
-
-    v
-
-Generate Markdown
-
-    |
-
-    v
-
-Store State
-
-
-
-Next Crawl
-
-    |
-
-    v
-
-Compare Existing State
-
-    |
-
-    v
-
-Update Changed Pages Only
-```
-
----
-
-## Benefits
-
-| Feature             | Benefit                         |
-| ------------------- | ------------------------------- |
-| Persistent state    | Resume previous crawls          |
-| Incremental updates | Faster repeated synchronization |
-| Metadata tracking   | Better crawl control            |
-| Request history     | Avoid unnecessary requests      |
-
----
-
-# 14. Development
-
-## Install Development Environment
-
-```bash
-uv sync
-```
-
----
-
-## Code Formatting
-
-Run:
-
-```bash
-uv run ruff format .
-```
-
----
-
-## Linting
-
-Run:
-
-```bash
-uv run ruff check .
-```
-
----
-
-## Type Checking
-
-Run:
-
-```bash
-uv run mypy .
-```
-
----
-
-## Local Development Workflow
-
-Typical workflow:
-
-```text
-Edit Code
-
-   |
-
-   v
-
-Run Formatter
-
-   |
-
-   v
-
-Run Type Checker
-
-   |
-
-   v
-
-Run Tests
-
-   |
-
-   v
-
-Build Package
-```
-
----
-
-# 15. Testing
-
-docsync uses automated tests to validate crawler behavior.
-
-Run full test suite:
+Run the current quality checks:
 
 ```bash
 uv run pytest -q
+uv run ruff check src tests
+uv run mypy src tests
 ```
 
-Expected result:
+The test suite should describe current behavior, not implementation-shape contracts from removed architectures.
 
-```text
-438 passed
-```
+## License
 
----
-
-## Tested Components
-
-| Component              | Coverage |
-| ---------------------- | -------- |
-| Crawler workflow       | Yes      |
-| Request queue behavior | Yes      |
-| Sitemap discovery      | Yes      |
-| Link discovery         | Yes      |
-| Language strategy      | Yes      |
-| Inventory generation   | Yes      |
-| Synchronization logic  | Yes      |
-| Configuration handling | Yes      |
-
----
-
-## Test Philosophy
-
-Tests verify:
-
-* Discovery happens before filtering
-* Queue behavior remains correct
-* Language decisions are consistent
-* HTTP and Playwright flows behave equally
-* Incremental synchronization remains stable
-
----
-
-# 16. Technology Stack
-
-| Technology    | Purpose                     |
-| ------------- | --------------------------- |
-| Python        | Application runtime         |
-| Crawlee       | Web crawling engine         |
-| Playwright    | Browser automation          |
-| BeautifulSoup | HTML parsing                |
-| Pydantic      | Data validation             |
-| uv            | Dependency management       |
-| Ruff          | Code formatting and linting |
-| MyPy          | Static type checking        |
-| Pytest        | Automated testing           |
-
----
-
-# 17. License
-
-MIT License
-
-Copyright (c) 2026 orioninsist
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do
-so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
-OR OTHER DEALINGS IN THE SOFTWARE.
-
-MIT License
-
-Copyright (c) 2026 orioninsist
-
-This project is open source and available under the MIT License.
+MIT.
