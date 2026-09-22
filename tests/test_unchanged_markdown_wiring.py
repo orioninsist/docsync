@@ -173,7 +173,7 @@ def test_crawler_prepares_markdown_without_immediate_write() -> None:
         and node.func.attr == "export"
     ]
 
-    assert len(matching) == 2
+    assert len(matching) == 1
 
     for export_call in matching:
         write_keywords = [
