@@ -35,8 +35,7 @@ from docsync.incremental import (
 )
 from docsync.language import EnglishPageDetector, LanguagePolicy
 from docsync.markdown import MarkdownDocument, MarkdownExporter
-from docsync.metrics import CrawlStats, write_crawl_report
-from docsync.progress_events import CrawlEvent, CrawlEventSink
+from docsync.metrics import CrawlStats
 from docsync.sitemap import build_sitemap_request_loader
 from docsync.url_security import (
     normalize_url,
@@ -168,7 +167,6 @@ async def run_crawler(
     mode: str | None = None,
     headless: bool | None = None,
     browser_type: str | None = None,
-    event_sink: CrawlEventSink | None = None,
 ) -> CrawlStats:
     """Crawl HTML pages and synchronize Markdown output."""
     settings = Settings.from_environment()
@@ -243,39 +241,6 @@ async def run_crawler(
         stats.non_english = stats.non_english + 1
         stats.processed = stats.processed + 1
 
-    def emit_event(
-        *,
-        phase: str | None = None,
-        current_url: str | None = None,
-        current_title: str | None = None,
-        queued: int | None = None,
-        discovered: int | None = None,
-        active_requests: int | None = None,
-        site_title: str | None = None,
-    ) -> None:
-        if event_sink is None:
-            return
-
-        event_sink(
-            CrawlEvent(
-                phase=phase,
-                current_url=current_url,
-                current_title=current_title,
-                processed=stats.processed,
-                saved=stats.saved,
-                incremental_skipped=stats.incremental_skipped,
-                rejected_urls=stats.rejected_urls,
-                empty_pages=stats.empty_pages,
-                non_english=stats.non_english,
-                failed=stats.failed,
-                queued=queued,
-                discovered=discovered,
-                active_requests=active_requests,
-                sitemap_urls=stats.sitemap_urls,
-                site_title=site_title,
-            )
-        )
-
     normalized_start_url = normalize_start_url(start_url)
     start_hostname = urlsplit(normalized_start_url).hostname
 
@@ -284,10 +249,6 @@ async def run_crawler(
             f"Unable to determine hostname from start URL: {normalized_start_url}"
         )
 
-    emit_event(
-        phase="Loading state",
-        active_requests=0,
-    )
 
     url_state = load_url_state(
         resolved_state_dir,
@@ -386,150 +347,122 @@ async def run_crawler(
         crawler.pre_navigation_hook(add_incremental_validators)
         crawler.post_navigation_hook(handle_incremental_response)
 
-    active_requests = 0
-
     @crawler.router.default_handler
     async def request_handler(
         context: (
-            AdaptivePlaywrightCrawlingContext
-            | BeautifulSoupCrawlingContext
-            | PlaywrightCrawlingContext
+        AdaptivePlaywrightCrawlingContext
+        | BeautifulSoupCrawlingContext
+        | PlaywrightCrawlingContext
         ),
     ) -> None:
-        nonlocal active_requests
+
+        if resolved_mode == "playwright":
+            playwright_context = cast(Any, context)
+            html = await playwright_context.page.content()
+            soup = BeautifulSoup(html, "lxml")
+            effective_url = str(playwright_context.page.url)
+        else:
+            adaptive_context = cast(Any, context)
+            soup = await adaptive_context.parse_with_static_parser()
+            html = str(soup)
+            effective_url = str(
+                getattr(context.request, "loaded_url", None)
+                or context.request.url
+            )
 
         try:
-            active_requests += 1
-            emit_event(
-                phase="Downloading",
-                current_url=context.request.url,
-                active_requests=active_requests,
+            normalized_effective_url = normalize_url(
+                validated_http_url(effective_url)
+            )
+        except (TypeError, ValueError):
+            return
+
+        if scope_pattern.search(normalized_effective_url) is None:
+            context.log.warning(
+                "Redirected outside crawl scope; skipping content: %s",
+                effective_url,
+            )
+            return
+
+        await discover_and_enqueue_in_scope_links(
+            context=cast(Any, context),
+            base_url=effective_url,
+            scope_pattern=scope_pattern,
+            should_skip_url=language_policy.should_skip_url,
+        )
+        discovered_link_count = 0
+
+        content_language = None
+        if resolved_mode == "http":
+            content_language = cast(Any, context).http_response.headers.get(
+                "content-language"
             )
 
-            if resolved_mode == "playwright":
-                playwright_context = cast(Any, context)
-                html = await playwright_context.page.content()
-                soup = BeautifulSoup(html, "lxml")
-                effective_url = str(playwright_context.page.url)
-            else:
-                adaptive_context = cast(Any, context)
-                soup = await adaptive_context.parse_with_static_parser()
-                html = str(soup)
-                effective_url = str(
-                    getattr(context.request, "loaded_url", None)
-                    or context.request.url
-                )
-
-            try:
-                normalized_effective_url = normalize_url(
-                    validated_http_url(effective_url)
-                )
-            except (TypeError, ValueError):
-                return
-
-            if scope_pattern.search(normalized_effective_url) is None:
-                context.log.warning(
-                    "Redirected outside crawl scope; skipping content: %s",
-                    effective_url,
-                )
-                return
-
-            emit_event(
-                phase="Extracting",
-                current_url=context.request.url,
-                active_requests=active_requests,
+        language_decision = language_detector.detect_from_html(
+            url=effective_url,
+            html=html,
+            content_language=content_language,
+        )
+        if not language_policy.accepts(
+            language_decision
+        ) and language_decision.source not in {
+            "insufficient-text",
+            "language-detector-no-result",
+        }:
+            context.log.info(
+                "Non-English page skipped after discovery: %s",
+                effective_url,
             )
-            await discover_and_enqueue_in_scope_links(
-                context=cast(Any, context),
-                base_url=effective_url,
-                scope_pattern=scope_pattern,
-                should_skip_url=language_policy.should_skip_url,
+            await context.push_data(
+                {
+                    "outcome": "non_english",
+                    "url": context.request.url,
+                    "discovered_link_count": discovered_link_count,
+                }
             )
-            discovered_link_count = 0
+            return
 
-            content_language = None
-            if resolved_mode == "http":
-                content_language = cast(Any, context).http_response.headers.get(
-                    "content-language"
-                )
+        title_element = soup.title
+        title = (
+            title_element.get_text(" ", strip=True)
+            if title_element is not None
+            else ""
+        )
 
-            language_decision = language_detector.detect_from_html(
-                url=effective_url,
-                html=html,
-                content_language=content_language,
+        try:
+            document = markdown_exporter.export(
+                url=context.request.url,
+                soup=soup,
+                title=title,
+                language=resolved_language,
+                write=False,
             )
-            if not language_policy.accepts(
-                language_decision
-            ) and language_decision.source not in {
-                "insufficient-text",
-                "language-detector-no-result",
-            }:
-                context.log.info(
-                    "Non-English page skipped after discovery: %s",
-                    effective_url,
-                )
+        except ValueError as error:
+            if str(error).startswith("No meaningful Markdown content found:"):
+                # The adaptive result checker rejects this marker for static
+                # rendering, which makes Crawlee retry with Playwright. The
+                # browser result is committed normally if it is still empty.
                 await context.push_data(
                     {
-                        "outcome": "non_english",
+                        "outcome": "empty",
                         "url": context.request.url,
                         "discovered_link_count": discovered_link_count,
                     }
                 )
                 return
+            raise
 
-            title_element = soup.title
-            title = (
-                title_element.get_text(" ", strip=True)
-                if title_element is not None
-                else ""
-            )
-
-            try:
-                document = markdown_exporter.export(
-                    url=context.request.url,
-                    soup=soup,
-                    title=title,
-                    language=resolved_language,
-                    write=False,
-                )
-            except ValueError as error:
-                if str(error).startswith("No meaningful Markdown content found:"):
-                    # The adaptive result checker rejects this marker for static
-                    # rendering, which makes Crawlee retry with Playwright. The
-                    # browser result is committed normally if it is still empty.
-                    await context.push_data(
-                        {
-                            "outcome": "empty",
-                            "url": context.request.url,
-                            "discovered_link_count": discovered_link_count,
-                        }
-                    )
-                    return
-                raise
-
-            await context.push_data(
-                {
-                    "outcome": "document",
-                    "url": document.url,
-                    "title": document.title,
-                    "language": document.language,
-                    "output_path": str(document.output_path),
-                    "content_hash": document.content_hash,
-                    "markdown": document.markdown,
-                }
-            )
-        finally:
-            active_requests = max(0, active_requests - 1)
-            emit_event(
-                phase="Crawling",
-                current_url=context.request.url,
-                active_requests=active_requests,
-            )
-
-    emit_event(
-        phase="Discovering sitemaps",
-        active_requests=0,
-    )
+        await context.push_data(
+            {
+                "outcome": "document",
+                "url": document.url,
+                "title": document.title,
+                "language": document.language,
+                "output_path": str(document.output_path),
+                "content_hash": document.content_hash,
+                "markdown": document.markdown,
+            }
+        )
 
     known_in_scope_urls = [
         url
@@ -548,12 +481,6 @@ async def run_crawler(
         )
     )
 
-    emit_event(
-        phase="Preparing queue",
-        discovered=len(initial_urls),
-        queued=len(initial_urls),
-        active_requests=0,
-    )
 
     incremental_urls = filter_incremental_urls(
         initial_urls,
@@ -563,30 +490,6 @@ async def run_crawler(
         url_state=url_state,
     )
 
-    emit_event(
-        phase="Ready",
-        discovered=len(initial_urls),
-        queued=len(incremental_urls),
-        active_requests=0,
-    )
-
-    report_configuration = {
-        "start_url": normalized_start_url,
-        "output_dir": resolved_output_dir,
-        "state_dir": resolved_state_dir,
-        "max_concurrency": resolved_max_concurrency,
-        "max_requests": resolved_max_requests,
-        "language": resolved_language,
-        "refresh_hours": resolved_refresh_hours,
-        "force_refresh": resolved_force_refresh,
-        "requests_per_minute": settings.requests_per_minute,
-        "request_timeout_seconds": settings.request_timeout_seconds,
-        "mode": resolved_mode,
-        "headless": resolved_headless,
-        "browser_type": resolved_browser_type,
-        "request_storage_dir": resolved_state_dir / "crawlee" / "crawl" / start_hostname,
-        "throttled_domains": [start_hostname],
-    }
 
     async def flush_committed_results() -> None:
         """Apply only the handler results committed by Crawlee's selected renderer."""
@@ -647,11 +550,6 @@ async def run_crawler(
 
     def finalize_crawl() -> None:
         persist_incremental_state()
-        write_crawl_report(
-            output_dir=resolved_output_dir,
-            stats=stats,
-            configuration=report_configuration,
-        )
 
     crawl_succeeded = False
     request_storage_complete = False
@@ -664,50 +562,25 @@ async def run_crawler(
             await sitemap_loader.mark_request_as_handled(sitemap_request)
 
         if not incremental_urls and await runtime.request_manager.is_finished():
-            emit_event(
-                phase="Nothing to crawl",
-                queued=0,
-                discovered=len(initial_urls),
-                active_requests=0,
-            )
             finalize_crawl()
             crawl_succeeded = True
             request_storage_complete = True
             return stats
 
         if not incremental_urls:
-            emit_event(
-                phase="Resuming queue",
-                queued=0,
-                discovered=len(initial_urls),
-                active_requests=0,
-            )
 
         @crawler.failed_request_handler
         async def failed_handler(
             context: BeautifulSoupCrawlingContext | BasicCrawlingContext,
             error: Exception,
         ) -> None:
-            nonlocal active_requests
             stats.failed += 1
-            active_requests = max(0, active_requests - 1)
-            emit_event(
-                phase="Request failed",
-                current_url=context.request.url,
-                active_requests=active_requests,
-            )
             context.log.error(
                 "Request permanently failed: url=%s error=%s",
                 context.request.url,
                 error,
             )
 
-        emit_event(
-            phase="Crawling",
-            queued=len(incremental_urls),
-            discovered=len(initial_urls),
-            active_requests=0,
-        )
 
         try:
             final_statistics = await crawler.run(incremental_urls)
@@ -730,12 +603,6 @@ async def run_crawler(
 
         stats.sitemap_urls = await sitemap_loader.get_total_count()
 
-        emit_event(
-            phase="Finalizing",
-            queued=0,
-            discovered=len(initial_urls),
-            active_requests=0,
-        )
         finalize_crawl()
         crawl_succeeded = True
         return stats
