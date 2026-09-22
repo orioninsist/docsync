@@ -138,10 +138,11 @@ def test_invalid_requests_per_minute(
         settings_from_environment(monkeypatch)
 
 
-def test_crawler_wires_max_tasks_per_minute() -> None:
+def test_crawler_wires_max_tasks_per_minute(tmp_path: Path) -> None:
     runtime = asyncio.run(
         build_crawlee_runtime(
             hostname="example.com",
+            storage_dir=tmp_path / "crawlee",
             max_concurrency=2,
             requests_per_minute=20,
             request_timeout_seconds=60,
@@ -151,10 +152,11 @@ def test_crawler_wires_max_tasks_per_minute() -> None:
     assert runtime.concurrency_settings.max_tasks_per_minute == 20
 
 
-def test_existing_concurrency_controls_are_preserved() -> None:
+def test_existing_concurrency_controls_are_preserved(tmp_path: Path) -> None:
     runtime = asyncio.run(
         build_crawlee_runtime(
             hostname="example.com",
+            storage_dir=tmp_path / "crawlee",
             max_concurrency=3,
             requests_per_minute=20,
             request_timeout_seconds=60,
@@ -181,10 +183,11 @@ def test_existing_crawler_limits_are_preserved() -> None:
         assert f'"{option_name}"' in source
 
 
-def test_request_throttling_remains_runtime_wired() -> None:
+def test_request_throttling_remains_runtime_wired(tmp_path: Path) -> None:
     runtime = asyncio.run(
         build_crawlee_runtime(
             hostname="example.com",
+            storage_dir=tmp_path / "crawlee",
             max_concurrency=2,
             requests_per_minute=20,
             request_timeout_seconds=60,
