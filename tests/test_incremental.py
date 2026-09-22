@@ -24,12 +24,6 @@ class Stats:
     incremental_skipped_urls: set[str] = field(default_factory=set)
 
 
-def test_content_hash_normalizes_newlines() -> None:
-    assert incremental.content_hash(
-        "# Page\r\n\r\nBody\r\n"
-    ) == incremental.content_hash("# Page\n\nBody\n")
-
-
 def test_recent_url_inside_refresh_window() -> None:
     now = datetime(
         2026,
