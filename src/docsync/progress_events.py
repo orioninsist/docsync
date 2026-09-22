@@ -25,9 +25,6 @@ class CrawlEvent:
     discovered: int | None = None
     active_requests: int | None = None
     sitemap_urls: int | None = None
-    sitemap_files_checked: int | None = None
-    sitemap_files_found: int | None = None
-    sitemap_errors: int | None = None
     site_title: str | None = None
 
 
