@@ -567,8 +567,6 @@ async def run_crawler(
             request_storage_complete = True
             return stats
 
-        if not incremental_urls:
-
         @crawler.failed_request_handler
         async def failed_handler(
             context: BeautifulSoupCrawlingContext | BasicCrawlingContext,
