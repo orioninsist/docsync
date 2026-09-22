@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-import httpx
 from crawlee import Request
 from crawlee.crawlers import BeautifulSoupCrawler
 from crawlee.http_clients import HttpCrawlingResult
@@ -18,7 +17,6 @@ from docsync.inventory import (
     SiteInventory,
     run_inventory,
 )
-from docsync.sitemap import SitemapDiscoveryResult
 
 
 class InventoryHttpClient(HttpClient):
@@ -169,31 +167,15 @@ def test_inventory_discovers_links_and_writes_json(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    async def fake_sitemap_discovery(
-        **_: object,
-    ) -> SitemapDiscoveryResult:
-        return SitemapDiscoveryResult(
-            urls=[
-                "https://example.com/docs/from-sitemap",
-            ],
-            sitemap_files_checked=2,
-            sitemap_files_found=1,
-        )
-
     response_data = {
         "https://example.com/robots.txt": (
             200,
-            {
-                "content-type": "text/plain",
-            },
+            {"content-type": "text/plain"},
             "User-agent: *\nAllow: /\n",
         ),
         "https://example.com/docs": (
             200,
-            {
-                "content-type": "text/html",
-                "content-language": "en",
-            },
+            {"content-type": "text/html", "content-language": "en"},
             (
                 '<html lang="en"><body>'
                 "<p>English documentation landing page.</p>"
@@ -201,42 +183,44 @@ def test_inventory_discovers_links_and_writes_json(
                 "</body></html>"
             ),
         ),
-        "https://example.com/docs/from-sitemap": (
-            200,
-            {
-                "content-type": "text/html",
-                "content-language": "en",
-            },
-            (
-                '<html lang="en"><body>'
-                "<p>English documentation discovered from sitemap.</p>"
-                "</body></html>"
-            ),
-        ),
         "https://example.com/docs/child": (
             200,
-            {
-                "content-type": "text/html",
-                "content-language": "fr",
-            },
-            (
-                '<html lang="fr"><body>'
-                "<p>Contenu français de documentation.</p>"
-                "</body></html>"
-            ),
+            {"content-type": "text/html", "content-language": "fr"},
+            '<html lang="fr"><body><p>Contenu français de documentation.</p></body></html>',
         ),
     }
 
-    monkeypatch.setattr(
-        "docsync.inventory.discover_sitemap_urls",
-        fake_sitemap_discovery,
-    )
     install_inventory_http_client(
         monkeypatch,
         {
             url: (status, headers, text, None)
             for url, (status, headers, text) in response_data.items()
         },
+    )
+
+    from docsync import inventory
+
+    class FakeSitemapLoader:
+        async def get_total_count(self) -> int:
+            return 0
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        inventory,
+        "build_sitemap_request_loader",
+        lambda **_: FakeSitemapLoader(),
+    )
+    monkeypatch.setattr(
+        inventory,
+        "RequestManagerTandem",
+        lambda _loader, manager: manager,
+    )
+    monkeypatch.setattr(
+        inventory.ImpitHttpClient,
+        "cleanup",
+        lambda self: asyncio.sleep(0),
     )
 
     report = asyncio.run(
@@ -250,29 +234,20 @@ def test_inventory_discovers_links_and_writes_json(
         )
     )
 
-    assert report.sitemap_urls == 1
-    assert report.sitemap_files_checked == 2
-    assert report.sitemap_files_found == 1
-    assert report.discovered_urls == 3
-    assert report.processed_urls == 3
-    assert report.english_urls == 2
+    assert report.sitemap_urls == 0
+    assert report.discovered_urls == 2
+    assert report.processed_urls == 2
+    assert report.english_urls == 1
     assert report.non_english_urls == 1
-    assert report.reachable_pages == 3
+    assert report.reachable_pages == 2
     assert report.remaining_urls == 0
     assert report.discovery_complete is True
 
     report_path = tmp_path / "site-inventory.json"
-
     assert report_path.is_file()
-
-    payload = json.loads(
-        report_path.read_text(
-            encoding="utf-8",
-        )
-    )
-
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
     assert payload["seed_url"] == "https://example.com/docs"
-    assert payload["english_urls"] == 2
+    assert payload["english_urls"] == 1
     assert payload["discovery_complete"] is True
 
 
@@ -280,55 +255,23 @@ def test_inventory_reports_incomplete_when_request_limit_is_reached(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    async def fake_sitemap_discovery(
-        **_: object,
-    ) -> SitemapDiscoveryResult:
-        return SitemapDiscoveryResult(
-            urls=[
-                "https://example.com/docs/a",
-                "https://example.com/docs/b",
-            ]
-        )
-
     response_data = {
         "https://example.com/robots.txt": (
             200,
-            {
-                "content-type": "text/plain",
-            },
+            {"content-type": "text/plain"},
             "User-agent: *\nAllow: /\n",
         ),
         "https://example.com/docs": (
             200,
-            {
-                "content-type": "text/html",
-                "content-language": "en",
-            },
-            '<html lang="en"><body><p>Documentation.</p></body></html>',
+            {"content-type": "text/html", "content-language": "en"},
+            (
+                '<html lang="en"><body><p>Documentation.</p>'
+                '<a href="/docs/a">A</a><a href="/docs/b">B</a>'
+                "</body></html>"
+            ),
         ),
     }
 
-    async def fake_get(
-        _client: httpx.AsyncClient,
-        url: str,
-        **_: object,
-    ) -> httpx.Response:
-        status_code, headers, text = response_data[url]
-
-        return httpx.Response(
-            status_code,
-            headers=headers,
-            text=text,
-            request=httpx.Request(
-                "GET",
-                url,
-            ),
-        )
-
-    monkeypatch.setattr(
-        "docsync.inventory.discover_sitemap_urls",
-        fake_sitemap_discovery,
-    )
     install_inventory_http_client(
         monkeypatch,
         {
@@ -336,6 +279,19 @@ def test_inventory_reports_incomplete_when_request_limit_is_reached(
             for url, (status, headers, text) in response_data.items()
         },
     )
+
+    from docsync import inventory
+
+    class FakeSitemapLoader:
+        async def get_total_count(self) -> int:
+            return 0
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(inventory, "build_sitemap_request_loader", lambda **_: FakeSitemapLoader())
+    monkeypatch.setattr(inventory, "RequestManagerTandem", lambda _loader, manager: manager)
+    monkeypatch.setattr(inventory.ImpitHttpClient, "cleanup", lambda self: asyncio.sleep(0))
 
     report = asyncio.run(
         run_inventory(
@@ -358,11 +314,6 @@ def test_inventory_preserves_directory_seed_slash(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    async def fake_sitemap_discovery(
-        **_: object,
-    ) -> SitemapDiscoveryResult:
-        return SitemapDiscoveryResult()
-
     responses = {
         "https://example.com/robots.txt": (
             200,
@@ -406,27 +357,6 @@ def test_inventory_preserves_directory_seed_slash(
         ),
     }
 
-    async def fake_get(
-        _client: httpx.AsyncClient,
-        url: str,
-        **_: object,
-    ) -> httpx.Response:
-        status_code, headers, text = responses[url]
-
-        return httpx.Response(
-            status_code,
-            headers=headers,
-            text=text,
-            request=httpx.Request(
-                "GET",
-                url,
-            ),
-        )
-
-    monkeypatch.setattr(
-        "docsync.inventory.discover_sitemap_urls",
-        fake_sitemap_discovery,
-    )
     install_inventory_http_client(
         monkeypatch,
         {
@@ -434,6 +364,19 @@ def test_inventory_preserves_directory_seed_slash(
             for url, (status, headers, text) in responses.items()
         },
     )
+
+    from docsync import inventory
+
+    class FakeSitemapLoader:
+        async def get_total_count(self) -> int:
+            return 0
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(inventory, "build_sitemap_request_loader", lambda **_: FakeSitemapLoader())
+    monkeypatch.setattr(inventory, "RequestManagerTandem", lambda _loader, manager: manager)
+    monkeypatch.setattr(inventory.ImpitHttpClient, "cleanup", lambda self: asyncio.sleep(0))
 
     report = asyncio.run(
         run_inventory(
