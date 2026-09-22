@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from crawlee.events import LocalEventManager
 from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
@@ -50,3 +51,12 @@ def test_runtime_uses_native_request_queue_opener(tmp_path: Path) -> None:
     runtime = build_runtime(tmp_path / "crawlee")
 
     assert runtime.request_manager._request_manager_opener == RequestQueue.open
+
+
+def test_runtime_uses_explicit_service_lifecycle(tmp_path: Path) -> None:
+    runtime = build_runtime(tmp_path / "crawlee")
+
+    assert runtime.service_locator.get_configuration() is runtime.configuration
+    assert runtime.service_locator.get_storage_client() is runtime.storage_client
+    assert isinstance(runtime.service_locator.get_event_manager(), LocalEventManager)
+    assert runtime.request_manager._service_locator is runtime.service_locator
