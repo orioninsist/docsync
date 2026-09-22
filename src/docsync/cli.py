@@ -344,18 +344,6 @@ def _apply_crawl_event(
             "sitemap_urls",
             "sitemap_urls",
         ),
-        (
-            "sitemap_files_checked",
-            "sitemap_files_checked",
-        ),
-        (
-            "sitemap_files_found",
-            "sitemap_files_found",
-        ),
-        (
-            "sitemap_errors",
-            "sitemap_errors",
-        ),
     ):
         value = getattr(
             event,
