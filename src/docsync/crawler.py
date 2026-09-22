@@ -37,7 +37,6 @@ from docsync.language import EnglishPageDetector
 from docsync.language_strategy import LanguageStrategy
 from docsync.markdown import MarkdownDocument, MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
-from docsync.playwright_rendering import render_page_html
 from docsync.progress_events import CrawlEvent, CrawlEventSink
 from docsync.sitemap import build_sitemap_request_loader
 from docsync.url_security import (
@@ -359,7 +358,7 @@ async def run_crawler(
 
     _silence_crawlee_runtime_logs()
 
-    crawler_build = build_crawler(
+    crawler = build_crawler(
         mode=resolved_mode,
         runtime=runtime,
         max_requests=resolved_max_requests,
@@ -368,8 +367,6 @@ async def run_crawler(
         browser_type=resolved_browser_type,
         request_timeout_seconds=settings.request_timeout_seconds,
     )
-    crawler = crawler_build.crawler
-    rendering_config = crawler_build.rendering_config
 
     pending_http_validators: dict[str, tuple[str, str]] = {}
 
@@ -429,17 +426,7 @@ async def run_crawler(
 
             if resolved_mode == "playwright":
                 playwright_context = cast(Any, context)
-                html = await render_page_html(
-                    playwright_context.page,
-                    url=playwright_context.request.url,
-                    logger=playwright_context.log,
-                    request_timeout_seconds=settings.request_timeout_seconds,
-                    network_idle_timeout_milliseconds=(
-                        rendering_config.network_idle_timeout_milliseconds
-                        if rendering_config is not None
-                        else 10_000
-                    ),
-                )
+                html = await playwright_context.page.content()
                 soup = BeautifulSoup(html, "lxml")
                 effective_url = str(playwright_context.page.url)
             else:
