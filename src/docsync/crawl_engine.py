@@ -23,7 +23,8 @@ def adaptive_result_is_meaningful(result: RequestHandlerRunResult) -> bool:
     """Accept terminal static results while forcing empty content to Playwright."""
 
     for call in result.push_data_calls:
-        values = call if isinstance(call, list) else [call]
+        data = call["data"]
+        values = data if isinstance(data, list) else [data]
         for value in values:
             if isinstance(value, dict) and value.get("outcome") != "empty":
                 return True
