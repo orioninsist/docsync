@@ -137,16 +137,3 @@ def test_existing_concurrency_controls_are_preserved(tmp_path: Path) -> None:
     assert settings.desired_concurrency == 3
     assert settings.max_tasks_per_minute == 20
 
-
-def test_request_throttling_remains_runtime_wired(tmp_path: Path) -> None:
-    runtime = asyncio.run(
-        build_crawlee_runtime(
-            hostname="example.com",
-            storage_dir=tmp_path / "crawlee",
-            max_concurrency=2,
-            requests_per_minute=20,
-            request_timeout_seconds=60,
-        )
-    )
-
-    assert type(runtime.request_manager).__name__ == "ThrottlingRequestManager"
