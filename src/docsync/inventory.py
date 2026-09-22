@@ -313,6 +313,7 @@ async def run_inventory(
 
     runtime = await build_crawlee_runtime(
         hostname=hostname,
+        storage_dir=Path(state_dir).expanduser().resolve() / "crawlee" / "inventory" / hostname,
         max_concurrency=max_concurrency,
         requests_per_minute=requests_per_minute,
         request_timeout_seconds=request_timeout_seconds,
@@ -449,5 +450,6 @@ async def run_inventory(
         report=report,
         state_dir=Path(state_dir),
     )
+    await runtime.request_manager.drop()
 
     return report
