@@ -27,9 +27,6 @@ def test_crawl_event_stores_live_metrics() -> None:
         discovered=8,
         active_requests=2,
         sitemap_urls=7,
-        sitemap_files_checked=3,
-        sitemap_files_found=1,
-        sitemap_errors=2,
         site_title="Example Documentation",
     )
 
@@ -43,7 +40,4 @@ def test_crawl_event_stores_live_metrics() -> None:
     assert event.discovered == 8
     assert event.active_requests == 2
     assert event.sitemap_urls == 7
-    assert event.sitemap_files_checked == 3
-    assert event.sitemap_files_found == 1
-    assert event.sitemap_errors == 2
     assert event.site_title == "Example Documentation"
