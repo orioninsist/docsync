@@ -231,7 +231,6 @@ def _apply_stats_to_dashboard(
     dashboard.update(
         processed=stats.processed,
         saved=stats.saved,
-        duplicate_content=stats.duplicate_content,
         incremental_skipped=stats.incremental_skipped,
         rejected_urls=stats.rejected_urls,
         empty_pages=stats.empty_pages,
@@ -255,7 +254,6 @@ def _apply_crawl_event(
         "current_title",
         "processed",
         "saved",
-        "duplicate_content",
         "incremental_skipped",
         "rejected_urls",
         "empty_pages",
