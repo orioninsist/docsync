@@ -74,9 +74,9 @@ def test_throttling_manager_wraps_request_queue() -> None:
     assert "request_manager_opener=RequestQueue.open" in runtime_source
     assert 'name="docsync-main"' in runtime_source
     assert "FileSystemStorageClient" in runtime_source
-assert "MemoryStorageClient" not in runtime_source
+    assert "MemoryStorageClient" not in runtime_source
     assert "storage_client=storage_client" in runtime_source
-        assert "runtime = await build_crawlee_runtime(" in crawler_source
+    assert "runtime = await build_crawlee_runtime(" in crawler_source
 
 
 def test_http_and_playwright_share_throttling_manager() -> None:
