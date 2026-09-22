@@ -86,7 +86,6 @@ class CrawlProgressSnapshot:
     requests_per_minute: int
     processed: int = 0
     saved: int = 0
-    duplicate_content: int = 0
     incremental_skipped: int = 0
     rejected_urls: int = 0
     empty_pages: int = 0
@@ -109,7 +108,6 @@ class CrawlProgressSnapshot:
 
         return (
             self.saved
-            + self.duplicate_content
             + self.incremental_skipped
             + self.rejected_urls
             + self.empty_pages
