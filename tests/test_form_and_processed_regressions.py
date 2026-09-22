@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from docsync.markdown import MarkdownExporter
 
+
 def test_form_explanatory_text_is_preserved(
     tmp_path: Path,
 ) -> None:
