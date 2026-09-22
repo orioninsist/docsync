@@ -121,10 +121,15 @@ def test_empty_incremental_selection_finalizes_and_returns_stats() -> None:
         node
         for node in ast.walk(run_crawler)
         if isinstance(node, ast.If)
-        and isinstance(node.test, ast.UnaryOp)
-        and isinstance(node.test.op, ast.Not)
-        and isinstance(node.test.operand, ast.Name)
-        and node.test.operand.id == "incremental_urls"
+        and isinstance(node.test, ast.BoolOp)
+        and isinstance(node.test.op, ast.And)
+        and any(
+            isinstance(value, ast.UnaryOp)
+            and isinstance(value.op, ast.Not)
+            and isinstance(value.operand, ast.Name)
+            and value.operand.id == "incremental_urls"
+            for value in node.test.values
+        )
     ]
 
     assert len(guards) == 1
