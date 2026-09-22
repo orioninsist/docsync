@@ -12,7 +12,6 @@ dependencies = [
     "crawlee[adaptive-crawler,beautifulsoup,curl-impersonate,playwright]==1.10.1",
     "lingua-language-detector>=2.2.0",
     "markdownify>=1.2.3",
-    "rich>=15.0.0",
 ]
 
 [project.scripts]
