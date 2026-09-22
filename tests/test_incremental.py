@@ -136,7 +136,7 @@ def test_filter_normalizes_deduplicates_and_records_skip(
     }
 
 
-def test_record_success_updates_legacy_stores(
+def test_record_success_updates_state_stores(
     tmp_path: Path,
 ) -> None:
     hashes: dict[str, str] = {}
