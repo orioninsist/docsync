@@ -9,8 +9,8 @@ from pathlib import Path
 from crawlee import ConcurrencySettings
 from crawlee.configuration import Configuration
 from crawlee.events import EventManager, LocalEventManager
-from crawlee.request_loaders import RequestManager
-from crawlee.request_loaders import ThrottlingRequestManager
+from crawlee.http_clients import ImpitHttpClient
+from crawlee.request_loaders import RequestManager, RequestManagerTandem, SitemapRequestLoader, ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient, StorageClient
 from crawlee.storages import RequestQueue
 
@@ -25,6 +25,38 @@ class CrawleeRuntime:
     request_manager: RequestManager
     concurrency_settings: ConcurrencySettings
     request_handler_timeout: timedelta
+    sitemap_loader: SitemapRequestLoader | None = None
+    sitemap_http_client: ImpitHttpClient | None = None
+
+    async def close(self) -> None:
+        """Close runtime-owned transient resources."""
+
+        if self.sitemap_loader is not None:
+            await self.sitemap_loader.close()
+        if self.sitemap_http_client is not None:
+            await self.sitemap_http_client.cleanup()
+
+    async def drop_request_storage(self) -> None:
+        """Drop all request-manager storage owned by this runtime."""
+
+        await self.request_manager.drop()
+
+
+async def attach_sitemap_loader(
+    runtime: CrawleeRuntime,
+    *,
+    sitemap_loader: SitemapRequestLoader,
+    sitemap_http_client: ImpitHttpClient,
+) -> CrawleeRuntime:
+    """Attach Crawlee's sitemap loader to the canonical request-manager chain."""
+
+    runtime.sitemap_loader = sitemap_loader
+    runtime.sitemap_http_client = sitemap_http_client
+    runtime.request_manager = RequestManagerTandem(
+        sitemap_loader,
+        runtime.request_manager,
+    )
+    return runtime
 
 
 async def build_crawlee_runtime(
