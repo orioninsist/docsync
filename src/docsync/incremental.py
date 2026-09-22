@@ -8,7 +8,6 @@ import tempfile
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol
 
 from docsync.url_security import normalize_url
 
@@ -33,13 +32,6 @@ def state_file_path(
         raise ValueError("hostname must not contain path separators")
 
     return state_dir.resolve() / f"{normalized_hostname}_{suffix}"
-
-
-class IncrementalConfig(Protocol):
-    """Configuration required by incremental filtering."""
-
-    refresh_hours: int
-    force_refresh: bool
 
 
 class IncrementalStats(Protocol):
@@ -218,14 +210,15 @@ def save_url_state(
 
 def is_recently_saved(
     url: str,
-    config: IncrementalConfig,
+    refresh_hours: int,
+    force_refresh: bool,
     url_state: dict[str, dict[str, str]],
     *,
     now: datetime | None = None,
 ) -> bool:
     """Return whether a URL is still inside its refresh window."""
 
-    if config.force_refresh or config.refresh_hours == 0:
+    if force_refresh or refresh_hours == 0:
         return False
 
     normalized = normalize_url(url)
@@ -257,7 +250,7 @@ def is_recently_saved(
         return True
 
     return age < timedelta(
-        hours=config.refresh_hours,
+        hours=refresh_hours,
     )
 
 
@@ -278,7 +271,8 @@ def record_incremental_skip(
 
 def filter_incremental_urls(
     urls: Iterable[str],
-    config: IncrementalConfig,
+    refresh_hours: int,
+    force_refresh: bool,
     stats: IncrementalStats,
     url_state: dict[str, dict[str, str]],
 ) -> list[str]:
@@ -297,7 +291,8 @@ def filter_incremental_urls(
 
         if is_recently_saved(
             normalized,
-            config,
+            refresh_hours,
+            force_refresh,
             url_state,
         ):
             record_incremental_skip(
