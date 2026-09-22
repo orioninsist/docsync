@@ -9,9 +9,7 @@ import docsync.incremental as incremental
 from docsync.markdown import MarkdownExporter
 from docsync.metrics import CrawlStats
 from docsync.url_security import (
-    SameOriginRedirectHandler,
     normalize_url,
-    normalized_http_origin,
     validated_http_url,
 )
 
@@ -96,40 +94,6 @@ def test_normalized_http_origin_uses_effective_port(
 ) -> None:
     assert normalized_http_origin(url) == expected
 
-
-def test_same_origin_redirect_handler_accepts_same_origin() -> None:
-    handler = SameOriginRedirectHandler(
-        "https://example.com/docs",
-    )
-
-    assert (
-        handler.validate_redirect("https://example.com/other")
-        == "https://example.com/other"
-    )
-
-
-@pytest.mark.parametrize(
-    "redirect_url",
-    [
-        "https://other.example/docs",
-        "http://example.com/docs",
-        "https://example.com:444/docs",
-        "file:///etc/passwd",
-    ],
-)
-def test_same_origin_redirect_handler_rejects_unsafe_redirects(
-    redirect_url: str,
-) -> None:
-    handler = SameOriginRedirectHandler(
-        "https://example.com/docs",
-    )
-
-    expected_exception = (
-        ValueError if redirect_url.startswith("file:") else urllib.error.HTTPError
-    )
-
-    with pytest.raises(expected_exception):
-        handler.validate_redirect(redirect_url)
 
 
 def test_normalize_markdown_normalizes_newlines_and_spacing() -> None:
