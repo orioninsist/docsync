@@ -292,7 +292,6 @@ async def run_crawler(
                 current_title=current_title,
                 processed=stats.processed,
                 saved=stats.saved,
-                duplicate_content=stats.duplicate_content,
                 incremental_skipped=stats.incremental_skipped,
                 rejected_urls=stats.rejected_urls,
                 empty_pages=stats.empty_pages,
