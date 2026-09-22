@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import tempfile
@@ -12,8 +11,6 @@ from pathlib import Path
 from typing import Protocol
 
 from docsync.url_security import normalize_url
-
-DEFAULT_REFRESH_HOURS = 0
 
 STATE_DIR = Path("storage/docsync")
 CONTENT_HASH_SUFFIX = "content_hashes.json"
@@ -52,22 +49,12 @@ class IncrementalStats(Protocol):
     incremental_skipped_urls: set[str]
 
 
-def content_hash(markdown: str) -> str:
-    """Return a stable SHA-256 digest for normalized Markdown content."""
-
-    normalized = markdown.replace("\r\n", "\n").replace("\r", "\n")
-    body = normalized.strip()
-
-    return hashlib.sha256(
-        body.encode("utf-8"),
-    ).hexdigest()
-
 
 def load_content_hashes(
     state_dir: Path | None = None,
     hostname: str | None = None,
 ) -> dict[str, str]:
-    """Load the legacy content-hash mapping safely."""
+    """Load the content-hash mapping safely."""
 
     content_hash_file = (
         state_file_path(state_dir, hostname, CONTENT_HASH_SUFFIX)
@@ -148,7 +135,7 @@ def load_url_state(
     state_dir: Path | None = None,
     hostname: str | None = None,
 ) -> dict[str, dict[str, str]]:
-    """Load valid legacy URL-state records safely."""
+    """Load valid URL-state records safely."""
 
     url_state_file = (
         state_file_path(state_dir, hostname, URL_STATE_SUFFIX)
@@ -374,7 +361,7 @@ def record_incremental_success(
     etag: str = "",
     last_modified: str = "",
 ) -> None:
-    """Record successful output in both legacy state stores."""
+    """Record successful output in both state stores."""
 
     normalized = normalize_url(url)
     normalized_digest = digest.strip().lower()
