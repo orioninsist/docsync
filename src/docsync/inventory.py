@@ -21,7 +21,7 @@ from crawlee.errors import (
 )
 
 from docsync.crawl_engine import build_http_crawler
-from docsync.crawler_runtime import attach_sitemap_loader, build_crawlee_runtime
+from docsync.crawler_runtime import build_crawlee_runtime
 from docsync.language import EnglishPageDetector
 from docsync.language_strategy import LanguageStrategy
 from docsync.sitemap import build_sitemap_request_loader
@@ -314,11 +314,13 @@ async def run_inventory(
         http_client=sitemap_http_client,
         transform_request_function=transform_sitemap_request,
     )
-    await attach_sitemap_loader(
-        runtime,
-        sitemap_loader=sitemap_loader,
-        sitemap_http_client=sitemap_http_client,
-    )
+
+    while not await sitemap_loader.is_finished():
+        sitemap_request = await sitemap_loader.fetch_next_request()
+        if sitemap_request is None:
+            break
+        await runtime.request_manager.add_request(sitemap_request)
+        await sitemap_loader.mark_request_as_handled(sitemap_request)
 
     crawler = build_http_crawler(
         runtime=runtime,
@@ -430,9 +432,17 @@ async def run_inventory(
         record_processed_url(normalized_url)
         print_progress()
 
-    await crawler.run(initial_urls)
+    try:
+        await crawler.run(initial_urls)
+    except BaseException:
+        await sitemap_loader.close()
+        await sitemap_http_client.cleanup()
+        await runtime.close()
+        raise
 
     report.sitemap_urls = await sitemap_loader.get_total_count()
+    await sitemap_loader.close()
+    await sitemap_http_client.cleanup()
     await runtime.close()
 
     report.discovered_urls = len(discovered_urls)
