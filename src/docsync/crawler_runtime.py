@@ -13,7 +13,6 @@ from crawlee.request_loaders import RequestManager, ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient, StorageClient
 from crawlee.storages import RequestQueue
 
-
 _GLOBAL_CRAWLEE_CONFIGURATION = Configuration()
 
 
