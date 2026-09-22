@@ -38,7 +38,6 @@ from docsync.metrics import CrawlStats
 from docsync.sitemap import build_sitemap_request_loader
 from docsync.url_security import normalize_url, validated_http_url
 
-
 EXCLUDED_URL_PATTERNS: Final[tuple[Pattern[str], ...]] = (
     re.compile(
         r"\.(?:"
@@ -271,7 +270,6 @@ async def run_crawler(
         transform_request_function=transform_sitemap_request,
     )
 
-
     crawler = build_crawler(
         mode=resolved_mode,
         runtime=runtime,
@@ -279,7 +277,6 @@ async def run_crawler(
         respect_robots_txt=settings.respect_robots_txt,
         headless=resolved_headless,
         browser_type=resolved_browser_type,
-        request_timeout_seconds=settings.request_timeout_seconds,
     )
 
     pending_http_validators: dict[str, tuple[str, str]] = {}
