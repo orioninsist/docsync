@@ -74,11 +74,11 @@ def test_state_loaders_use_explicit_state_directory(
         }
     }
 
-    (state_dir / "content_hashes.json").write_text(
+    (state_dir / "example.com_content_hashes.json").write_text(
         json.dumps(content_hash_payload),
         encoding="utf-8",
     )
-    (state_dir / "url_state.json").write_text(
+    (state_dir / "example.com_url_state.json").write_text(
         json.dumps(url_state_payload),
         encoding="utf-8",
     )
@@ -97,8 +97,8 @@ def test_state_loaders_use_explicit_state_directory(
         unreachable_default_url_state,
     )
 
-    assert incremental.load_content_hashes(state_dir) == content_hash_payload
-    assert incremental.load_url_state(state_dir) == {
+    assert incremental.load_content_hashes(state_dir, "example.com") == content_hash_payload
+    assert incremental.load_url_state(state_dir, "example.com") == {
         "https://example.com/docs": {
             "saved_at": "2026-08-01T00:00:00+00:00",
             "filename": "docs.md",
@@ -143,18 +143,20 @@ def test_state_savers_use_explicit_state_directory(
     incremental.save_content_hashes(
         content_hash_payload,
         state_dir,
+        "example.com",
     )
     incremental.save_url_state(
         url_state_payload,
         state_dir,
+        "example.com",
     )
 
     assert (
-        json.loads((state_dir / "content_hashes.json").read_text(encoding="utf-8"))
+        json.loads((state_dir / "example.com_content_hashes.json").read_text(encoding="utf-8"))
         == content_hash_payload
     )
     assert (
-        json.loads((state_dir / "url_state.json").read_text(encoding="utf-8"))
+        json.loads((state_dir / "example.com_url_state.json").read_text(encoding="utf-8"))
         == url_state_payload
     )
 
@@ -181,14 +183,14 @@ def test_recorded_success_round_trips_through_configured_state(
         url_state=url_state,
     )
 
-    incremental.save_content_hashes(hashes, state_dir)
-    incremental.save_url_state(url_state, state_dir)
+    incremental.save_content_hashes(hashes, state_dir, "example.com")
+    incremental.save_url_state(url_state, state_dir, "example.com")
 
-    assert incremental.load_content_hashes(state_dir) == {
+    assert incremental.load_content_hashes(state_dir, "example.com") == {
         "abc123": "https://example.com/docs",
     }
 
-    loaded_state = incremental.load_url_state(state_dir)
+    loaded_state = incremental.load_url_state(state_dir, "example.com")
 
     assert loaded_state["https://example.com/docs"]["filename"] == "docs.md"
     assert loaded_state["https://example.com/docs"]["content_hash"] == "abc123"
