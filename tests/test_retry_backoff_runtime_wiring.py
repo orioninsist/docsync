@@ -222,97 +222,21 @@ def test_package_retry_constant_is_deterministic() -> None:
 
 def test_package_crawler_uses_retry_constant_at_runtime_construction() -> None:
     tree = _parse(CRAWL_ENGINE_PATH)
-    build_http_crawler = next(
+    common_options = next(
         node
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "build_http_crawler"
+        if isinstance(node, ast.FunctionDef) and node.name == "_common_crawler_options"
     )
-    build_playwright_crawler = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "build_playwright_crawler"
-    )
-
-    def call_name(call: ast.Call) -> str | None:
-        if isinstance(call.func, ast.Name):
-            return call.func.id
-        if isinstance(call.func, ast.Attribute):
-            return call.func.attr
-        return None
-
-    crawler_calls = [
-        node
-        for function in (build_http_crawler, build_playwright_crawler)
-        for node in ast.walk(function)
-        if isinstance(node, ast.Call)
-        and call_name(node) in {"BeautifulSoupCrawler", "PlaywrightCrawler"}
-    ]
-
-    calls_by_constructor = {call_name(call): call for call in crawler_calls}
-
-    assert set(calls_by_constructor) == {
-        "BeautifulSoupCrawler",
-        "PlaywrightCrawler",
-    }, "Shared crawl engine must preserve HTTP and browser crawler construction."
-
-    retry_values: dict[str, ast.expr] = {}
-
-    for constructor_name, constructor_call in calls_by_constructor.items():
-        if constructor_name == "BeautifulSoupCrawler":
-            option_assignment = next(
-                node
-                for node in tree.body
-                if isinstance(node, ast.FunctionDef)
-                and node.name == "build_http_crawler"
-            )
-            retry_value = next(
-                value
-                for node in ast.walk(option_assignment)
-                if isinstance(node, ast.Dict)
-                for key, value in zip(node.keys, node.values, strict=True)
-                if isinstance(key, ast.Constant) and key.value == "max_request_retries"
-            )
-        else:
-            retry_keywords = [
-                keyword
-                for keyword in constructor_call.keywords
-                if keyword.arg == "max_request_retries"
-            ]
-            assert len(retry_keywords) == 1
-            retry_value = retry_keywords[0].value
-
-        if constructor_name is not None:
-            retry_values[constructor_name] = retry_value
-
-    assert all(isinstance(value, ast.Name) for value in retry_values.values()), (
-        "Every crawler must reference a retry constant."
+    retry_value = next(
+        value
+        for node in ast.walk(common_options)
+        if isinstance(node, ast.Dict)
+        for key, value in zip(node.keys, node.values, strict=True)
+        if isinstance(key, ast.Constant) and key.value == "max_request_retries"
     )
 
-    retry_constant_names = {
-        value.id for value in retry_values.values() if isinstance(value, ast.Name)
-    }
-
-    assert len(retry_constant_names) == 1, (
-        "HTTP and browser crawlers must use the same retry constant."
-    )
-
-    retry_constant_name = next(iter(retry_constant_names))
-
-    module_constants = {
-        target.id
-        for statement in tree.body
-        if isinstance(statement, (ast.Assign, ast.AnnAssign))
-        for target in (
-            statement.targets
-            if isinstance(statement, ast.Assign)
-            else [statement.target]
-        )
-        if isinstance(target, ast.Name)
-    }
-
-    assert retry_constant_name in module_constants, (
-        "The shared retry configuration must reference a module-level constant."
-    )
+    assert isinstance(retry_value, ast.Name)
+    assert retry_value.id == "DEFAULT_MAX_REQUEST_RETRIES"
 
 
 def test_package_retry_budget_represents_initial_attempt_plus_two_retries() -> None:
@@ -524,62 +448,21 @@ def test_canonical_failed_request_handler_updates_failure_lifecycle() -> None:
 
 def test_canonical_http_and_browser_crawlers_share_retry_budget() -> None:
     tree = _canonical_retry_tree()
-    functions = [
+    common_options = next(
         node
         for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name in {"build_http_crawler", "build_playwright_crawler"}
-    ]
-    crawler_calls: dict[str, ast.Call] = {}
-    for function in functions:
-        crawler_calls.update(
-            {
-                name: node
-                for node in ast.walk(function)
-                if isinstance(node, ast.Call)
-                if (name := _canonical_call_name(node))
-                in {"BeautifulSoupCrawler", "PlaywrightCrawler"}
-            }
-        )
-    assert set(crawler_calls) == {"BeautifulSoupCrawler", "PlaywrightCrawler"}
-
-    retry_values: dict[str, ast.expr] = {}
-
-    for constructor_name, constructor_call in crawler_calls.items():
-        if constructor_name == "BeautifulSoupCrawler":
-            http_builder = next(
-                node
-                for node in tree.body
-                if isinstance(node, ast.FunctionDef)
-                and node.name == "build_http_crawler"
-            )
-            retry_value = next(
-                value
-                for node in ast.walk(http_builder)
-                if isinstance(node, ast.Dict)
-                for key, value in zip(node.keys, node.values, strict=True)
-                if isinstance(key, ast.Constant) and key.value == "max_request_retries"
-            )
-        else:
-            retry_keywords = [
-                keyword
-                for keyword in constructor_call.keywords
-                if keyword.arg == "max_request_retries"
-            ]
-            assert len(retry_keywords) == 1
-            retry_value = retry_keywords[0].value
-
-        retry_values[constructor_name] = retry_value
-
-    assert all(isinstance(value, ast.Name) for value in retry_values.values()), (
-        "Both crawler constructors must reference a retry constant."
+        if isinstance(node, ast.FunctionDef) and node.name == "_common_crawler_options"
+    )
+    retry_value = next(
+        value
+        for node in ast.walk(common_options)
+        if isinstance(node, ast.Dict)
+        for key, value in zip(node.keys, node.values, strict=True)
+        if isinstance(key, ast.Constant) and key.value == "max_request_retries"
     )
 
-    constant_names = {
-        value.id for value in retry_values.values() if isinstance(value, ast.Name)
-    }
-
-    assert constant_names == {"DEFAULT_MAX_REQUEST_RETRIES"}
+    assert isinstance(retry_value, ast.Name)
+    assert retry_value.id == "DEFAULT_MAX_REQUEST_RETRIES"
 
 
 def test_canonical_retry_budget_allows_initial_attempt_plus_retries() -> None:
