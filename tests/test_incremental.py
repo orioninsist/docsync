@@ -386,3 +386,52 @@ def test_state_files_are_isolated_by_hostname(tmp_path: Path) -> None:
     assert incremental.load_content_hashes(tmp_path, "two.example") == {
         "two": "https://two.example/docs"
     }
+
+
+
+def test_record_success_replaces_stale_hash_for_same_url(tmp_path: Path) -> None:
+    output_path = tmp_path / "docs.md"
+    hashes = {
+        "oldhash": "https://example.com/docs",
+        "otherhash": "https://example.com/other",
+    }
+    url_state = {
+        "https://example.com/docs": {
+            "saved_at": "2026-09-22T00:00:00+00:00",
+            "filename": "docs.md",
+            "content_hash": "oldhash",
+            "etag": "",
+            "last_modified": "",
+        }
+    }
+
+    incremental.record_incremental_success(
+        url="https://example.com/docs",
+        output_path=output_path,
+        digest="NEWHASH",
+        hashes=hashes,
+        url_state=url_state,
+    )
+
+    assert "oldhash" not in hashes
+    assert hashes["newhash"] == "https://example.com/docs"
+    assert hashes["otherhash"] == "https://example.com/other"
+    assert url_state["https://example.com/docs"]["content_hash"] == "newhash"
+
+
+def test_record_success_keeps_single_hash_when_content_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "docs.md"
+    hashes = {"samehash": "https://example.com/docs"}
+    url_state: dict[str, dict[str, str]] = {}
+
+    incremental.record_incremental_success(
+        url="https://example.com/docs",
+        output_path=output_path,
+        digest="SAMEHASH",
+        hashes=hashes,
+        url_state=url_state,
+    )
+
+    assert hashes == {"samehash": "https://example.com/docs"}
