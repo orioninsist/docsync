@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 import re
-from email.message import Message
-from typing import Any
-from urllib import error as urllib_error
-from urllib import request as urllib_request
 from urllib.parse import (
     parse_qsl,
     urlencode,
@@ -51,121 +47,6 @@ def validated_http_url(value: str) -> str:
 
     del validated_port
     return candidate
-
-
-def normalized_http_origin(value: str) -> tuple[str, str, int]:
-    """Return normalized scheme, hostname, and effective port."""
-
-    validated = validated_http_url(value)
-    parsed = urlsplit(validated)
-
-    scheme = parsed.scheme.lower()
-    hostname = (parsed.hostname or "").rstrip(".").lower()
-    default_port = 443 if scheme == "https" else 80
-    port = parsed.port or default_port
-
-    return scheme, hostname, port
-
-
-class SameOriginRedirectHandler(
-    urllib_request.HTTPRedirectHandler,
-):
-    """Reject unsafe and cross-origin redirects."""
-
-    def __init__(self, initial_url: str) -> None:
-        super().__init__()
-        self._allowed_origin = normalized_http_origin(initial_url)
-
-    def validate_redirect(self, new_url: str) -> str:
-        """Validate one redirect destination before it is followed."""
-
-        validated = validated_http_url(new_url)
-        redirect_origin = normalized_http_origin(validated)
-
-        if redirect_origin != self._allowed_origin:
-            raise urllib_error.HTTPError(
-                validated,
-                403,
-                "Cross-origin redirect blocked",
-                Message(),
-                None,
-            )
-
-        return validated
-
-    def redirect_request(
-        self,
-        req: Any,
-        fp: Any,
-        code: int,
-        msg: str,
-        headers: Any,
-        newurl: str,
-    ) -> Any:
-        """Validate and delegate an HTTP redirect request."""
-
-        validated_url = self.validate_redirect(newurl)
-
-        return super().redirect_request(
-            req,
-            fp,
-            code,
-            msg,
-            headers,
-            validated_url,
-        )
-
-
-def secure_urlopen(
-    target: Any,
-    *args: Any,
-    **kwargs: Any,
-) -> Any:
-    """Open an HTTP(S) URL while validating every redirect."""
-
-    if isinstance(target, urllib_request.Request):
-        initial_url = target.full_url
-    else:
-        initial_url = str(target)
-
-    validated_url = validated_http_url(initial_url)
-
-    if isinstance(target, urllib_request.Request):
-        request_target: Any = target
-    else:
-        request_target = validated_url
-
-    data = kwargs.pop(
-        "data",
-        args[0] if len(args) >= 1 else None,
-    )
-    timeout = kwargs.pop(
-        "timeout",
-        args[1] if len(args) >= 2 else None,
-    )
-    context = kwargs.pop("context", None)
-
-    if len(args) > 2:
-        raise TypeError(
-            "secure_urlopen accepts at most two positional arguments after the URL"
-        )
-
-    if kwargs:
-        unexpected = ", ".join(sorted(kwargs))
-        raise TypeError(f"Unexpected URL open arguments: {unexpected}")
-
-    handlers: list[Any] = [SameOriginRedirectHandler(validated_url)]
-
-    if context is not None:
-        handlers.append(urllib_request.HTTPSHandler(context=context))
-
-    opener = urllib_request.build_opener(*handlers)
-
-    return opener.open(
-        request_target,
-        data=data,
-        timeout=timeout,
-    )
 
 
 def normalize_url(url: str) -> str:
