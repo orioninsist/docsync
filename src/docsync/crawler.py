@@ -56,9 +56,6 @@ def _silence_crawlee_runtime_logs() -> None:
         logger.setLevel(logging.WARNING)
         logger.propagate = False
 
-DEFAULT_REQUEST_TIMEOUT_SECONDS: Final[int] = 60
-DEFAULT_MAX_REQUESTS_PER_CRAWL: Final[int] = 100
-
 EXCLUDED_URL_PATTERNS: Final[tuple[Pattern[str], ...]] = (
     re.compile(
         r"\.(?:"
@@ -393,9 +390,7 @@ async def run_crawler(
             html=html,
             content_language=content_language,
         )
-        if not language_policy.accepts(
-            language_decision
-        ) and language_decision.source not in {
+        if not language_policy.accepts(language_decision) and language_decision.source not in {
             "insufficient-text",
             "language-detector-no-result",
         }:
@@ -407,7 +402,7 @@ async def run_crawler(
                 {
                     "outcome": "non_english",
                     "url": context.request.url,
-                        }
+                }
             )
             return
 
