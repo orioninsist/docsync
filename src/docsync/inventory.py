@@ -437,13 +437,11 @@ async def run_inventory(
     except BaseException:
         await sitemap_loader.close()
         await sitemap_http_client.cleanup()
-        await runtime.close()
         raise
 
     report.sitemap_urls = await sitemap_loader.get_total_count()
     await sitemap_loader.close()
     await sitemap_http_client.cleanup()
-    await runtime.close()
 
     report.discovered_urls = len(discovered_urls)
     report.remaining_urls = max(
