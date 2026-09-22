@@ -369,6 +369,7 @@ async def run_crawler(
 
     runtime = await build_crawlee_runtime(
         hostname=start_hostname,
+        storage_dir=resolved_state_dir / "crawlee" / "crawl" / start_hostname,
         max_concurrency=resolved_max_concurrency,
         requests_per_minute=settings.requests_per_minute,
         request_timeout_seconds=settings.request_timeout_seconds,
@@ -814,7 +815,8 @@ async def run_crawler(
         "headless": resolved_headless,
         "browser_type": resolved_browser_type,
         "request_manager": "ThrottlingRequestManager",
-        "request_storage": "MemoryStorageClient",
+        "request_storage": "FileSystemStorageClient",
+        "request_storage_dir": resolved_state_dir / "crawlee" / "crawl" / start_hostname,
         "throttled_domains": [start_hostname],
     }
 
@@ -879,6 +881,20 @@ async def run_crawler(
 
     try:
         await crawler.run(incremental_urls)
+    except BaseException:
+        # Preserve DocsSync content state for requests Crawlee already marked handled.
+        # The persistent RequestQueue can then resume only the unfinished requests.
+        save_content_hashes(
+            content_hashes,
+            resolved_state_dir,
+            start_hostname,
+        )
+        save_url_state(
+            url_state,
+            resolved_state_dir,
+            start_hostname,
+        )
+        raise
     finally:
         if fallback_renderer is not None:
             await fallback_renderer.close()
@@ -891,4 +907,5 @@ async def run_crawler(
     )
 
     finalize_crawl()
+    await runtime.request_manager.drop()
     return stats
