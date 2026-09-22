@@ -15,6 +15,7 @@ from docsync.cli import (
     build_parser,
 )
 from docsync.config import Settings
+from docsync.metrics import CrawlStats
 
 ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 CONFIG_PATH: Final[Path] = ROOT / "src/docsync/config.py"
@@ -311,18 +312,17 @@ def test_invoke_run_crawler_forwards_browser_configuration(
 
     async def fake_run_crawler(
         start_url: str,
-        mode: str | None = None,
-        headless: bool | None = None,
-        browser_type: str | None = None,
-    ) -> None:
+        **kwargs: object,
+    ) -> CrawlStats:
         captured.update(
             {
                 "start_url": start_url,
-                "mode": mode,
-                "headless": headless,
-                "browser_type": browser_type,
+                "mode": kwargs.get("mode"),
+                "headless": kwargs.get("headless"),
+                "browser_type": kwargs.get("browser_type"),
             }
         )
+        return CrawlStats(mode=str(kwargs.get("mode") or "http"))
 
     monkeypatch.setattr(
         "docsync.cli.run_crawler",
