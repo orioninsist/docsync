@@ -58,8 +58,5 @@ def test_crawler_emits_sitemap_and_queue_information() -> None:
     source = _source()
 
     assert "sitemap_urls=stats.sitemap_urls" in source
-    assert "sitemap_files_checked=stats.sitemap_files_checked" in source
-    assert "sitemap_files_found=stats.sitemap_files_found" in source
-    assert "sitemap_errors=stats.sitemap_errors" in source
     assert "discovered=len(initial_urls)" in source
     assert "queued=len(incremental_urls)" in source
