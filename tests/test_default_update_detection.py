@@ -12,12 +12,6 @@ from docsync.incremental import (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class IncrementalConfig:
-    refresh_hours: int
-    force_refresh: bool = False
-
-
 @dataclass(slots=True)
 class IncrementalStats:
     incremental_skipped: int = 0
@@ -76,9 +70,8 @@ def test_default_policy_does_not_skip_recent_url() -> None:
 
     selected = filter_incremental_urls(
         [url],
-        config=IncrementalConfig(
-            refresh_hours=0,
-        ),
+        refresh_hours=0,
+        force_refresh=False,
         stats=stats,
         url_state=state,
     )
@@ -101,9 +94,8 @@ def test_optional_refresh_window_still_skips_recent_url() -> None:
 
     selected = filter_incremental_urls(
         [url],
-        config=IncrementalConfig(
-            refresh_hours=24,
-        ),
+        refresh_hours=24,
+        force_refresh=False,
         stats=stats,
         url_state=state,
     )
