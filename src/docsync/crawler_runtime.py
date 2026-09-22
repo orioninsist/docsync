@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
-from crawlee import ConcurrencySettings, service_locator
+from crawlee import ConcurrencySettings
 from crawlee.configuration import Configuration
 from crawlee.events import EventManager, LocalEventManager
 from crawlee.request_loaders import RequestManager, ThrottlingRequestManager
@@ -52,12 +52,6 @@ async def build_crawlee_runtime(
     storage_client = FileSystemStorageClient()
     event_manager = LocalEventManager.from_config(configuration)
 
-    # Crawlee's public global service locator is also consulted by components
-    # such as ThrottlingRequestManager. Register the same runtime services
-    # before those components are constructed.
-    service_locator.set_configuration(configuration)
-    service_locator.set_storage_client(storage_client)
-    service_locator.set_event_manager(event_manager)
     request_queue = await RequestQueue.open(
         name="docsync-main",
         storage_client=storage_client,
