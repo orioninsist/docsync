@@ -77,9 +77,6 @@ class SiteInventory:
     processed_urls: int = 0
     remaining_urls: int = 0
     discovery_complete: bool = False
-    sitemap_files_checked: int = 0
-    sitemap_files_found: int = 0
-    sitemap_errors: int = 0
 
     def as_dict(self) -> dict[str, object]:
         """Return a JSON-compatible inventory payload."""
