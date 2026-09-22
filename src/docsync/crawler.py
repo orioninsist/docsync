@@ -10,7 +10,7 @@ from typing import Any, Final, cast
 from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
-from crawlee import HttpHeaders
+from crawlee import HttpHeaders, RequestOptions
 from crawlee.crawlers import (
     BasicCrawlingContext,
     AdaptivePlaywrightCrawlingContext,
@@ -18,6 +18,8 @@ from crawlee.crawlers import (
     PlaywrightCrawlingContext,
 )
 from crawlee.errors import ContextPipelineInterruptedError
+from crawlee.http_clients import ImpitHttpClient
+from crawlee.request_loaders import RequestManagerTandem
 
 from docsync.config import Settings
 from docsync.crawl_engine import build_crawler
@@ -40,7 +42,7 @@ from docsync.markdown import MarkdownDocument, MarkdownExporter
 from docsync.metrics import CrawlStats, write_crawl_report
 from docsync.playwright_rendering import render_page_html
 from docsync.progress_events import CrawlEvent, CrawlEventSink
-from docsync.sitemap import discover_sitemap_urls
+from docsync.sitemap import build_sitemap_request_loader
 from docsync.url_security import (
     normalize_url,
     validated_http_url,
@@ -363,6 +365,42 @@ async def run_crawler(
         request_timeout_seconds=settings.request_timeout_seconds,
     )
 
+    incremental_config = _IncrementalRuntimeConfig(
+        refresh_hours=resolved_refresh_hours,
+        force_refresh=resolved_force_refresh,
+    )
+
+    def transform_sitemap_request(options: RequestOptions) -> RequestOptions | str:
+        url = normalize_url(validated_http_url(options["url"]))
+        if (
+            scope_pattern.search(url) is None
+            or language_strategy.should_skip_url(url)
+            or any(pattern.search(url) for pattern in EXCLUDED_URL_PATTERNS)
+        ):
+            return "skip"
+
+        if not filter_incremental_urls(
+            [url],
+            config=incremental_config,
+            stats=stats,
+            url_state=url_state,
+        ):
+            return "skip"
+
+        options["url"] = url
+        return options
+
+    sitemap_http_client = ImpitHttpClient()
+    sitemap_loader = build_sitemap_request_loader(
+        start_url=normalized_start_url,
+        http_client=sitemap_http_client,
+        transform_request_function=transform_sitemap_request,
+    )
+    runtime.request_manager = RequestManagerTandem(
+        sitemap_loader,
+        runtime.request_manager,
+    )  # type: ignore[assignment]
+
     _silence_crawlee_runtime_logs()
 
     crawler_build = build_crawler(
@@ -568,12 +606,6 @@ async def run_crawler(
         active_requests=0,
     )
 
-    sitemap_result = await discover_sitemap_urls(
-        start_url=normalized_start_url,
-        timeout_seconds=settings.request_timeout_seconds,
-        max_urls=resolved_max_requests,
-    )
-
     known_in_scope_urls = [
         url
         for url in url_state
@@ -584,20 +616,12 @@ async def run_crawler(
 
     initial_urls = list(
         dict.fromkeys(
-            url
-            for url in [
+            [
                 normalized_start_url,
-                *sitemap_result.urls,
                 *known_in_scope_urls,
             ]
-            if not language_strategy.should_skip_url(url)
         )
     )
-
-    stats.sitemap_urls = len(sitemap_result.urls)
-    stats.sitemap_files_checked = sitemap_result.sitemap_files_checked
-    stats.sitemap_files_found = sitemap_result.sitemap_files_found
-    stats.sitemap_errors = len(sitemap_result.errors)
 
     emit_event(
         phase="Preparing queue",
@@ -606,17 +630,6 @@ async def run_crawler(
         active_requests=0,
     )
 
-    if sitemap_result.errors:
-        for sitemap_error in sitemap_result.errors:
-            crawler.log.debug(
-                "Sitemap discovery error: %s",
-                sitemap_error,
-            )
-
-    incremental_config = _IncrementalRuntimeConfig(
-        refresh_hours=resolved_refresh_hours,
-        force_refresh=resolved_force_refresh,
-    )
     incremental_urls = filter_incremental_urls(
         initial_urls,
         config=incremental_config,
@@ -730,6 +743,8 @@ async def run_crawler(
             active_requests=0,
         )
         finalize_crawl()
+        await sitemap_loader.close()
+        await sitemap_http_client.cleanup()
         await runtime.request_manager.drop()
         return stats
 
@@ -783,6 +798,9 @@ async def run_crawler(
         raise
 
     await flush_committed_results()
+    stats.sitemap_urls = await sitemap_loader.get_total_count()
+    await sitemap_loader.close()
+    await sitemap_http_client.cleanup()
 
     emit_event(
         phase="Finalizing",
