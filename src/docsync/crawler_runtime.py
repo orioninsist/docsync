@@ -9,8 +9,7 @@ from pathlib import Path
 from crawlee import ConcurrencySettings
 from crawlee.configuration import Configuration
 from crawlee.events import EventManager, LocalEventManager
-from crawlee.http_clients import ImpitHttpClient
-from crawlee.request_loaders import RequestManager, SitemapRequestLoader, ThrottlingRequestManager
+from crawlee.request_loaders import RequestManager, ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient, StorageClient
 from crawlee.storages import RequestQueue
 
@@ -26,10 +25,6 @@ class CrawleeRuntime:
     concurrency_settings: ConcurrencySettings
     request_handler_timeout: timedelta
 
-    async def close(self) -> None:
-        """Close runtime-owned transient resources."""
-
-        return None
 
     async def drop_request_storage(self) -> None:
         """Drop all request-manager storage owned by this runtime."""
