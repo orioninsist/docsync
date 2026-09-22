@@ -42,7 +42,7 @@ def test_http_and_playwright_use_official_throttling_manager() -> None:
     engine_source = ENGINE.read_text(encoding="utf-8")
     assert "runtime = await build_crawlee_runtime(" in crawler_source
     assert '"request_manager": runtime.request_manager' in engine_source
-    assert "request_manager=runtime.request_manager" in engine_source
+    assert "def _common_crawler_options(" in engine_source
     assert "request_manager = ThrottlingRequestManager(" in runtime_source
     assert "request_manager_opener=open_runtime_request_queue" in runtime_source
     assert 'name="docsync-main"' in runtime_source
