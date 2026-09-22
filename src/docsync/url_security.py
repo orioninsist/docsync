@@ -350,9 +350,3 @@ def is_safe_in_scope_url(
 
     return True
 
-
-# Temporary compatibility aliases for migrated legacy tests.
-_validated_http_url = validated_http_url
-_normalized_http_origin = normalized_http_origin
-_SameOriginRedirectHandler = SameOriginRedirectHandler
-_secure_urlopen = secure_urlopen
