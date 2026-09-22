@@ -8,6 +8,7 @@ import tempfile
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 
 from docsync.url_security import normalize_url
 
