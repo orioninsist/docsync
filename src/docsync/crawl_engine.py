@@ -16,6 +16,9 @@ from crawlee.http_clients import HttpClient
 
 from docsync.crawler_runtime import CrawleeRuntime
 
+if TYPE_CHECKING:
+    from crawlee._types import RequestHandlerRunResult
+
 DEFAULT_MAX_REQUEST_RETRIES = 2
 
 
