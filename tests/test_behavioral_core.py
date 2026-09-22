@@ -82,10 +82,7 @@ def test_normalize_markdown_normalizes_newlines_and_spacing() -> None:
 def test_filter_incremental_urls_normalizes_deduplicates_and_records_skips(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    stats = CrawlStats(
-        started_at="2026-01-01T00:00:00Z",
-        mode="http",
-    )
+    stats = CrawlStats(mode="http")
     url_state: dict[str, dict[str, str]] = {}
 
     monkeypatch.setattr(
