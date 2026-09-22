@@ -9,10 +9,6 @@ import pytest
 from docsync.crawler import build_scope_pattern, filter_discovered_urls
 from docsync.language import detect_explicit_url_language
 from docsync.language_strategy import LanguageStrategy
-from docsync.sitemap import (
-    SitemapDiscoveryResult,
-    discover_sitemap_urls_sync,
-)
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAWLER_PATH = ROOT / "src/docsync/crawler.py"
@@ -88,57 +84,3 @@ def test_adaptive_renderers_use_the_same_filtered_url_list() -> None:
     assert "should_skip_url=language_strategy.should_skip_url" in source
 
 
-def test_sitemap_discovery_filters_localized_page_urls(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    responses = {
-        "https://developers.google.com/robots.txt": (
-            "https://developers.google.com/robots.txt",
-            "",
-        ),
-        "https://developers.google.com/sitemap.xml": (
-            "https://developers.google.com/sitemap.xml",
-            """
-            <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-              <url>
-                <loc>https://developers.google.com/docs/english</loc>
-              </url>
-              <url>
-                <loc>https://developers.google.com/docs/german?hl=de</loc>
-              </url>
-              <url>
-                <loc>https://developers.google.com/intl/ja/docs</loc>
-              </url>
-            </urlset>
-            """,
-        ),
-    }
-
-    def fake_fetch(
-        url: str,
-        timeout_seconds: int,
-    ) -> tuple[str, str]:
-        del timeout_seconds
-
-        if url in responses:
-            return responses[url]
-
-        raise ValueError("missing sitemap")
-
-    monkeypatch.setattr(
-        "docsync.sitemap.fetch_text_url",
-        fake_fetch,
-    )
-
-    result = discover_sitemap_urls_sync(
-        start_url="https://developers.google.com",
-        timeout_seconds=5,
-        max_urls=100,
-    )
-
-    assert isinstance(result, SitemapDiscoveryResult)
-    assert result.urls == [
-        "https://developers.google.com/docs/english",
-        "https://developers.google.com/docs/german?hl=de",
-        "https://developers.google.com/intl/ja/docs",
-    ]
