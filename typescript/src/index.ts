@@ -8,7 +8,7 @@ import { franc } from 'franc-min';
 import { iso6393 } from 'iso-639-3';
 import { JSDOM } from 'jsdom';
 import TurndownService from 'turndown';
-import { gfm } from 'turndown-plugin-gfm';
+import turndownPluginGfm from 'turndown-plugin-gfm';
 
 type Manifest = Record<string, { content_hash: string; filename: string }>;
 
@@ -79,7 +79,7 @@ process.env.CRAWLEE_PURGE_ON_START = 'false';
 const manifest = await loadManifest(manifestFile);
 const queue = await RequestQueue.open('docsync');
 const turndown = new TurndownService();
-turndown.use(gfm);
+turndown.use(turndownPluginGfm.gfm);
 
 const counters = { processed: 0, saved: 0, unchanged: 0 };
 let outputWrite = Promise.resolve();
@@ -132,7 +132,7 @@ const crawler = new PlaywrightCrawler({
   },
 });
 
-await crawler.run([startUrl], { purge: false });
+await crawler.run([startUrl]);
 await outputWrite;
 
 if (await queue.isFinished()) await queue.drop();
