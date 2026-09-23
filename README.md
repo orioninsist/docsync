@@ -2,211 +2,194 @@
 
 DocsSync is a thin command-line documentation synchronizer.
 
-Its design rule is simple:
-
 > Native capability first. Minimal glue only where product-specific behavior is unavoidable.
 
-DocsSync does **not** implement its own crawler, browser engine, retry system, request queue, language detector, HTML-to-Markdown converter, or site-specific scraping framework.
+DocsSync does not implement a crawler framework. One CLI selects either the native Python or TypeScript engine and wires established tools together.
 
 ## Architecture
 
 ```text
 docsync CLI
-  |
-  |-- argparse / asyncio / subprocess / pathlib          [Python stdlib]
-  |
-  |-- Playwright runtime bootstrap                        [Playwright]
-  |
-  |-- Crawlee PlaywrightCrawler                           [Crawlee native]
-  |     |-- browser crawling
-  |     |-- same-origin link discovery
-  |     |-- RequestQueue
-  |     |-- persistent crawl state / resume
-  |     |-- retries
-  |     |-- concurrency
-  |     |-- requests-per-minute throttling
-  |     |-- robots.txt handling
-  |
-  |-- rendered HTML
-  |
-  |-- Trafilatura                                         [Trafilatura native]
-  |     |-- main-content extraction
-  |     |-- Markdown conversion
-  |     |-- links
-  |     |-- tables
-  |     |-- target-language filtering
-  |
-  |-- py3langid                                           [Trafilatura language detector]
-  |
-  '-- DocsSync output policy                              [minimal glue]
-        |-- stable filename from URL
-        |-- SHA-256 content fingerprint
-        |-- skip rewriting unchanged Markdown
-        '-- JSON manifest for URL -> hash / filename
+  ├─ --engine python
+  │    └─ Crawlee Python / PlaywrightCrawler
+  │         └─ Trafilatura → Markdown + target-language filtering
+  │
+  └─ --engine typescript
+       └─ Crawlee TypeScript / PlaywrightCrawler
+            └─ Readability → Turndown + GFM → Markdown
+                 └─ franc-min language filtering
 ```
 
-## Ownership
+Both engines use Crawlee/Playwright for browser crawling, request queues, retries, concurrency, throttling, robots.txt handling, link discovery, and persistent crawl storage.
 
-| Responsibility | Owner | Type |
-| --- | --- | --- |
-| CLI argument parsing | Python `argparse` | stdlib |
-| Async execution | Python `asyncio` | stdlib |
-| Browser runtime installation | Playwright CLI | native tool |
-| Browser crawling | Crawlee `PlaywrightCrawler` | native |
-| Link discovery | Crawlee `enqueue_links(strategy="same-origin")` | native |
-| Request queue / deduplication | Crawlee `RequestQueue` | native |
-| Persistent crawl state / resume | Crawlee storage | native |
-| Request throttling | Crawlee `ThrottlingRequestManager` | native |
-| Concurrency | Crawlee `ConcurrencySettings` | native |
-| Retry handling | Crawlee crawler | native |
-| robots.txt | Crawlee crawler | native |
-| Rendered DOM | Playwright through Crawlee | native |
-| Main-content extraction | Trafilatura | native |
-| Markdown conversion | Trafilatura | native |
-| Link preservation / absolute URL conversion | Trafilatura | native |
-| Table extraction | Trafilatura | native |
-| Language filtering | Trafilatura + `py3langid` | native |
-| URL parsing | Python `urllib.parse` | stdlib |
-| Stable output filenames | DocsSync | minimal glue |
-| Content fingerprint | Python `hashlib.sha256` | stdlib |
-| Output manifest | Python `json` + `pathlib` | minimal glue |
-| Unchanged-file skip | DocsSync | minimal glue |
+DocsSync adds only the small product policy shared by both engines: start-URL scope, stable URL-derived filenames, SHA-256 content fingerprints, engine-specific manifests, and skipping unchanged Markdown.
 
 ## CLI
+
+Install/sync the Python environment:
+
+```bash
+uv sync
+```
 
 Basic usage:
 
 ```bash
-uv sync
-uv run docsync https://example.com/docs --language en
+uv run docsync https://example.com/docs --engine python --language en
 ```
 
-Chromium is installed automatically on first use if the Playwright Chromium runtime is missing.
+TypeScript engine:
 
-Full public CLI surface:
+```bash
+uv run docsync https://example.com/docs --engine typescript --language en
+```
+
+Chromium is installed automatically when the required Playwright Chromium runtime is missing.
+
+Public CLI:
 
 ```text
 docsync URL
+  [--engine {python,typescript}]
   [--language LANGUAGE]
   [--output-dir OUTPUT_DIR]
   [--state-dir STATE_DIR]
 ```
 
-Example:
-
-```bash
-uv run docsync https://example.com/docs \
-  --language en \
-  --output-dir ./docs \
-  --state-dir ./storage/docsync
-```
-
-### Public parameters
-
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `url` | required | Documentation start URL |
+| `--engine` | `python` | Native engine implementation |
 | `--language` | `en` | Two-letter target language such as `en` or `tr` |
 | `--output-dir` | `docs` | Markdown output directory |
-| `--state-dir` | `storage/docsync` | Crawlee state + DocsSync manifest directory |
+| `--state-dir` | `storage/docsync` | Crawlee storage and DocsSync manifest root |
+
+## Engines
+
+### Python
+
+```text
+Crawlee Python / PlaywrightCrawler
+  → rendered HTML
+  → Trafilatura
+  → target-language filtering
+  → Markdown
+```
+
+Python owns no crawler lifecycle itself. Crawlee provides the browser crawler, queue, persistence, retries, robots.txt support, concurrency, throttling, and discovery. Trafilatura provides generic main-content extraction and Markdown conversion.
+
+### TypeScript
+
+```text
+Crawlee TypeScript / PlaywrightCrawler
+  → rendered HTML
+  → Mozilla Readability
+  → Turndown + GFM
+  → franc-min language filtering
+  → Markdown
+```
+
+The TypeScript implementation is a separate native Crawlee engine. The Python CLI only dispatches to it; the crawl itself runs as the TypeScript process.
+
+## Scope
+
+The supplied start URL defines the documentation tree.
+
+For example:
+
+```text
+https://example.com/docs
+```
+
+allows that path and descendants such as:
+
+```text
+https://example.com/docs/guide
+https://example.com/docs/api/reference
+```
+
+The crawler does not intentionally expand into unrelated same-origin paths outside the start-URL tree. No site-specific selectors or domain rules are used.
 
 ## Internal defaults
 
-These are intentionally not exposed as CLI flags.
+These are intentionally fixed rather than exposed as CLI flags.
 
-| Setting | Value | Owner |
-| --- | ---: | --- |
-| crawler | `PlaywrightCrawler` | Crawlee |
-| discovery strategy | `same-origin` | Crawlee |
-| minimum concurrency | `1` | Crawlee |
-| desired concurrency | `2` | Crawlee |
-| maximum concurrency | `2` | Crawlee |
-| maximum requests per crawl | `10000` | Crawlee |
-| maximum tasks per minute | `20` | Crawlee |
-| maximum request retries | `2` | Crawlee |
-| respect robots.txt | `true` | Crawlee |
-| purge crawl storage on start | `false` | Crawlee configuration |
-| Markdown comments | excluded | Trafilatura |
-| Markdown links | included | Trafilatura |
-| Markdown tables | included | Trafilatura |
-| output format | `markdown` | Trafilatura |
+| Setting | Value |
+| --- | ---: |
+| maximum concurrency | `2` |
+| maximum requests per crawl | `10000` |
+| maximum requests/tasks per minute | `20` |
+| maximum request retries | `2` |
+| respect robots.txt | `true` |
+| purge crawl storage on start | `false` |
+
+## Output and state
+
+A URL maps to a stable filename:
+
+```text
+readable URL-path slug + first 12 characters of SHA-256(URL)
+```
+
+Each engine computes a SHA-256 fingerprint of its extracted Markdown. Existing Markdown is not rewritten when the fingerprint is unchanged.
+
+Engine state is namespaced under the selected `--state-dir` so Python and TypeScript can safely use the same state root:
+
+```text
+STATE_DIR/
+├── python/
+│   └── HOST-SCOPE.json
+├── typescript/
+│   └── HOST-SCOPE.json
+└── crawlee/
+    ├── ... Python crawl storage ...
+    └── typescript/
+        └── ... TypeScript crawl storage ...
+```
+
+Crawlee owns crawl/request persistence. DocsSync manifests store only URL → content hash / filename synchronization state.
 
 ## Data flow
 
-For each invocation:
-
 ```text
 start URL
-  -> Crawlee persistent RequestQueue
-  -> PlaywrightCrawler
-  -> rendered page HTML
-  -> same-origin links added by Crawlee
-  -> Trafilatura extraction
-  -> py3langid target-language check
-  -> Markdown
-  -> SHA-256 fingerprint
-  -> stable URL-derived filename
-  -> write only when new or changed
+  → selected native Crawlee engine
+  → Playwright-rendered HTML
+  → engine extraction / language filtering
+  → Markdown
+  → SHA-256 fingerprint
+  → stable filename
+  → write only when new or changed
 ```
 
-Crawl state and output state are separate concerns:
-
-- Crawlee owns pending-request persistence and interrupted-run resume.
-- DocsSync stores only the URL-to-content-fingerprint/filename manifest needed for output synchronization.
-
-## Output behavior
-
-A URL always maps to a deterministic filename based on:
-
-```text
-readable URL path slug + first 12 characters of SHA-256(URL)
-```
-
-This means:
-
-- the same URL keeps the same filename;
-- different URLs remain collision-resistant;
-- changing page content does not rename the file;
-- unchanged extracted Markdown is not rewritten.
-
-DocsSync writes plain Markdown files and plain terminal output.
+The Python and TypeScript extractors can legitimately produce different document counts or Markdown for the same site. Each engine is deterministic against its own output/state.
 
 ## What DocsSync intentionally does not contain
 
-There is no:
+There is no custom crawler engine, browser controller, retry system, request frontier, rate limiter, robots.txt parser, HTML-to-Markdown implementation, site-specific selector set, domain-specific rule set, browser-vs-HTTP mode, TUI, or Rich interface.
 
-- custom crawler engine;
-- custom browser controller;
-- custom retry implementation;
-- custom request frontier;
-- custom concurrency or rate limiter;
-- custom robots.txt parser;
-- custom sitemap engine;
-- custom HTML-to-Markdown implementation;
-- custom language detector;
-- site-specific selectors;
-- domain-specific rules;
-- HTTP-vs-browser mode;
-- TUI or Rich interface.
-
-The project is intentionally an orchestration layer over established native capabilities.
+The project is intentionally a small orchestration layer over established tools.
 
 ## Project layout
 
 ```text
 docsync/
-├── .gitignore
-├── .python-version
-├── LICENSE
 ├── README.md
 ├── pyproject.toml
 ├── uv.lock
-└── src/
-    └── docsync/
-        ├── __init__.py
-        ├── __main__.py
-        ├── cli.py
-        └── crawler.py
+├── src/
+│   └── docsync/
+│       ├── __init__.py
+│       ├── __main__.py
+│       ├── cli.py
+│       └── crawler.py
+└── typescript/
+    ├── package.json
+    ├── package-lock.json
+    ├── tsconfig.json
+    └── src/
+        ├── index.ts
+        └── turndown-plugin-gfm.d.ts
 ```
 
-Generated local data such as `.venv/`, tool caches, `docs/`, and `storage/` is ignored by Git.
+Generated local data such as virtual environments, tool caches, documentation output, and crawl state is ignored by Git.
