@@ -170,8 +170,11 @@ async def run_crawler(
     exclude_patterns: list[re.Pattern[str]] = []
     if start.hostname == "github.com" and "/wiki" in scope_path:
         exclude_patterns = [
-            re.compile(r"/_history(?:[?]|$)"),
-            re.compile(r"/[0-9a-f]{40}(?:[?]|$)", re.I),
+            re.compile(rf"^{re.escape(scope_prefix)}(?:/.*)?/_history(?:[?]|$)"),
+            re.compile(
+                rf"^{re.escape(scope_prefix)}(?:/.*)?/[0-9a-f]{{40}}(?:[?]|$)",
+                re.I,
+            ),
         ]
 
     @crawler.router.default_handler
