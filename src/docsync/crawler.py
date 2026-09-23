@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import re
+import signal
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -163,32 +164,42 @@ async def run_crawler(
                     flush=True,
                 )
 
-        loop = asyncio.get_running_loop()
-        previous_exception_handler = loop.get_exception_handler()
-        crawl_finished = False
+        main_loop = asyncio.get_running_loop()
+        crawler_loop: asyncio.AbstractEventLoop | None = None
+        crawler_started = asyncio.Event()
 
-        def handle_loop_exception(
-            event_loop: asyncio.AbstractEventLoop,
-            context: dict[str, object],
-        ) -> None:
-            exception = context.get("exception")
-            if (
-                crawl_finished
-                and context.get("message") == "Future exception was never retrieved"
-                and isinstance(exception, Exception)
-                and str(exception) == "Connection closed while reading from the driver"
-            ):
+        def run_crawler_thread() -> None:
+            nonlocal crawler_loop
+            crawler_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(crawler_loop)
+            main_loop.call_soon_threadsafe(crawler_started.set)
+            try:
+                crawler_loop.run_until_complete(
+                    crawler.run([start_url], purge_request_queue=False)
+                )
+            finally:
+                crawler_loop.close()
+
+        crawl_task = asyncio.create_task(asyncio.to_thread(run_crawler_thread))
+        await crawler_started.wait()
+
+        stop_requested = False
+
+        def handle_sigint() -> None:
+            nonlocal stop_requested
+            if stop_requested or crawler_loop is None:
                 return
+            stop_requested = True
+            print("docsync: stopping gracefully...", flush=True)
+            crawler_loop.call_soon_threadsafe(
+                crawler.stop,
+                "Interrupted by user.",
+            )
 
-            if previous_exception_handler is not None:
-                previous_exception_handler(event_loop, context)
-            else:
-                event_loop.default_exception_handler(context)
-
-        loop.set_exception_handler(handle_loop_exception)
+        main_loop.add_signal_handler(signal.SIGINT, handle_sigint)
         try:
-            await crawler.run([start_url], purge_request_queue=False)
+            await crawl_task
         finally:
-            crawl_finished = True
+            main_loop.remove_signal_handler(signal.SIGINT)
 
     return counters
