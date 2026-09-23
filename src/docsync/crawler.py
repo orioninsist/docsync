@@ -129,18 +129,12 @@ async def run_crawler(
             return "skip"
         return options
 
-    start = urlsplit(start_url)
-    scope_path = start.path.rstrip("/") or "/"
-    scope_prefix = f"{start.scheme}://{start.netloc}{scope_path}"
-    scope_pattern = re.compile(rf"^{re.escape(scope_prefix)}(?:/|[?]|$)")
-
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
         await context.enqueue_links(
             selector="a",
             attribute="href",
             strategy="same-origin",
-            include=[scope_pattern],
             transform_request_function=transform,
         )
 
