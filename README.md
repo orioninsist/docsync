@@ -20,9 +20,9 @@ docsync CLI
                  └─ franc-min language filtering
 ```
 
-Both engines use Crawlee/Playwright for browser crawling, request queues, retries, concurrency, throttling, robots.txt handling, link discovery, and persistent crawl storage.
+Both engines use Crawlee/Playwright for browser crawling, request queues, retries, concurrency, throttling, robots.txt handling, and link discovery. Crawlee's operational storage is temporary and lives under the operating system temporary directory.
 
-DocsSync adds only the small product policy shared by both engines: start-URL scope, stable URL-derived filenames, SHA-256 content fingerprints, engine-specific manifests, and skipping unchanged Markdown.
+DocsSync adds only the small product policy shared by both engines: start-URL scope, stable URL-derived filenames, SHA-256 content fingerprints, one hostname-named JSON manifest per site, incremental Markdown writes, and skipping unchanged Markdown.
 
 ## CLI
 
@@ -170,7 +170,7 @@ start URL
   → write only when new or changed
 ```
 
-The Python and TypeScript extractors can legitimately produce different document counts or Markdown for the same site. Each engine is deterministic against its own output/state.
+The Python and TypeScript extractors can legitimately produce different document counts or Markdown for the same site. Each engine is deterministic against its own extraction output. Both engines share the same hostname manifest when pointed at the same state directory.
 
 
 ## Operational notes
@@ -194,13 +194,13 @@ This is the complete tool/library inventory used by the project. It is intention
 | --- | --- | --- |
 | Python + `argparse` / `asyncio` / `subprocess` / `pathlib` | dispatcher / Python | CLI parsing, process dispatch, paths, small orchestration glue |
 | uv | both | Python environment, dependency sync, and `docsync` command execution |
-| Crawlee Python | Python | crawler lifecycle, queue, persistence, retries, robots.txt, concurrency, throttling, discovery |
+| Crawlee Python | Python | crawler lifecycle, temporary queue/storage, retries, robots.txt, concurrency, throttling, discovery |
 | Playwright + Chromium | Python | browser runtime and rendered pages |
 | Trafilatura | Python | main-content extraction, Markdown conversion, links/tables, target-language filtering |
 | py3langid | Python | language detector used by Trafilatura |
 | npm | TypeScript | TypeScript dependency/script runner |
 | tsx | TypeScript | executes `typescript/src/index.ts` |
-| Crawlee TypeScript | TypeScript | crawler lifecycle, queue, persistence, retries, robots.txt, concurrency, throttling, discovery |
+| Crawlee TypeScript | TypeScript | crawler lifecycle, temporary queue/storage, retries, robots.txt, concurrency, throttling, discovery |
 | Playwright + Chromium | TypeScript | browser runtime and rendered pages |
 | JSDOM | TypeScript | DOM representation for extracted rendered HTML |
 | Mozilla Readability | TypeScript | main article/content extraction |
@@ -209,7 +209,7 @@ This is the complete tool/library inventory used by the project. It is intention
 | franc-min | TypeScript | language detection |
 | iso-639-3 | TypeScript | maps two-letter language input to ISO 639-3 codes used by language detection |
 | SHA-256 (Python `hashlib` / Node `crypto`) | both | stable URL IDs and content fingerprints |
-| JSON/filesystem primitives | both | engine-specific manifest and output-state persistence |
+| JSON/filesystem primitives | both | shared hostname manifest and output-state persistence |
 
 Development-only tools are separate from runtime: Ruff and mypy check the Python code; TypeScript/`tsc --noEmit` checks the TypeScript code.
 
@@ -227,7 +227,7 @@ uv run docsync URL --engine python|typescript ...
         ├─ filters for the requested language
         ├─ converts the result to Markdown
         ├─ fingerprints content and skips unchanged files
-        ├─ writes Markdown to --output-dir
+        ├─ writes each new/changed Markdown document immediately to --output-dir
         ├─ persists one hostname-named manifest under --state-dir
         └─ prints Crawlee native progress plus the final DocsSync summary
 ```
@@ -344,4 +344,4 @@ docsync/
         └── turndown-plugin-gfm.d.ts
 ```
 
-Generated local data such as virtual environments, tool caches, documentation output, and crawl state is ignored by Git.
+Generated local data such as virtual environments, tool caches, documentation output, persistent manifests, and temporary crawl working data is ignored by Git.
