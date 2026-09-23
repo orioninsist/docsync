@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "crawlee[adaptive-crawler,beautifulsoup,playwright]==1.10.1",
+    "crawlee[playwright]==1.10.1",
     "trafilatura>=2.0,<3",
 ]
 
