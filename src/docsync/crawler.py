@@ -23,7 +23,7 @@ from crawlee.crawlers import (
 )
 from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storages import RequestQueue
-from markdownify import markdownify
+from trafilatura import extract
 
 _LANGUAGE_SEGMENTS = re.compile(r"/([a-z]{2})(?:[-_][a-z]{2})?(?:/|$)", re.I)
 
@@ -195,13 +195,17 @@ async def run_crawler(
             await context.push_data({"outcome": "skip", "url": context.request.url})
             return
 
-        for element in soup.select("script, style, nav, footer, noscript"):
-            element.decompose()
-
-        main = soup.select_one("#wiki-body, .markdown-body, article, [role=main], main") or soup.body or soup
-        text = markdownify(str(main), heading_style="ATX").strip()
+        text = extract(
+            str(soup),
+            url=context.request.url,
+            output_format="markdown",
+            include_comments=False,
+            include_links=True,
+            include_tables=True,
+        )
         if not text:
             return
+        text = text.strip()
 
         await context.push_data(
             {
