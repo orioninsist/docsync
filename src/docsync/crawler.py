@@ -419,25 +419,8 @@ async def run_crawler(
             }
         )
 
-    known_in_scope_urls = [
-        url
-        for url in url_state
-        if scope_pattern.search(url) is not None
-        and not language_policy.should_skip_url(url)
-        and not any(pattern.search(url) for pattern in EXCLUDED_URL_PATTERNS)
-    ]
-
-    initial_urls = list(
-        dict.fromkeys(
-            [
-                normalized_start_url,
-                *known_in_scope_urls,
-            ]
-        )
-    )
-
     incremental_urls = filter_incremental_urls(
-        initial_urls,
+        [normalized_start_url],
         refresh_hours=resolved_refresh_hours,
         force_refresh=resolved_force_refresh,
         stats=stats,
