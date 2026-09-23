@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 import re
-import signal
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -165,17 +164,31 @@ async def run_crawler(
                 )
 
         loop = asyncio.get_running_loop()
-        previous_sigint_handler = signal.getsignal(signal.SIGINT)
+        previous_exception_handler = loop.get_exception_handler()
+        crawl_finished = False
 
-        def stop_crawler() -> None:
-            print("docsync: stopping gracefully...", flush=True)
-            crawler.stop("Interrupted by user.")
+        def handle_loop_exception(
+            event_loop: asyncio.AbstractEventLoop,
+            context: dict[str, object],
+        ) -> None:
+            exception = context.get("exception")
+            if (
+                crawl_finished
+                and context.get("message") == "Future exception was never retrieved"
+                and isinstance(exception, Exception)
+                and str(exception) == "Connection closed while reading from the driver"
+            ):
+                return
 
-        loop.add_signal_handler(signal.SIGINT, stop_crawler)
+            if previous_exception_handler is not None:
+                previous_exception_handler(event_loop, context)
+            else:
+                event_loop.default_exception_handler(context)
+
+        loop.set_exception_handler(handle_loop_exception)
         try:
             await crawler.run([start_url], purge_request_queue=False)
         finally:
-            loop.remove_signal_handler(signal.SIGINT)
-            signal.signal(signal.SIGINT, previous_sigint_handler)
+            crawl_finished = True
 
     return counters
