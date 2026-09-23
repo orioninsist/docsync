@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 .venv/
 
+# Node / TypeScript
+node_modules/
+
 # Tool caches
 .mypy_cache/
 .pytest_cache/
