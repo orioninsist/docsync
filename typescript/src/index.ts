@@ -70,7 +70,7 @@ const hostname = new URL(startUrl).hostname;
 const scopeRoot = startUrl.replace(/\/+$/, '');
 const scopeGlob = `${scopeRoot}/**`;
 const scopeId = sha256(scopeRoot).slice(0, 12);
-const manifestFile = path.join(stateDir, `${hostname}-${scopeId}.json`);
+const manifestFile = path.join(stateDir, 'typescript', `${hostname}-${scopeId}.json`);
 
 await mkdir(outputDir, { recursive: true });
 await mkdir(stateDir, { recursive: true });
