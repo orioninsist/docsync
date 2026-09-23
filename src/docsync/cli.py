@@ -44,9 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--language", default="en", help="Language code (default: en)")
     parser.add_argument("--output-dir", type=Path, default=Path("docs"))
     parser.add_argument("--state-dir", type=Path, default=Path("storage/docsync"))
-    parser.add_argument("--max-concurrency", type=_positive, default=5)
+    parser.add_argument("--max-concurrency", type=_positive, default=2)
     parser.add_argument("--max-requests", type=_positive, default=10_000)
-    parser.add_argument("--requests-per-minute", type=_positive, default=120)
+    parser.add_argument("--requests-per-minute", type=_positive, default=20)
     parser.add_argument(
         "--refresh-hours",
         type=int,
