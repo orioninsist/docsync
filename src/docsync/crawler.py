@@ -512,6 +512,7 @@ async def run_crawler(
             await sitemap_loader.mark_request_as_handled(sitemap_request)
 
         if not incremental_urls and await runtime.request_manager.is_finished():
+            stats.sitemap_urls = await sitemap_loader.get_total_count()
             persist_incremental_state()
             crawl_succeeded = True
             request_storage_complete = True
@@ -530,7 +531,7 @@ async def run_crawler(
             )
 
         try:
-            final_statistics = await crawler.run(incremental_urls)
+            await crawler.run(incremental_urls)
         except BaseException:
             await flush_committed_results()
             persist_incremental_state()
@@ -538,16 +539,6 @@ async def run_crawler(
 
         await flush_committed_results()
         request_storage_complete = await runtime.request_manager.is_finished()
-        if (
-            not request_storage_complete
-            and final_statistics.requests_total < resolved_max_requests
-        ):
-            persist_incremental_state()
-            raise RuntimeError(
-                "Crawl stopped before the persistent request queue finished; "
-                "request storage was preserved for resume."
-            )
-
         stats.sitemap_urls = await sitemap_loader.get_total_count()
 
         persist_incremental_state()
