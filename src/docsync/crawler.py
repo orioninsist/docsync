@@ -8,10 +8,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from crawlee import (
-    ConcurrencySettings,
-    service_locator,
-)
+from crawlee import ConcurrencySettings, service_locator
 from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.request_loaders import ThrottlingRequestManager
