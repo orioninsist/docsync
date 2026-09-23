@@ -13,12 +13,14 @@
     "iso-639-3": "^3.0.1",
     "jsdom": "^27.0.0",
     "playwright": "^1.55.0",
-    "turndown": "^7.2.0"
+    "turndown": "^7.2.0",
+    "turndown-plugin-gfm": "^1.0.2"
   },
   "devDependencies": {
     "@types/jsdom": "^21.1.7",
     "@types/node": "^24.0.0",
     "@types/turndown": "^5.0.5",
+    "@types/turndown-plugin-gfm": "^1.0.3",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   }
