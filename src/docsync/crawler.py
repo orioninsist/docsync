@@ -149,8 +149,7 @@ async def run_crawler(
             if previous.get("content_hash") == digest and target.exists():
                 counters["unchanged"] += 1
             else:
-                target.write_text(text + "
-", encoding="utf-8")
+                target.write_text(text + "\\n", encoding="utf-8")
                 counters["saved"] += 1
 
             content_state[url] = {
