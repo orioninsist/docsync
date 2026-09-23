@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 import re
-import signal
+import subprocess
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -16,7 +16,36 @@ from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storages import RequestQueue
-from trafilatura import extract
+
+NORMALIZE_DOCUMENT = r"""
+() => {
+  const mains = [...document.querySelectorAll('main')];
+  if (!mains.length) return null;
+  const main = mains.reduce((best, current) =>
+    (current.textContent?.trim().length ?? 0) > (best.textContent?.trim().length ?? 0)
+      ? current : best
+  );
+  const root = main.cloneNode(true);
+  root.querySelectorAll('script,style,noscript,template,svg,button,nav,aside').forEach((el) => el.remove());
+  root.querySelectorAll('.sr-only,[aria-hidden="true"],[role="status"],[role="button"]').forEach((el) => el.remove());
+  for (const pre of [...root.querySelectorAll('pre')]) {
+    const code = pre.querySelector('code');
+    const language =
+      code?.getAttribute('data-language')?.trim() ||
+      pre.getAttribute('data-language')?.trim() ||
+      [...(code?.classList ?? [])].find((value) => value.startsWith('language-'))?.slice(9) ||
+      [...pre.classList].find((value) => value.startsWith('language-'))?.slice(9) || '';
+    const cleanPre = document.createElement('pre');
+    const cleanCode = document.createElement('code');
+    if (language) cleanCode.className = language;
+    cleanCode.textContent = code?.textContent ?? pre.textContent ?? '';
+    cleanPre.appendChild(cleanCode);
+    pre.replaceWith(cleanPre);
+  }
+  for (const span of [...root.querySelectorAll('span')]) span.replaceWith(...span.childNodes);
+  return root.innerHTML;
+}
+""";
 
 
 def _normalize_language(value: str) -> str:
@@ -52,6 +81,17 @@ def _save_state(path: Path, state: dict[str, dict[str, str]]) -> None:
     temporary.replace(path)
 
 
+def _to_gfm(html: str) -> str:
+    result = subprocess.run(
+        ["pandoc", "--from=html", "--to=gfm", "--wrap=none"],
+        input=html,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
 async def run_crawler(
     *,
     start_url: str,
@@ -63,15 +103,15 @@ async def run_crawler(
     requests_per_minute: int = 20,
 ) -> dict[str, int]:
     """Synchronize one documentation tree using Crawlee's native lifecycle."""
-
     language = _normalize_language(language)
     output_dir = output_dir.expanduser().resolve()
     state_dir = state_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
 
-    hostname = urlsplit(start_url).hostname
-    if not hostname or urlsplit(start_url).scheme not in {"http", "https"}:
+    parsed_start = urlsplit(start_url)
+    hostname = parsed_start.hostname
+    if not hostname or parsed_start.scheme not in {"http", "https"}:
         raise ValueError("start_url must be an absolute HTTP(S) URL")
 
     scope_root = start_url.rstrip("/")
@@ -80,30 +120,23 @@ async def run_crawler(
     state_file = state_dir / f"{hostname}.json"
     content_state = _load_state(state_file)
     state_lock = asyncio.Lock()
-
     counters = {"processed": 0, "saved": 0, "unchanged": 0}
 
     with tempfile.TemporaryDirectory(prefix=f"docsync-{scope_id}-") as crawl_storage:
-        configuration = Configuration(
-            storage_dir=crawl_storage,
-            purge_on_start=True,
-        )
+        configuration = Configuration(storage_dir=crawl_storage, purge_on_start=True)
         service_locator.set_configuration(configuration)
-
         queue = await RequestQueue.open()
         request_manager = ThrottlingRequestManager(
             queue,
             domains=[hostname],
             request_manager_opener=RequestQueue.open,
         )
-
         concurrency = ConcurrencySettings(
             min_concurrency=1,
             desired_concurrency=max_concurrency,
             max_concurrency=max_concurrency,
             max_tasks_per_minute=requests_per_minute,
         )
-
         crawler = PlaywrightCrawler(
             configuration=configuration,
             event_manager=service_locator.get_event_manager(),
@@ -116,90 +149,36 @@ async def run_crawler(
 
         @crawler.router.default_handler
         async def handler(context: PlaywrightCrawlingContext) -> None:
-            await context.enqueue_links(
-                strategy="same-origin",
-                include=[scope_glob],
+            await context.enqueue_links(strategy="same-origin", include=[scope_glob])
+            page_language = await context.page.evaluate(
+                "() => document.documentElement.lang || ''"
             )
-
-            text = extract(
-                await context.page.content(),
-                url=context.request.url,
-                output_format="markdown",
-                include_comments=False,
-                include_links=True,
-                include_tables=True,
-                target_language=language,
-            )
-            if not text:
+            if page_language and _normalize_language(page_language) != language:
                 return
-            text = text.strip()
+            html = await context.page.evaluate(NORMALIZE_DOCUMENT)
+            if not html:
+                return
+            markdown = await asyncio.to_thread(_to_gfm, html)
+            if not markdown:
+                return
 
             url = context.request.url
-            digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
             target = _output_path(output_dir, url)
-
             async with state_lock:
                 previous = content_state.get(url, {})
                 counters["processed"] += 1
-
                 if previous.get("content_hash") == digest and target.exists():
                     counters["unchanged"] += 1
-                    status = "unchanged"
                 else:
-                    target.write_text(text + "\n", encoding="utf-8")
+                    target.write_text(markdown + "\n", encoding="utf-8")
                     counters["saved"] += 1
-                    status = "saved"
-
                 content_state[url] = {
                     "content_hash": digest,
                     "filename": target.name,
                 }
                 _save_state(state_file, content_state)
-                print(
-                    "docsync [python] "
-                    f"processed={counters['processed']} "
-                    f"saved={counters['saved']} "
-                    f"unchanged={counters['unchanged']} "
-                    f"status={status} url={url}",
-                    flush=True,
-                )
 
-        main_loop = asyncio.get_running_loop()
-        crawler_loop: asyncio.AbstractEventLoop | None = None
-        crawler_started = asyncio.Event()
-
-        def run_crawler_thread() -> None:
-            nonlocal crawler_loop
-            crawler_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(crawler_loop)
-            main_loop.call_soon_threadsafe(crawler_started.set)
-            try:
-                crawler_loop.run_until_complete(
-                    crawler.run([start_url], purge_request_queue=False)
-                )
-            finally:
-                crawler_loop.close()
-
-        crawl_task = asyncio.create_task(asyncio.to_thread(run_crawler_thread))
-        await crawler_started.wait()
-
-        stop_requested = False
-
-        def handle_sigint() -> None:
-            nonlocal stop_requested
-            if stop_requested or crawler_loop is None:
-                return
-            stop_requested = True
-            print("docsync: stopping gracefully...", flush=True)
-            crawler_loop.call_soon_threadsafe(
-                crawler.stop,
-                "Interrupted by user.",
-            )
-
-        main_loop.add_signal_handler(signal.SIGINT, handle_sigint)
-        try:
-            await crawl_task
-        finally:
-            main_loop.remove_signal_handler(signal.SIGINT)
+        await crawler.run([start_url], purge_request_queue=False)
 
     return counters
