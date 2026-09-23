@@ -164,6 +164,88 @@ start URL
 
 The Python and TypeScript extractors can legitimately produce different document counts or Markdown for the same site. Each engine is deterministic against its own output/state.
 
+
+## Operational notes
+
+DocsSync uses conservative defaults for documentation crawling rather than maximum throughput. These values are fixed internally for both engines:
+
+- maximum concurrency: `2`
+- maximum requests per minute: `20`
+- maximum requests per crawl: `10000`
+- maximum request retries: `2`
+- robots.txt: respected
+- crawl scope: the supplied start-URL tree only
+
+These defaults reduce load and limit accidental over-crawling, but they are not a universal guarantee for every target. DocsSync still performs real HTTP(S) requests and renders pages in Chromium, so target-site rules, rate limits, authentication boundaries, and authorization requirements still apply.
+
+## Toolchain used by each command
+
+Python engine:
+
+```bash
+uv run docsync URL --engine python --language en
+```
+
+```text
+Python CLI
+  → Crawlee Python
+  → Playwright / Chromium
+  → Trafilatura
+  → Markdown output
+  → SHA-256 manifest/state update
+```
+
+TypeScript engine:
+
+```bash
+uv run docsync URL --engine typescript --language en
+```
+
+```text
+Python CLI dispatcher
+  → npm / tsx
+  → Crawlee TypeScript
+  → Playwright / Chromium
+  → JSDOM
+  → Mozilla Readability
+  → Turndown + turndown-plugin-gfm
+  → franc-min + iso-639-3 language check
+  → Markdown output
+  → SHA-256 manifest/state update
+```
+
+Development checks use Ruff and mypy for Python and `tsc --noEmit` for TypeScript.
+
+## Files created at runtime
+
+DocsSync creates two categories of runtime data.
+
+### Markdown output
+
+The directory passed with `--output-dir` contains the synchronized `.md` files. These are the user-facing documentation files you normally keep, upload, index, or share.
+
+### State
+
+The directory passed with `--state-dir` contains:
+
+```text
+STATE_DIR/
+├── python/
+│   └── HOST-SCOPE.json
+├── typescript/
+│   └── HOST-SCOPE.json
+└── crawlee/
+    ├── ... Python Crawlee storage ...
+    └── typescript/
+        └── ... TypeScript Crawlee storage ...
+```
+
+The engine-specific JSON manifest stores URL → content hash / filename mappings used to skip unchanged Markdown. The `crawlee/` tree is Crawlee's internal persistent request/dataset/storage data used for crawl lifecycle and resume behavior.
+
+You do not need to publish or share state files with the Markdown output. They are local operational state. Deleting `--state-dir` forces the next run to rebuild state and behave like a fresh crawl.
+
+There is no separate user-facing "cluster" file. Temporary manifest `.tmp` files are atomic-write intermediates and should not remain after a successful run. Local dependency/cache directories such as `.venv/`, `node_modules/`, and tool caches are not part of the user-facing output.
+
 ## What DocsSync intentionally does not contain
 
 There is no custom crawler engine, browser controller, retry system, request frontier, rate limiter, robots.txt parser, HTML-to-Markdown implementation, site-specific selector set, domain-specific rule set, browser-vs-HTTP mode, TUI, or Rich interface.
