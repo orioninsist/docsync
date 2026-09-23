@@ -16,10 +16,7 @@ from crawlee import (
     service_locator,
 )
 from crawlee.configuration import Configuration
-from crawlee.crawlers import (
-    AdaptivePlaywrightCrawler,
-    AdaptivePlaywrightCrawlingContext,
-)
+from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storages import RequestQueue
 from trafilatura import extract
@@ -127,7 +124,7 @@ async def run_crawler(
         max_tasks_per_minute=requests_per_minute,
     )
 
-    crawler = AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(
+    crawler = PlaywrightCrawler(
         configuration=configuration,
         event_manager=service_locator.get_event_manager(),
         request_manager=request_manager,
@@ -153,36 +150,23 @@ async def run_crawler(
     scope_prefix = f"{start.scheme}://{start.netloc}{scope_path}"
     scope_pattern = re.compile(rf"^{re.escape(scope_prefix)}(?:/|[?]|$)")
 
-    exclude_patterns: list[re.Pattern[str]] = []
-    if start.hostname == "github.com" and "/wiki" in scope_path:
-        exclude_patterns = [
-            re.compile(rf"^{re.escape(scope_prefix)}(?:/.*)?/_history(?:[?]|$)"),
-            re.compile(
-                rf"^{re.escape(scope_prefix)}(?:/.*)?/[0-9a-f]{{40}}(?:[?]|$)",
-                re.I,
-            ),
-        ]
-
     @crawler.router.default_handler
-    async def handler(context: AdaptivePlaywrightCrawlingContext) -> None:
-        soup = await context.parse_with_static_parser()
-
+    async def handler(context: PlaywrightCrawlingContext) -> None:
         await context.enqueue_links(
             selector="a",
             attribute="href",
             strategy="same-origin",
             include=[scope_pattern],
-            exclude=exclude_patterns,
             transform_request_function=transform,
         )
 
-        html_language = str(soup.html.get("lang", "") if soup.html else "")
+        html_language = str(await context.page.locator("html").get_attribute("lang") or "")
         if html_language and _normalize_language(html_language) != language:
             await context.push_data({"outcome": "skip", "url": context.request.url})
             return
 
         text = extract(
-            str(soup),
+            await context.page.content(),
             url=context.request.url,
             output_format="markdown",
             include_comments=False,
