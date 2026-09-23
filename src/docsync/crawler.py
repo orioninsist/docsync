@@ -198,7 +198,7 @@ async def run_crawler(
         for element in soup.select("script, style, nav, footer, noscript"):
             element.decompose()
 
-        main = soup.select_one("main, article, [role=main]") or soup.body or soup
+        main = soup.select_one(".markdown-body, article, [role=main], main") or soup.body or soup
         text = markdownify(str(main), heading_style="ATX").strip()
         if not text:
             return
