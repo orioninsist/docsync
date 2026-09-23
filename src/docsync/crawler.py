@@ -143,15 +143,25 @@ async def run_crawler(
 
                 if previous.get("content_hash") == digest and target.exists():
                     counters["unchanged"] += 1
+                    status = "unchanged"
                 else:
                     target.write_text(text + "\n", encoding="utf-8")
                     counters["saved"] += 1
+                    status = "saved"
 
                 content_state[url] = {
                     "content_hash": digest,
                     "filename": target.name,
                 }
                 _save_state(state_file, content_state)
+                print(
+                    "docsync [python] "
+                    f"processed={counters['processed']} "
+                    f"saved={counters['saved']} "
+                    f"unchanged={counters['unchanged']} "
+                    f"status={status} url={url}",
+                    flush=True,
+                )
 
         await crawler.run([start_url], purge_request_queue=False)
 
