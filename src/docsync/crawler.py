@@ -45,7 +45,7 @@ NORMALIZE_DOCUMENT = r"""
   for (const span of [...root.querySelectorAll('span')]) span.replaceWith(...span.childNodes);
   return root.innerHTML;
 }
-""";
+"""
 
 
 def _normalize_language(value: str) -> str:
@@ -75,7 +75,7 @@ def _save_state(path: Path, state: dict[str, dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
     temporary.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True),
+        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     temporary.replace(path)
