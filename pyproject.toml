@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "murat", email = "74824857+orioninsist@users.noreply.github.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     "crawlee[adaptive-crawler,beautifulsoup,playwright]==1.10.1",
     "markdownify>=1.2.3",
@@ -26,7 +26,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py310"
 line-length = 88
 
 [tool.ruff.lint]
@@ -42,7 +42,7 @@ indent-style = "space"
 line-ending = "lf"
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.10"
 files = ["src"]
 warn_unused_configs = true
 warn_redundant_casts = true
