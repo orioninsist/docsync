@@ -8,7 +8,7 @@ import { franc } from 'franc-min';
 import { iso6393 } from 'iso-639-3';
 import { JSDOM } from 'jsdom';
 import TurndownService from 'turndown';
-import turndownPluginGfm from 'turndown-plugin-gfm';
+import { gfm } from 'turndown-plugin-gfm';
 
 type Manifest = Record<string, { content_hash: string; filename: string }>;
 
@@ -79,7 +79,7 @@ process.env.CRAWLEE_PURGE_ON_START = 'false';
 const manifest = await loadManifest(manifestFile);
 const queue = await RequestQueue.open('docsync');
 const turndown = new TurndownService();
-turndown.use(turndownPluginGfm.gfm);
+turndown.use(gfm);
 
 const counters = { processed: 0, saved: 0, unchanged: 0 };
 let outputWrite = Promise.resolve();
