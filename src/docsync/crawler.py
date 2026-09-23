@@ -15,6 +15,7 @@ from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storages import RequestQueue
 from trafilatura import extract
 
+
 def _normalize_language(value: str) -> str:
     language = value.strip().lower().replace("_", "-").split("-", 1)[0]
     if len(language) != 2 or not language.isalpha():
