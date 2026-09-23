@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from crawlee import ConcurrencySettings, service_locator
+from crawlee import ConcurrencySettings, Glob, service_locator
 from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.request_loaders import ThrottlingRequestManager
@@ -71,7 +71,7 @@ async def run_crawler(
     if not hostname or urlsplit(start_url).scheme not in {"http", "https"}:
         raise ValueError("start_url must be an absolute HTTP(S) URL")
 
-    scope_id = hashlib.sha256(start_url.rstrip("/").encode("utf-8")).hexdigest()[:12]
+    scope_root = start_url.rstrip("/")\n    scope_glob = Glob(f"{scope_root}/**")\n    scope_id = hashlib.sha256(scope_root.encode("utf-8")).hexdigest()[:12]
     state_file = state_dir / f"{hostname}-{scope_id}.json"
     content_state = _load_state(state_file)
 
