@@ -76,7 +76,7 @@ Crawlee Python / PlaywrightCrawler
   → Markdown
 ```
 
-Python owns no crawler lifecycle itself. Crawlee provides the browser crawler, queue, retries, robots.txt support, concurrency, throttling, and discovery. Its request/storage data is temporary for the duration of a run. Trafilatura provides generic main-content extraction and Markdown conversion.
+Python keeps Crawlee's native crawler lifecycle. On Ctrl+C, DocsSync forwards the interrupt to Crawlee's public `crawler.stop()` API so ongoing requests can finish before shutdown instead of cancelling active Playwright work. Crawlee provides the browser crawler, queue, retries, robots.txt support, concurrency, throttling, and discovery. Its request/storage data is temporary for the duration of a run. Trafilatura provides generic main-content extraction and Markdown conversion.
 
 ### TypeScript
 
@@ -315,6 +315,23 @@ Crawlee's request queues, key-value stores, and other internal operational files
 This intentionally trades persistent request-queue resume for a small durable state surface. If a crawl is interrupted, Markdown already written and manifest entries already saved remain available, but the next run starts with a fresh Crawlee request queue.
 
 Local dependency/cache directories such as `.venv/`, `node_modules/`, and tool caches are not part of the user-facing output.
+
+## Known limitations
+
+### Python Ctrl+C / Playwright shutdown message
+
+The Python engine uses Crawlee's public `crawler.stop()` path for Ctrl+C. Crawlee stops accepting new work, allows ongoing requests to finish, emits its final statistics, and DocsSync preserves already written Markdown and manifest updates.
+
+With the currently pinned Crawlee/Playwright stack, Playwright can still emit this single asyncio message after an otherwise graceful interrupted run:
+
+```text
+Future exception was never retrieved
+Exception: Connection closed while reading from the driver
+```
+
+This is treated as an upstream/library-level shutdown artifact. It does not by itself indicate loss of Markdown or manifest state when Crawlee's final statistics and DocsSync's final `done processed=... saved=... unchanged=...` summary were emitted successfully.
+
+DocsSync intentionally does not suppress this message or replace Crawlee's public shutdown lifecycle with private APIs. Re-test this behavior when Crawlee or Playwright is upgraded and remove this note if the upstream stack no longer emits it.
 
 ## What DocsSync intentionally does not contain
 
