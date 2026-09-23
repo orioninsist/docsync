@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from re import Pattern
 from urllib.parse import urljoin, urlsplit
 
 from crawlee import RequestOptions, RequestTransformAction
@@ -36,6 +37,8 @@ def build_sitemap_request_loader(
     *,
     start_url: str,
     http_client: HttpClient,
+    include: list[Pattern[str]] | None = None,
+    exclude: list[Pattern[str]] | None = None,
     transform_request_function: (
         Callable[[RequestOptions], RequestOptions | RequestTransformAction] | None
     ) = None,
@@ -45,7 +48,9 @@ def build_sitemap_request_loader(
     return SitemapRequestLoader(
         sitemap_urls=sitemap_seed_urls(start_url),
         http_client=http_client,
-        enqueue_strategy="same-hostname",
+        include=include,
+        exclude=exclude,
+        enqueue_strategy="same-origin",
         persist_state_key=SITEMAP_STATE_KEY,
         transform_request_function=transform_request_function,
     )
