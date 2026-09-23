@@ -47,20 +47,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-concurrency", type=_positive, default=2)
     parser.add_argument("--max-requests", type=_positive, default=10_000)
     parser.add_argument("--requests-per-minute", type=_positive, default=20)
-    parser.add_argument(
-        "--refresh-hours",
-        type=int,
-        default=24,
-        help="Skip recently synchronized URLs for this many hours; 0 always checks",
-    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.refresh_hours < 0:
-        raise SystemExit("--refresh-hours cannot be negative")
-
     _ensure_browser()
 
     result = asyncio.run(
@@ -72,7 +63,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_concurrency=args.max_concurrency,
             max_requests=args.max_requests,
             requests_per_minute=args.requests_per_minute,
-            refresh_hours=args.refresh_hours,
         )
     )
 
@@ -80,7 +70,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "done "
         f"processed={result['processed']} "
         f"saved={result['saved']} "
-        f"unchanged={result['unchanged']} "
-        f"skipped={result['skipped']}"
+        f"unchanged={result['unchanged']}"
     )
     return 0
