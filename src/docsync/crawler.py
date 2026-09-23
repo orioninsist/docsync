@@ -14,12 +14,15 @@ from crawlee import (
     ConcurrencySettings,
     RequestOptions,
     RequestTransformAction,
+    service_locator,
 )
 from crawlee.configuration import Configuration
 from crawlee.crawlers import (
     AdaptivePlaywrightCrawler,
     AdaptivePlaywrightCrawlingContext,
 )
+from crawlee.request_loaders import ThrottlingRequestManager
+from crawlee.storages import RequestQueue
 from markdownify import markdownify
 
 _LANGUAGE_SEGMENTS = re.compile(r"/([a-z]{2})(?:[-_][a-z]{2})?(?:/|$)", re.I)
@@ -121,6 +124,14 @@ async def run_crawler(
         storage_dir=str(state_dir / "crawlee" / scope_id),
         purge_on_start=False,
     )
+    service_locator.set_configuration(configuration)
+
+    queue = await RequestQueue.open()
+    request_manager = ThrottlingRequestManager(
+        queue,
+        domains=[hostname],
+        request_manager_opener=RequestQueue.open,
+    )
 
     concurrency = ConcurrencySettings(
         min_concurrency=1,
@@ -131,14 +142,14 @@ async def run_crawler(
 
     crawler = AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(
         configuration=configuration,
+        event_manager=service_locator.get_event_manager(),
+        request_manager=request_manager,
         concurrency_settings=concurrency,
         max_requests_per_crawl=max_requests,
         max_request_retries=2,
         respect_robots_txt_file=True,
         result_checker=_meaningful_result,
     )
-    request_manager = await crawler.get_request_manager()
-
     counters = {"processed": 0, "saved": 0, "unchanged": 0, "skipped": 0}
 
     def transform(options: RequestOptions) -> RequestOptions | RequestTransformAction:
@@ -153,13 +164,15 @@ async def run_crawler(
 
     start = urlsplit(start_url)
     scope_path = start.path.rstrip("/") or "/"
-    origin = rf"{re.escape(start.scheme)}://{re.escape(start.netloc)}"
-    if scope_path == "/":
-        scope_pattern = re.compile(rf"^{origin}(?:/.*)?$")
-    else:
-        scope_pattern = re.compile(
-            rf"^{origin}{re.escape(scope_path)}(?:/.*)?(?:\\?.*)?$"
-        )
+    scope_prefix = f"{start.scheme}://{start.netloc}{scope_path}"
+    scope_pattern = re.compile(rf"^{re.escape(scope_prefix)}(?:/|\\?|$)")
+
+    exclude_patterns: list[re.Pattern[str]] = []
+    if start.hostname == "github.com" and "/wiki" in scope_path:
+        exclude_patterns = [
+            re.compile(r"/_history(?:\\?|$)"),
+            re.compile(r"/[0-9a-f]{40}(?:\\?|$)", re.I),
+        ]
 
     @crawler.router.default_handler
     async def handler(context: AdaptivePlaywrightCrawlingContext) -> None:
@@ -170,6 +183,7 @@ async def run_crawler(
             attribute="href",
             strategy="same-origin",
             include=[scope_pattern],
+            exclude=exclude_patterns,
             transform_request_function=transform,
         )
 
