@@ -21,24 +21,11 @@ from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storages import RequestQueue
 from trafilatura import extract
 
-_LANGUAGE_SEGMENTS = re.compile(r"/([a-z]{2})(?:[-_][a-z]{2})?(?:/|$)", re.I)
-
-
 def _normalize_language(value: str) -> str:
     language = value.strip().lower().replace("_", "-").split("-", 1)[0]
     if len(language) != 2 or not language.isalpha():
         raise ValueError("language must be a two-letter code such as 'en' or 'tr'")
     return language
-
-
-def _url_language(url: str) -> str | None:
-    match = _LANGUAGE_SEGMENTS.search(urlsplit(url).path)
-    return match.group(1).lower() if match else None
-
-
-def _same_language(url: str, language: str) -> bool:
-    detected = _url_language(url)
-    return detected is None or detected == language
 
 
 def _output_path(output_dir: Path, url: str) -> Path:
@@ -137,9 +124,6 @@ async def run_crawler(
 
     def transform(options: RequestOptions) -> RequestOptions | RequestTransformAction:
         url = str(options["url"])
-        if not _same_language(url, language):
-            counters["skipped"] += 1
-            return "skip"
         if _is_fresh(content_state.get(url), refresh_hours):
             counters["skipped"] += 1
             return "skip"
@@ -160,11 +144,6 @@ async def run_crawler(
             transform_request_function=transform,
         )
 
-        html_language = str(await context.page.locator("html").get_attribute("lang") or "")
-        if html_language and _normalize_language(html_language) != language:
-            await context.push_data({"outcome": "skip", "url": context.request.url})
-            return
-
         text = extract(
             await context.page.content(),
             url=context.request.url,
@@ -172,6 +151,7 @@ async def run_crawler(
             include_comments=False,
             include_links=True,
             include_tables=True,
+            target_language=language,
         )
         if not text:
             return
