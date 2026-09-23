@@ -1,15 +1,11 @@
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { promisify } from 'node:util';
-
 import { PlaywrightCrawler, RequestQueue } from 'crawlee';
 
 type Manifest = Record<string, { content_hash: string; filename: string }>;
-
-const execFileAsync = promisify(execFile);
 
 function arg(name: string, fallback?: string): string {
   const index = process.argv.indexOf(name);
@@ -53,12 +49,28 @@ async function saveManifest(file: string, manifest: Manifest): Promise<void> {
 }
 
 async function toGfm(html: string): Promise<string> {
-  const { stdout } = await execFileAsync(
-    'pandoc',
-    ['--from=html', '--to=gfm', '--wrap=none'],
-    { input: html, maxBuffer: 64 * 1024 * 1024 },
-  );
-  return stdout.trim();
+  return new Promise((resolve, reject) => {
+    const process = spawn('pandoc', ['--from=html', '--to=gfm', '--wrap=none']);
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+
+    process.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    process.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    process.on('error', reject);
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(stdout).toString('utf8').trim());
+      } else {
+        reject(
+          new Error(
+            `pandoc exited with code ${code}: ${Buffer.concat(stderr).toString('utf8').trim()}`,
+          ),
+        );
+      }
+    });
+
+    process.stdin.end(html);
+  });
 }
 
 const startUrl = process.argv[2];
