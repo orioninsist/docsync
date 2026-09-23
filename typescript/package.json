@@ -10,6 +10,7 @@
     "@mozilla/readability": "^0.6.0",
     "crawlee": "^3.18.0",
     "franc-min": "^6.2.0",
+    "iso-639-3": "^3.0.1",
     "jsdom": "^27.0.0",
     "playwright": "^1.55.0",
     "turndown": "^7.2.0"
