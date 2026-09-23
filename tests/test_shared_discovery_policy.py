@@ -6,43 +6,31 @@ from typing import cast
 
 from crawlee import RequestOptions
 
-from docsync.crawler import build_scope_pattern, transform_discovered_request
+from docsync.crawler import transform_discovered_request
 
 
-def transform(url: str, *, base_url: str, skip=lambda _url: False) -> RequestOptions | str:
+def transform(url: str, *, skip=lambda _url: False) -> RequestOptions | str:
     return cast(
         RequestOptions | str,
         transform_discovered_request(
-        RequestOptions(url=url),
-        base_url=base_url,
-        scope_pattern=build_scope_pattern(base_url),
+            RequestOptions(url=url),
             should_skip_url=skip,
         ),
     )
 
 
 def test_discovery_policy_normalizes_valid_candidate() -> None:
-    result = transform(
-        "https://example.com/docs/guide#section",
-        base_url="https://example.com/docs/",
-    )
+    result = transform("https://example.com/docs/guide#section")
     assert result != "skip"
     assert cast(RequestOptions, result)["url"] == "https://example.com/docs/guide"
 
 
-def test_discovery_policy_skips_out_of_scope_assets_and_language_urls() -> None:
-    base_url = "https://example.com/docs/"
-    for url in (
-        base_url,
-        "https://example.com/docs/manual.pdf",
-        "https://example.com/outside",
-        "https://other.example/docs/guide",
-        "mailto:docs@example.com",
-        "https://example.com/docs/fr/guide",
-    ):
-        result = transform(
-            url,
-            base_url=base_url,
+def test_discovery_policy_skips_invalid_and_language_urls() -> None:
+    assert transform("mailto:docs@example.com") == "skip"
+    assert (
+        transform(
+            "https://example.com/docs/fr/guide",
             skip=lambda candidate: "/fr/" in candidate,
         )
-        assert result == "skip"
+        == "skip"
+    )
