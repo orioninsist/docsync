@@ -113,11 +113,12 @@ async def run_crawler(
     if not hostname or urlsplit(start_url).scheme not in {"http", "https"}:
         raise ValueError("start_url must be an absolute HTTP(S) URL")
 
-    state_file = state_dir / f"{hostname}_content.json"
+    scope_id = hashlib.sha256(start_url.rstrip("/").encode("utf-8")).hexdigest()[:12]
+    state_file = state_dir / f"{hostname}-{scope_id}.json"
     content_state = _load_state(state_file)
 
     configuration = Configuration(
-        storage_dir=str(state_dir / "crawlee" / hostname),
+        storage_dir=str(state_dir / "crawlee" / scope_id),
         purge_on_start=False,
     )
 
@@ -152,10 +153,13 @@ async def run_crawler(
 
     start = urlsplit(start_url)
     scope_path = start.path.rstrip("/") or "/"
-    scope_pattern = re.compile(
-        rf"^{re.escape(start.scheme)}://{re.escape(start.netloc)}"
-        rf"{re.escape(scope_path)}(?:/.*)?(?:\\?.*)?$"
-    )
+    origin = rf"{re.escape(start.scheme)}://{re.escape(start.netloc)}"
+    if scope_path == "/":
+        scope_pattern = re.compile(rf"^{origin}(?:/.*)?$")
+    else:
+        scope_pattern = re.compile(
+            rf"^{origin}{re.escape(scope_path)}(?:/.*)?(?:\\?.*)?$"
+        )
 
     @crawler.router.default_handler
     async def handler(context: AdaptivePlaywrightCrawlingContext) -> None:
