@@ -62,7 +62,7 @@ docsync URL
 | `--engine` | `python` | Native engine implementation |
 | `--language` | `en` | Two-letter target language such as `en` or `tr` |
 | `--output-dir` | `docs` | Markdown output directory |
-| `--state-dir` | `storage/docsync` | Crawlee storage and DocsSync manifest root |
+| `--state-dir` | `storage/docsync` | Persistent DocsSync manifest directory |
 
 ## Engines
 
@@ -76,7 +76,7 @@ Crawlee Python / PlaywrightCrawler
   → Markdown
 ```
 
-Python owns no crawler lifecycle itself. Crawlee provides the browser crawler, queue, persistence, retries, robots.txt support, concurrency, throttling, and discovery. Trafilatura provides generic main-content extraction and Markdown conversion.
+Python owns no crawler lifecycle itself. Crawlee provides the browser crawler, queue, retries, robots.txt support, concurrency, throttling, and discovery. Its request/storage data is temporary for the duration of a run. Trafilatura provides generic main-content extraction and Markdown conversion.
 
 ### TypeScript
 
@@ -121,7 +121,7 @@ These are intentionally fixed rather than exposed as CLI flags.
 | maximum requests/tasks per minute | `20` |
 | maximum request retries | `2` |
 | respect robots.txt | `true` |
-| purge crawl storage on start | `false` |
+| crawl storage | operating-system temporary directory |
 
 ## Output and state
 
@@ -133,21 +133,29 @@ readable URL-path slug + first 12 characters of SHA-256(URL)
 
 Each engine computes a SHA-256 fingerprint of its extracted Markdown. Existing Markdown is not rewritten when the fingerprint is unchanged.
 
-Engine state is namespaced under the selected `--state-dir` so Python and TypeScript can safely use the same state root:
+Markdown is written incrementally as each document is successfully extracted. Results are not buffered in a Crawlee Dataset until the crawl finishes.
+
+Persistent state is intentionally minimal. Each hostname has one JSON manifest directly under the selected `--state-dir`:
 
 ```text
 STATE_DIR/
-├── python/
-│   └── HOST-SCOPE.json
-├── typescript/
-│   └── HOST-SCOPE.json
-└── crawlee/
-    ├── ... Python crawl storage ...
-    └── typescript/
-        └── ... TypeScript crawl storage ...
+└── developers.openai.com.json
 ```
 
-Crawlee owns crawl/request persistence. DocsSync manifests store only URL → content hash / filename synchronization state.
+The manifest maps each URL to its content hash and Markdown filename:
+
+```json
+{
+  "https://developers.openai.com/example": {
+    "content_hash": "<sha256>",
+    "filename": "example-<url-hash>.md"
+  }
+}
+```
+
+Python and TypeScript use the same manifest format and hostname-based filename. Crawlee's request queues and other operational storage are not persisted under `--state-dir`; they are created in an operating-system temporary directory for the current run and removed when the run exits normally.
+
+Because crawl storage is temporary, DocsSync does not promise request-queue resume after an interrupted process or system restart. Already written Markdown remains durable, and the persistent manifest allows unchanged content to be recognized on later runs.
 
 ## Data flow
 
@@ -220,7 +228,7 @@ uv run docsync URL --engine python|typescript ...
         ├─ converts the result to Markdown
         ├─ fingerprints content and skips unchanged files
         ├─ writes Markdown to --output-dir
-        ├─ persists crawl/manifest state under --state-dir
+        ├─ persists one hostname-named manifest under --state-dir
         └─ prints Crawlee native progress plus the final DocsSync summary
 ```
 
@@ -274,33 +282,39 @@ done processed=N saved=N unchanged=N output=/absolute/output/path state=/absolut
 
 ## Files created at runtime
 
-DocsSync creates two categories of runtime data.
+DocsSync creates durable output/state and temporary crawler working data.
 
 ### Markdown output
 
-The directory passed with `--output-dir` contains the synchronized `.md` files. These are the user-facing documentation files you normally keep, upload, index, or share.
+The directory passed with `--output-dir` contains synchronized `.md` files. A document is written as soon as it is successfully extracted and is new or changed.
 
-### State
+### Persistent state
 
-The directory passed with `--state-dir` contains:
+The directory passed with `--state-dir` contains one JSON manifest per hostname:
 
 ```text
 STATE_DIR/
-├── python/
-│   └── HOST-SCOPE.json
-├── typescript/
-│   └── HOST-SCOPE.json
-└── crawlee/
-    ├── ... Python Crawlee storage ...
-    └── typescript/
-        └── ... TypeScript Crawlee storage ...
+└── HOSTNAME.json
 ```
 
-The engine-specific JSON manifest stores URL → content hash / filename mappings used to skip unchanged Markdown. The `crawlee/` tree is Crawlee's internal persistent request/dataset/storage data used for crawl lifecycle and resume behavior.
+For example:
 
-You do not need to publish or share state files with the Markdown output. They are local operational state. Deleting `--state-dir` forces the next run to rebuild state and behave like a fresh crawl.
+```text
+state/
+└── developers.openai.com.json
+```
 
-There is no separate user-facing "cluster" file. Temporary manifest `.tmp` files are atomic-write intermediates and should not remain after a successful run. Local dependency/cache directories such as `.venv/`, `node_modules/`, and tool caches are not part of the user-facing output.
+The manifest stores URL → content hash / filename mappings used to skip unchanged Markdown. It is written atomically through a short-lived `.tmp` file.
+
+Python and TypeScript share this manifest layout. Running different extraction engines against the same hostname can update the same URL entries because their extracted Markdown can differ.
+
+### Temporary crawl storage
+
+Crawlee's request queues, key-value stores, and other internal operational files live under an operating-system temporary directory such as `/tmp/docsync-...` on Linux. They are working data, not DocsSync's durable state, and are removed when the run exits normally. The operating system may also clean temporary storage.
+
+This intentionally trades persistent request-queue resume for a small durable state surface. If a crawl is interrupted, Markdown already written and manifest entries already saved remain available, but the next run starts with a fresh Crawlee request queue.
+
+Local dependency/cache directories such as `.venv/`, `node_modules/`, and tool caches are not part of the user-facing output.
 
 ## What DocsSync intentionally does not contain
 
