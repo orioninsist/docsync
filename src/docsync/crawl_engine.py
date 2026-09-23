@@ -1,20 +1,16 @@
-"""Shared Crawlee construction for DocsSync crawl workflows."""
+"""Crawlee-native crawler construction for DocsSync."""
 
 from __future__ import annotations
 
 from typing import Any, cast
 
 from crawlee.browsers import BrowserType
-from crawlee.crawlers import (
-    AdaptivePlaywrightCrawler,
-    BeautifulSoupCrawler,
-    PlaywrightCrawler,
-)
-from crawlee.http_clients import HttpClient
+from crawlee.crawlers import AdaptivePlaywrightCrawler, PlaywrightCrawler
 
 from docsync.crawler_runtime import CrawleeRuntime
 
 DEFAULT_MAX_REQUEST_RETRIES = 2
+
 
 def adaptive_result_is_meaningful(result: Any) -> bool:
     """Accept terminal static results while forcing empty content to Playwright."""
@@ -26,6 +22,7 @@ def adaptive_result_is_meaningful(result: Any) -> bool:
             if isinstance(value, dict) and value.get("outcome") != "empty":
                 return True
     return False
+
 
 def _common_crawler_options(
     *,
@@ -47,24 +44,6 @@ def _common_crawler_options(
         "respect_robots_txt_file": respect_robots_txt,
     }
 
-def build_http_crawler(
-    *,
-    runtime: CrawleeRuntime,
-    max_requests: int,
-    respect_robots_txt: bool,
-    http_client: HttpClient | None = None,
-) -> BeautifulSoupCrawler:
-    """Build the canonical HTTP crawler from one shared runtime."""
-
-    crawler_options = _common_crawler_options(
-        runtime=runtime,
-        max_requests=max_requests,
-        respect_robots_txt=respect_robots_txt,
-    )
-    if http_client is not None:
-        crawler_options["http_client"] = http_client
-
-    return BeautifulSoupCrawler(**crawler_options)
 
 def build_adaptive_crawler(
     *,
@@ -90,6 +69,7 @@ def build_adaptive_crawler(
         },
     )
 
+
 def build_playwright_crawler(
     *,
     runtime: CrawleeRuntime,
@@ -111,6 +91,7 @@ def build_playwright_crawler(
         browser_type=browser_type,
     )
 
+
 def build_crawler(
     *,
     mode: str,
@@ -119,14 +100,13 @@ def build_crawler(
     respect_robots_txt: bool,
     headless: bool,
     browser_type: str,
-    http_client: HttpClient | None = None,
-) -> Any:
-    """Build the canonical crawler for an HTTP or Playwright workflow."""
+) -> AdaptivePlaywrightCrawler | PlaywrightCrawler:
+    """Build the canonical Crawlee crawler for the requested DocsSync mode."""
 
     resolved_browser_type = cast(BrowserType, browser_type)
 
-    if mode == "playwright":
-        return build_playwright_crawler(
+    if mode == "http":
+        return build_adaptive_crawler(
             runtime=runtime,
             max_requests=max_requests,
             respect_robots_txt=respect_robots_txt,
@@ -134,16 +114,8 @@ def build_crawler(
             browser_type=resolved_browser_type,
         )
 
-    if mode == "http":
-        if http_client is not None:
-            return build_http_crawler(
-                runtime=runtime,
-                max_requests=max_requests,
-                respect_robots_txt=respect_robots_txt,
-                http_client=http_client,
-            )
-
-        return build_adaptive_crawler(
+    if mode == "playwright":
+        return build_playwright_crawler(
             runtime=runtime,
             max_requests=max_requests,
             respect_robots_txt=respect_robots_txt,
