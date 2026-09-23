@@ -14,17 +14,12 @@ from crawlee import (
     ConcurrencySettings,
     RequestOptions,
     RequestTransformAction,
-    service_locator,
 )
 from crawlee.configuration import Configuration
 from crawlee.crawlers import (
     AdaptivePlaywrightCrawler,
     AdaptivePlaywrightCrawlingContext,
 )
-from crawlee.events import LocalEventManager
-from crawlee.request_loaders import ThrottlingRequestManager
-from crawlee.storage_clients import FileSystemStorageClient
-from crawlee.storages import RequestQueue
 from markdownify import markdownify
 
 _LANGUAGE_SEGMENTS = re.compile(r"/([a-z]{2})(?:[-_][a-z]{2})?(?:/|$)", re.I)
@@ -101,11 +96,10 @@ async def run_crawler(
     output_dir: Path,
     state_dir: Path,
     language: str = "en",
-    max_concurrency: int = 5,
+    max_concurrency: int = 2,
     max_requests: int = 10_000,
-    requests_per_minute: int = 120,
+    requests_per_minute: int = 20,
     refresh_hours: int = 24,
-    headless: bool = True,
 ) -> dict[str, int]:
     """Synchronize one documentation tree using Crawlee's native lifecycle."""
 
@@ -126,17 +120,6 @@ async def run_crawler(
         storage_dir=str(state_dir / "crawlee" / hostname),
         purge_on_start=False,
     )
-    storage_client = FileSystemStorageClient()
-    event_manager = LocalEventManager.from_config(configuration)
-    service_locator.set_configuration(configuration)
-    service_locator.set_storage_client(storage_client)
-    service_locator.set_event_manager(event_manager)
-
-    queue = await RequestQueue.open(
-        name="docsync",
-        storage_client=storage_client,
-        configuration=configuration,
-    )
 
     concurrency = ConcurrencySettings(
         min_concurrency=1,
@@ -145,24 +128,15 @@ async def run_crawler(
         max_tasks_per_minute=requests_per_minute,
     )
 
-    request_manager = ThrottlingRequestManager(
-        inner=queue,
-        domains=[hostname],
-        request_manager_opener=RequestQueue.open,
-    )
-
     crawler = AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(
-        request_manager=request_manager,
-        storage_client=storage_client,
         configuration=configuration,
-        event_manager=event_manager,
         concurrency_settings=concurrency,
         max_requests_per_crawl=max_requests,
         max_request_retries=2,
         respect_robots_txt_file=True,
         result_checker=_meaningful_result,
-        playwright_crawler_specific_kwargs={"headless": headless},
     )
+    request_manager = await crawler.get_request_manager()
 
     counters = {"processed": 0, "saved": 0, "unchanged": 0, "skipped": 0}
 
@@ -178,18 +152,10 @@ async def run_crawler(
 
     start = urlsplit(start_url)
     scope_path = start.path.rstrip("/") or "/"
-
-    def in_scope(url: str) -> bool:
-        parsed = urlsplit(url)
-        return (
-            parsed.scheme in {"http", "https"}
-            and parsed.netloc == start.netloc
-            and (
-                scope_path == "/"
-                or parsed.path == scope_path
-                or parsed.path.startswith(scope_path + "/")
-            )
-        )
+    scope_pattern = re.compile(
+        rf"^{re.escape(start.scheme)}://{re.escape(start.netloc)}"
+        rf"{re.escape(scope_path)}(?:/.*)?(?:\\?.*)?$"
+    )
 
     @crawler.router.default_handler
     async def handler(context: AdaptivePlaywrightCrawlingContext) -> None:
@@ -199,11 +165,8 @@ async def run_crawler(
             selector="a",
             attribute="href",
             strategy="same-origin",
-            transform_request_function=lambda options: (
-                transform(options)
-                if in_scope(str(options["url"]))
-                else "skip"
-            ),
+            include=[scope_pattern],
+            transform_request_function=transform,
         )
 
         html_language = str(soup.html.get("lang", "") if soup.html else "")
