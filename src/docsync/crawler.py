@@ -7,7 +7,6 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlsplit
 
 from crawlee import (
@@ -81,18 +80,6 @@ def _is_fresh(entry: dict[str, str] | None, refresh_hours: int) -> bool:
     return datetime.now(UTC) - saved_at.astimezone(UTC) < timedelta(hours=refresh_hours)
 
 
-def _meaningful_result(result: Any) -> bool:
-    for call in result.push_data_calls:
-        data = call["data"]
-        values = data if isinstance(data, list) else [data]
-        for value in values:
-            if not isinstance(value, dict):
-                continue
-            if value.get("outcome") == "skip" or value.get("markdown"):
-                return True
-    return False
-
-
 async def run_crawler(
     *,
     start_url: str,
@@ -148,7 +135,6 @@ async def run_crawler(
         max_requests_per_crawl=max_requests,
         max_request_retries=2,
         respect_robots_txt_file=True,
-        result_checker=_meaningful_result,
     )
     counters = {"processed": 0, "saved": 0, "unchanged": 0, "skipped": 0}
 
