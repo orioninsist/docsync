@@ -9,7 +9,7 @@ from typing import Any, Final, cast
 from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
-from crawlee import HttpHeaders, RequestOptions
+from crawlee import HttpHeaders, RequestOptions, RequestTransformAction
 from crawlee.crawlers import (
     AdaptivePlaywrightCrawlingContext,
     BasicCrawlingContext,
@@ -85,8 +85,8 @@ def transform_discovered_request(
     base_url: str,
     scope_pattern: Pattern[str],
     should_skip_url: Any,
-) -> RequestOptions | str:
-    """Apply DocsSync policy through Crawlee's native enqueue transform."""
+) -> RequestOptions | RequestTransformAction:
+    """Apply only DocsSync-specific policy to a Crawlee-discovered request."""
 
     try:
         candidate_url = normalize_url(validated_http_url(options["url"]))
@@ -118,7 +118,7 @@ async def discover_and_enqueue_in_scope_links(
         selector="a",
         attribute="href",
         base_url=base_url,
-        strategy="all",
+        strategy="same-origin",
         transform_request_function=lambda options: transform_discovered_request(
             options,
             base_url=base_url,
@@ -242,7 +242,9 @@ async def run_crawler(
         request_timeout_seconds=settings.request_timeout_seconds,
     )
 
-    def transform_sitemap_request(options: RequestOptions) -> RequestOptions | str:
+    def transform_sitemap_request(
+        options: RequestOptions,
+    ) -> RequestOptions | RequestTransformAction:
         url = normalize_url(validated_http_url(options["url"]))
         if (
             scope_pattern.search(url) is None
