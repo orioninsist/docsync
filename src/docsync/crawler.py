@@ -10,9 +10,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from crawlee import ConcurrencySettings, RequestOptions, RequestTransformAction, service_locator
+from crawlee import (
+    ConcurrencySettings,
+    RequestOptions,
+    RequestTransformAction,
+    service_locator,
+)
 from crawlee.configuration import Configuration
-from crawlee.crawlers import AdaptivePlaywrightCrawler, AdaptivePlaywrightCrawlingContext
+from crawlee.crawlers import (
+    AdaptivePlaywrightCrawler,
+    AdaptivePlaywrightCrawlingContext,
+)
 from crawlee.events import LocalEventManager
 from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient
