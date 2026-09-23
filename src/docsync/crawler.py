@@ -79,8 +79,11 @@ def _meaningful_result(result: Any) -> bool:
     for call in result.push_data_calls:
         data = call["data"]
         values = data if isinstance(data, list) else [data]
-        if any(isinstance(value, dict) and value.get("markdown") for value in values):
-            return True
+        for value in values:
+            if not isinstance(value, dict):
+                continue
+            if value.get("outcome") == "skip" or value.get("markdown"):
+                return True
     return False
 
 
