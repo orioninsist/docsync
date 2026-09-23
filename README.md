@@ -216,6 +216,14 @@ Python CLI dispatcher
 
 Development checks use Ruff and mypy for Python and `tsc --noEmit` for TypeScript.
 
+At the end of every successful run, DocsSync adds one compact summary after Crawlee's native progress/statistics output:
+
+```text
+done processed=N saved=N unchanged=N output=/absolute/output/path state=/absolute/state/path
+```
+
+`processed`, `saved`, and `unchanged` summarize the synchronized documents; `output` shows where Markdown was written and `state` shows the local persistent state root. Crawlee's own native progress and statistics remain unchanged.
+
 ## Files created at runtime
 
 DocsSync creates two categories of runtime data.
