@@ -49,7 +49,8 @@ async function loadManifest(file: string): Promise<Manifest> {
 async function saveManifest(file: string, manifest: Manifest): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   const temporary = `${file}.tmp`;
-  await writeFile(temporary, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  await writeFile(temporary, JSON.stringify(manifest, null, 2) + '
+', 'utf8');
   await rename(temporary, file);
 }
 
@@ -94,7 +95,10 @@ const crawler = new PlaywrightCrawler({
   respectRobotsTxtFile: true,
 
   async requestHandler({ request, page, enqueueLinks }) {
-    await enqueueLinks({\n      strategy: 'same-origin',\n      globs: [scopeGlob],\n    });
+    await enqueueLinks({
+      strategy: 'same-origin',
+      globs: [scopeGlob],
+    });
 
     const url = request.loadedUrl ?? request.url;
     const dom = new JSDOM(await page.content(), { url });
@@ -116,11 +120,13 @@ const crawler = new PlaywrightCrawler({
         if (previous?.content_hash === digest) {
           counters.unchanged += 1;
         } else {
-          await writeFile(target, markdown + '\n', 'utf8');
+          await writeFile(target, markdown + '
+', 'utf8');
           counters.saved += 1;
         }
       } catch {
-        await writeFile(target, markdown + '\n', 'utf8');
+        await writeFile(target, markdown + '
+', 'utf8');
         counters.saved += 1;
       }
 
