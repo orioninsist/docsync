@@ -178,6 +178,54 @@ DocsSync uses conservative defaults for documentation crawling rather than maxim
 
 These defaults reduce load and limit accidental over-crawling, but they are not a universal guarantee for every target. DocsSync still performs real HTTP(S) requests and renders pages in Chromium, so target-site rules, rate limits, authentication boundaries, and authorization requirements still apply.
 
+## Tool inventory
+
+This is the complete tool/library inventory used by the project. It is intentionally explicit so the automation can be understood later without reading the source code.
+
+| Tool / library | Engine | Role |
+| --- | --- | --- |
+| Python + `argparse` / `asyncio` / `subprocess` / `pathlib` | dispatcher / Python | CLI parsing, process dispatch, paths, small orchestration glue |
+| uv | both | Python environment, dependency sync, and `docsync` command execution |
+| Crawlee Python | Python | crawler lifecycle, queue, persistence, retries, robots.txt, concurrency, throttling, discovery |
+| Playwright + Chromium | Python | browser runtime and rendered pages |
+| Trafilatura | Python | main-content extraction, Markdown conversion, links/tables, target-language filtering |
+| py3langid | Python | language detector used by Trafilatura |
+| npm | TypeScript | TypeScript dependency/script runner |
+| tsx | TypeScript | executes `typescript/src/index.ts` |
+| Crawlee TypeScript | TypeScript | crawler lifecycle, queue, persistence, retries, robots.txt, concurrency, throttling, discovery |
+| Playwright + Chromium | TypeScript | browser runtime and rendered pages |
+| JSDOM | TypeScript | DOM representation for extracted rendered HTML |
+| Mozilla Readability | TypeScript | main article/content extraction |
+| Turndown | TypeScript | HTML-to-Markdown conversion |
+| turndown-plugin-gfm | TypeScript | GitHub-Flavored Markdown support |
+| franc-min | TypeScript | language detection |
+| iso-639-3 | TypeScript | maps two-letter language input to ISO 639-3 codes used by language detection |
+| SHA-256 (Python `hashlib` / Node `crypto`) | both | stable URL IDs and content fingerprints |
+| JSON/filesystem primitives | both | engine-specific manifest and output-state persistence |
+
+Development-only tools are separate from runtime: Ruff and mypy check the Python code; TypeScript/`tsc --noEmit` checks the TypeScript code.
+
+### What one command automates
+
+```text
+uv run docsync URL --engine python|typescript ...
+        │
+        ├─ prepares the selected runtime when needed
+        ├─ starts the selected native Crawlee engine
+        ├─ opens/render pages through Playwright + Chromium
+        ├─ discovers links inside the start-URL scope
+        ├─ applies the fixed crawl limits and robots.txt policy
+        ├─ extracts the main content with the selected engine's extractor stack
+        ├─ filters for the requested language
+        ├─ converts the result to Markdown
+        ├─ fingerprints content and skips unchanged files
+        ├─ writes Markdown to --output-dir
+        ├─ persists crawl/manifest state under --state-dir
+        └─ prints Crawlee native progress plus the final DocsSync summary
+```
+
+So DocsSync itself is primarily the orchestration/policy layer. Crawling, browser rendering, extraction, Markdown conversion, and language detection are delegated to the established tools above.
+
 ## Toolchain used by each command
 
 Python engine:
