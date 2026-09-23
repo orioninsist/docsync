@@ -10,8 +10,6 @@ from urllib.parse import urlsplit
 
 from crawlee import (
     ConcurrencySettings,
-    RequestOptions,
-    RequestTransformAction,
     service_locator,
 )
 from crawlee.configuration import Configuration
@@ -108,13 +106,11 @@ async def run_crawler(
         max_request_retries=2,
         respect_robots_txt_file=True,
     )
-    counters = {"processed": 0, "saved": 0, "unchanged": 0, "skipped": 0}
+    counters = {"processed": 0, "saved": 0, "unchanged": 0}
 
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
         await context.enqueue_links(
-            selector="a",
-            attribute="href",
             strategy="same-origin",
         )
 
@@ -143,10 +139,6 @@ async def run_crawler(
     async def flush_results() -> None:
         dataset = await crawler.get_dataset()
         async for item in dataset.iterate_items():
-            if item.get("outcome") == "skip":
-                counters["skipped"] += 1
-                continue
-
             url = str(item["url"])
             text = str(item["markdown"])
             digest = str(item["content_hash"])
