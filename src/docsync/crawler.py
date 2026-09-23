@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from crawlee import ConcurrencySettings, RequestOptions, RequestTransformAction
+from crawlee._service_locator import ServiceLocator
 from crawlee.configuration import Configuration
 from crawlee.crawlers import AdaptivePlaywrightCrawler, AdaptivePlaywrightCrawlingContext
 from crawlee.events import LocalEventManager
@@ -137,6 +138,11 @@ async def run_crawler(
         inner=queue,
         domains=[hostname],
         request_manager_opener=RequestQueue.open,
+        service_locator=ServiceLocator(
+            configuration=configuration,
+            event_manager=event_manager,
+            storage_client=storage_client,
+        ),
     )
 
     crawler = AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(
