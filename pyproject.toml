@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "crawlee[playwright]==1.10.1",
     "trafilatura>=2.0,<3",
+    "py3langid==0.3.0",
 ]
 
 [project.scripts]
