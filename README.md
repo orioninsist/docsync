@@ -1,149 +1,46 @@
-# docsync
+# DocsSync
 
-Documentation crawler and incremental Markdown synchronizer built on Crawlee Python 1.10.1.
+DocsSync is a small command-line documentation synchronizer built directly on Crawlee Python.
 
-## Requirements
+It is intentionally thin: Crawlee owns crawling, discovery, request queues, persistence, retries, concurrency, robots.txt handling, and resume behavior. DocsSync adds only documentation-specific policy:
 
-- Python 3.13+
-- uv
-- Playwright browser binaries when browser rendering is used
+- choose a language;
+- save documentation as Markdown;
+- avoid rewriting unchanged content;
+- resume an interrupted crawl through Crawlee's persistent storage.
 
-Install:
+## Usage
 
 ```bash
 uv sync
 uv run playwright install chromium
-```
-
-## Usage
-
-Adaptive HTTP-first crawling:
-
-```bash
 uv run docsync https://example.com/docs
 ```
 
-Explicit browser mode:
+Common options:
 
 ```bash
 uv run docsync https://example.com/docs \
-  --mode playwright \
-  --browser-type chromium
+  --language en \
+  --output-dir ./docs \
+  --state-dir ./storage \
+  --mode http
 ```
 
-Useful options:
+Use `--help` for the complete command-line interface.
 
-```text
---output-dir PATH
---state-dir PATH
---max-concurrency N
---max-requests N
---requests-per-minute N
---language {en,tr}
---refresh-hours N
---force-refresh
---mode {http,playwright}
---show-browser
---browser-type {chromium,firefox,webkit}
-```
+## Modes
 
-Run `uv run docsync --help` for the canonical CLI reference.
+`http` uses Crawlee's native `AdaptivePlaywrightCrawler`: static HTTP parsing is preferred and Crawlee can fall back to Playwright when browser rendering is required.
 
-## Architecture
+`playwright` uses Crawlee's native `PlaywrightCrawler`.
 
-DocsSync keeps crawler responsibilities in Crawlee and owns only project-specific synchronization policy.
+## State
 
-```text
-docsync
-├── Crawlee
-│   ├── persistent FileSystemStorageClient / RequestQueue
-│   ├── ThrottlingRequestManager
-│   ├── concurrency and request-rate limits
-│   ├── retries and robots.txt handling
-│   ├── SitemapRequestLoader
-│   ├── native link enqueue transforms
-│   └── AdaptivePlaywrightCrawler / PlaywrightCrawler
-└── DocsSync policy
-    ├── URL scope and normalization
-    ├── English / Turkish selection
-    ├── Markdown conversion
-    └── incremental URL metadata
-```
+Crawlee owns crawl/request persistence and interrupted-run resume.
 
-`http` uses Crawlee's `AdaptivePlaywrightCrawler` with its BeautifulSoup static parser. Crawlee owns escalation to Playwright when the static result is not meaningful.
+DocsSync stores only documentation synchronization metadata such as content hashes and HTTP validators. That state is used to decide whether already-synchronized content needs to be written again.
 
-`playwright` uses Crawlee's `PlaywrightCrawler` directly.
+## Output
 
-## Persistent state and resume
-
-Use the same `--state-dir` across repeated runs.
-
-```text
-<state-dir>/
-├── <hostname>_url_state.json
-└── crawlee/
-    └── crawl/
-        └── <hostname>/
-            └── ...
-```
-
-Interrupted or otherwise incomplete crawls preserve request storage for resume. A completed crawl may drop its request storage.
-
-The URL-state JSON is DocsSync's incremental metadata store. It records successful saves and HTTP validators used to avoid unnecessary downloads.
-
-```bash
-uv run docsync https://example.com/docs \
-  --output-dir /mnt/local/docs/example/markdown \
-  --state-dir /mnt/local/docs/example/state \
-  --refresh-hours 24
-```
-
-`--force-refresh` bypasses the refresh-window decision.
-
-## Sitemap and discovery
-
-DocsSync uses Crawlee's native `SitemapRequestLoader` and native `enqueue_links` transform path. DocsSync adds only scope, excluded-resource, language, and incremental policy.
-
-## Language policy
-
-Supported target languages are `en` and `tr`. URL language hints provide an early filter; downloaded HTML is then classified before Markdown is saved.
-
-## Project structure
-
-```text
-src/docsync/
-├── __init__.py
-├── __main__.py
-├── cli.py
-├── config.py
-├── crawl_engine.py
-├── crawler.py
-├── crawler_runtime.py
-├── incremental.py
-├── language.py
-├── markdown.py
-├── metrics.py
-├── sitemap.py
-└── url_security.py
-```
-
-Canonical entry points:
-
-```text
-docsync           -> docsync.cli:main
-python -m docsync -> docsync.__main__
-```
-
-## Development
-
-```bash
-uv run pytest -q
-uv run ruff check src tests
-uv run mypy src tests
-```
-
-Tests cover DocsSync product behavior rather than source shape or Crawlee internals.
-
-## License
-
-MIT.
+The interface is plain terminal text. There is no TUI or Rich-based interface.
