@@ -74,7 +74,7 @@ async def run_crawler(
     scope_root = start_url.rstrip("/")
     scope_glob = Glob(f"{scope_root}/**")
     scope_id = hashlib.sha256(scope_root.encode("utf-8")).hexdigest()[:12]
-    state_file = state_dir / f"{hostname}-{scope_id}.json"
+    state_file = state_dir / "python" / f"{hostname}-{scope_id}.json"
     content_state = _load_state(state_file)
 
     configuration = Configuration(
