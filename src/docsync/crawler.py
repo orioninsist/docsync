@@ -448,9 +448,7 @@ async def run_crawler(
         """Apply only the handler results committed by Crawlee's selected renderer."""
 
         dataset = await crawler.get_dataset()
-        page = await dataset.get_data()
-
-        for item in page.items:
+        async for item in dataset.iterate_items():
             outcome = str(item.get("outcome", "document"))
             if outcome == "non_english":
                 record_non_english_page()
