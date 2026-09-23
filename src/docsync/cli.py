@@ -14,13 +14,6 @@ from playwright.sync_api import sync_playwright
 from docsync.crawler import run_crawler
 
 
-def _positive(value: str) -> int:
-    number = int(value)
-    if number < 1:
-        raise argparse.ArgumentTypeError("value must be greater than zero")
-    return number
-
-
 def _ensure_browser() -> None:
     """Install DocsSync's Chromium runtime on first use when it is missing."""
     with sync_playwright() as playwright:
@@ -44,9 +37,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--language", default="en", help="Language code (default: en)")
     parser.add_argument("--output-dir", type=Path, default=Path("docs"))
     parser.add_argument("--state-dir", type=Path, default=Path("storage/docsync"))
-    parser.add_argument("--max-concurrency", type=_positive, default=2)
-    parser.add_argument("--max-requests", type=_positive, default=10_000)
-    parser.add_argument("--requests-per-minute", type=_positive, default=20)
     return parser
 
 
@@ -60,9 +50,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=args.output_dir,
             state_dir=args.state_dir,
             language=args.language,
-            max_concurrency=args.max_concurrency,
-            max_requests=args.max_requests,
-            requests_per_minute=args.requests_per_minute,
+            max_concurrency=2,
+            max_requests=10_000,
+            requests_per_minute=20,
         )
     )
 
