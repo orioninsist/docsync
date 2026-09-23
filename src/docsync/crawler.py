@@ -28,9 +28,11 @@ def _normalize_language(value: str) -> str:
 
 
 def _output_path(output_dir: Path, url: str) -> Path:
-    path = urlsplit(url).path.strip("/") or "index"
-    safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", path).strip("-") or "index"
-    return output_dir / f"{safe}.md"
+    parsed = urlsplit(url)
+    path = parsed.path.strip("/") or "index"
+    slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", path).strip("-") or "index"
+    url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    return output_dir / f"{slug}-{url_hash}.md"
 
 
 def _load_state(path: Path) -> dict[str, dict[str, str]]:
