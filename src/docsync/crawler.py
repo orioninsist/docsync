@@ -82,28 +82,21 @@ def build_scope_pattern(start_url: str) -> Pattern[str]:
 def transform_discovered_request(
     options: RequestOptions,
     *,
-    base_url: str,
-    scope_pattern: Pattern[str],
     should_skip_url: Any,
 ) -> RequestOptions | RequestTransformAction:
-    """Apply only DocsSync-specific policy to a Crawlee-discovered request."""
+    """Normalize a discovered URL and apply DocsSync language policy."""
 
     try:
         candidate_url = normalize_url(validated_http_url(options["url"]))
     except (TypeError, ValueError):
         return "skip"
 
-    if candidate_url == normalize_url(validated_http_url(base_url)):
-        return "skip"
-    if scope_pattern.search(candidate_url) is None:
-        return "skip"
-    if any(pattern.search(candidate_url) for pattern in EXCLUDED_URL_PATTERNS):
-        return "skip"
     if should_skip_url(candidate_url):
         return "skip"
 
     options["url"] = candidate_url
     return options
+
 
 async def discover_and_enqueue_in_scope_links(
     *,
@@ -112,17 +105,17 @@ async def discover_and_enqueue_in_scope_links(
     scope_pattern: Pattern[str],
     should_skip_url: Any,
 ) -> None:
-    """Let Crawlee discover/enqueue links while DocsSync supplies URL policy."""
+    """Delegate discovery and structural filtering to Crawlee."""
 
     await context.enqueue_links(
         selector="a",
         attribute="href",
         base_url=base_url,
         strategy="same-origin",
+        include=[scope_pattern],
+        exclude=list(EXCLUDED_URL_PATTERNS),
         transform_request_function=lambda options: transform_discovered_request(
             options,
-            base_url=base_url,
-            scope_pattern=scope_pattern,
             should_skip_url=should_skip_url,
         ),
     )
@@ -246,11 +239,7 @@ async def run_crawler(
         options: RequestOptions,
     ) -> RequestOptions | RequestTransformAction:
         url = normalize_url(validated_http_url(options["url"]))
-        if (
-            scope_pattern.search(url) is None
-            or language_policy.should_skip_url(url)
-            or any(pattern.search(url) for pattern in EXCLUDED_URL_PATTERNS)
-        ):
+        if language_policy.should_skip_url(url):
             return "skip"
 
         if not filter_incremental_urls(
@@ -269,6 +258,8 @@ async def run_crawler(
     sitemap_loader = build_sitemap_request_loader(
         start_url=normalized_start_url,
         http_client=sitemap_http_client,
+        include=[scope_pattern],
+        exclude=list(EXCLUDED_URL_PATTERNS),
         transform_request_function=transform_sitemap_request,
     )
 
