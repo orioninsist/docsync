@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "crawlee[adaptive-crawler,beautifulsoup,playwright]==1.10.1",
-    "markdownify>=1.2.3",
+    "trafilatura>=2.0,<3",
 ]
 
 [project.scripts]
