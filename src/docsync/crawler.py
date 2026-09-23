@@ -112,6 +112,7 @@ async def run_crawler(
     async def handler(context: PlaywrightCrawlingContext) -> None:
         await context.enqueue_links(
             strategy="same-origin",
+            include=[scope_glob],
         )
 
         text = extract(
