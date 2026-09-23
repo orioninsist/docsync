@@ -94,7 +94,7 @@ const crawler = new PlaywrightCrawler({
   respectRobotsTxtFile: true,
 
   async requestHandler({ request, page, enqueueLinks }) {
-    await enqueueLinks({ strategy: 'same-origin' });
+    await enqueueLinks({\n      strategy: 'same-origin',\n      globs: [scopeGlob],\n    });
 
     const url = request.loadedUrl ?? request.url;
     const dom = new JSDOM(await page.content(), { url });
