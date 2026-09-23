@@ -1,17 +1,15 @@
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 
-import { Readability } from '@mozilla/readability';
 import { PlaywrightCrawler, RequestQueue } from 'crawlee';
-import { franc } from 'franc-min';
-import { iso6393 } from 'iso-639-3';
-import { JSDOM } from 'jsdom';
-import TurndownService from 'turndown';
-import { gfm } from 'turndown-plugin-gfm';
 
 type Manifest = Record<string, { content_hash: string; filename: string }>;
+
+const execFileAsync = promisify(execFile);
 
 function arg(name: string, fallback?: string): string {
   const index = process.argv.indexOf(name);
@@ -54,11 +52,13 @@ async function saveManifest(file: string, manifest: Manifest): Promise<void> {
   await rename(temporary, file);
 }
 
-function languageMatches(text: string, language: string): boolean {
-  const expected = iso6393.find((entry) => entry.iso6391 === language)?.iso6393;
-  if (!expected) throw new Error(`unsupported language code: ${language}`);
-  const detected = franc(text);
-  return detected === 'und' || detected === expected;
+async function toGfm(html: string): Promise<string> {
+  const { stdout } = await execFileAsync(
+    'pandoc',
+    ['--from=html', '--to=gfm', '--wrap=none'],
+    { input: html, maxBuffer: 64 * 1024 * 1024 },
+  );
+  return stdout.trim();
 }
 
 const startUrl = process.argv[2];
@@ -81,15 +81,11 @@ process.env.CRAWLEE_STORAGE_DIR = crawlStorage;
 process.env.CRAWLEE_PURGE_ON_START = 'true';
 
 const manifest = await loadManifest(manifestFile);
-const turndown = new TurndownService();
-turndown.use(gfm);
-
 const counters = { processed: 0, saved: 0, unchanged: 0 };
 let outputWrite = Promise.resolve();
 
 try {
   const queue = await RequestQueue.open('docsync');
-
   const crawler = new PlaywrightCrawler({
     requestQueue: queue,
     minConcurrency: 1,
@@ -100,50 +96,85 @@ try {
     respectRobotsTxtFile: true,
 
     async requestHandler({ request, page, enqueueLinks }) {
-      await enqueueLinks({
-        strategy: 'same-origin',
-        globs: [scopeGlob],
+      await enqueueLinks({ strategy: 'same-origin', globs: [scopeGlob] });
+
+      const pageLanguage = await page.evaluate(
+        () => document.documentElement.lang || '',
+      );
+      if (pageLanguage && normalizeLanguage(pageLanguage) !== language) return;
+
+      const html = await page.evaluate(() => {
+        const mains = [...document.querySelectorAll('main')];
+        if (!mains.length) return null;
+        const main = mains.reduce((best, current) =>
+          (current.textContent?.trim().length ?? 0) >
+          (best.textContent?.trim().length ?? 0)
+            ? current
+            : best,
+        );
+        const root = main.cloneNode(true) as HTMLElement;
+        root
+          .querySelectorAll('script,style,noscript,template,svg,button,nav,aside')
+          .forEach((element) => element.remove());
+        root
+          .querySelectorAll(
+            '.sr-only,[aria-hidden="true"],[role="status"],[role="button"]',
+          )
+          .forEach((element) => element.remove());
+
+        for (const pre of [...root.querySelectorAll('pre')]) {
+          const code = pre.querySelector('code');
+          const language =
+            code?.getAttribute('data-language')?.trim() ||
+            pre.getAttribute('data-language')?.trim() ||
+            [...(code?.classList ?? [])]
+              .find((value) => value.startsWith('language-'))
+              ?.slice(9) ||
+            [...pre.classList]
+              .find((value) => value.startsWith('language-'))
+              ?.slice(9) ||
+            '';
+          const cleanPre = document.createElement('pre');
+          const cleanCode = document.createElement('code');
+          if (language) cleanCode.className = language;
+          cleanCode.textContent = code?.textContent ?? pre.textContent ?? '';
+          cleanPre.appendChild(cleanCode);
+          pre.replaceWith(cleanPre);
+        }
+
+        for (const span of [...root.querySelectorAll('span')]) {
+          span.replaceWith(...span.childNodes);
+        }
+        return root.innerHTML;
       });
+      if (!html) return;
 
-      const url = request.loadedUrl ?? request.url;
-      const dom = new JSDOM(await page.content(), { url });
-      const article = new Readability(dom.window.document).parse();
-      if (!article?.content || !article.textContent?.trim()) return;
-      if (!languageMatches(article.textContent, language)) return;
-
-      const markdown = turndown.turndown(article.content).trim();
+      const markdown = await toGfm(html);
       if (!markdown) return;
 
+      const url = request.loadedUrl ?? request.url;
       outputWrite = outputWrite.then(async () => {
         const digest = sha256(markdown);
         const target = outputPath(outputDir, url);
         const previous = manifest[url];
-        let status: 'saved' | 'unchanged';
-
-        counters.processed += 1;
+        let exists = true;
         try {
           await readFile(target);
-          if (previous?.content_hash === digest) {
-            counters.unchanged += 1;
-            status = 'unchanged';
-          } else {
-            await writeFile(target, markdown + '\n', 'utf8');
-            counters.saved += 1;
-            status = 'saved';
-          }
         } catch {
+          exists = false;
+        }
+
+        counters.processed += 1;
+        if (exists && previous?.content_hash === digest) {
+          counters.unchanged += 1;
+        } else {
           await writeFile(target, markdown + '\n', 'utf8');
           counters.saved += 1;
-          status = 'saved';
         }
 
         manifest[url] = { content_hash: digest, filename: path.basename(target) };
         await saveManifest(manifestFile, manifest);
-        console.log(
-          `docsync [typescript] processed=${counters.processed} saved=${counters.saved} unchanged=${counters.unchanged} status=${status} url=${url}`,
-        );
       });
-
       await outputWrite;
     },
   });
