@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import re
+import signal
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -163,6 +164,18 @@ async def run_crawler(
                     flush=True,
                 )
 
-        await crawler.run([start_url], purge_request_queue=False)
+        loop = asyncio.get_running_loop()
+        previous_sigint_handler = signal.getsignal(signal.SIGINT)
+
+        def stop_crawler() -> None:
+            print("docsync: stopping gracefully...", flush=True)
+            crawler.stop("Interrupted by user.")
+
+        loop.add_signal_handler(signal.SIGINT, stop_crawler)
+        try:
+            await crawler.run([start_url], purge_request_queue=False)
+        finally:
+            loop.remove_signal_handler(signal.SIGINT)
+            signal.signal(signal.SIGINT, previous_sigint_handler)
 
     return counters
