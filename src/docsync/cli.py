@@ -114,6 +114,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "done "
         f"processed={result['processed']} "
         f"saved={result['saved']} "
-        f"unchanged={result['unchanged']}"
+        f"unchanged={result['unchanged']} "
+        f"output={args.output_dir.expanduser().resolve()} "
+        f"state={args.state_dir.expanduser().resolve()}"
     )
     return 0
