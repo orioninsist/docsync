@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 .venv/
+
+# Tool caches
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
@@ -11,11 +13,11 @@ build/
 dist/
 *.egg-info/
 
-# DocsSync runtime
+# DocsSync generated data
 docs/
 storage/
 
-# Editor / OS
+# Editors / OS
 .vscode/
 .idea/
 .DS_Store
