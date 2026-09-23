@@ -1,7 +1,7 @@
 [project]
 name = "docsync"
 version = "0.1.0"
-description = "Thin documentation synchronizer built on Crawlee Python."
+description = "Thin documentation synchronizer with Crawlee, Playwright, and Pandoc GFM."
 readme = "README.md"
 authors = [
     { name = "murat", email = "74824857+orioninsist@users.noreply.github.com" }
@@ -9,8 +9,6 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "crawlee[playwright]==1.10.1",
-    "trafilatura>=2.0,<3",
-    "py3langid==0.3.0",
 ]
 
 [project.scripts]
