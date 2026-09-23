@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
@@ -183,43 +182,6 @@ def record_incremental_skip(
 
     stats.incremental_skipped_urls.add(normalized)
     stats.incremental_skipped = len(stats.incremental_skipped_urls)
-
-
-def filter_incremental_urls(
-    urls: Iterable[str],
-    refresh_hours: int,
-    force_refresh: bool,
-    stats: IncrementalStats,
-    url_state: dict[str, dict[str, str]],
-) -> list[str]:
-    """Normalize, deduplicate, and remove fresh URLs."""
-
-    selected: list[str] = []
-    seen: set[str] = set()
-
-    for url in urls:
-        normalized = normalize_url(url)
-
-        if normalized in seen:
-            continue
-
-        seen.add(normalized)
-
-        if is_recently_saved(
-            normalized,
-            refresh_hours,
-            force_refresh,
-            url_state,
-        ):
-            record_incremental_skip(
-                normalized,
-                stats,
-            )
-            continue
-
-        selected.append(normalized)
-
-    return selected
 
 
 def conditional_request_headers(
