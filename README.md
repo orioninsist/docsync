@@ -21,20 +21,20 @@ DocsSync synchronizes rendered documentation pages to GitHub-Flavored Markdown t
                            │
                   DOM normalization
                            │
-                         Pandoc
+                  html-to-markdown
                            │
                           GFM
                            │
                  Markdown + shared state
 ```
 
-The engine changes only the Crawlee runtime. Both paths use the same document policy: the largest rendered `<main>`, semantic DOM cleanup, canonical code blocks, Pandoc's `gfm` writer, stable filenames, SHA-256 content fingerprints, and the same hostname manifest.
+The engine changes only the Crawlee runtime. Both paths use the same document policy: the largest rendered `<main>`, semantic DOM cleanup, canonical code blocks, html-to-markdown 3.14.3, stable filenames, SHA-256 content fingerprints, and the same hostname manifest.
 
 ## Requirements
 
 - Python 3.10+
 - uv
-- Pandoc
+- html-to-markdown 3.14.3 (Python and Node bindings)
 - Node.js + npm when using the TypeScript engine
 - Chromium through Playwright
 
@@ -90,13 +90,9 @@ docsync URL
 
 Each rendered page is reduced to its largest `<main>` element. Presentation-only elements are removed, heading text is unwrapped from decorative spans, and `<pre>/<code>` blocks are rebuilt from their text content so syntax-highlighting markup and line-number UI cannot leak into Markdown.
 
-Language metadata from `data-language` and `language-*` classes is retained as a canonical code class before conversion. Pandoc then converts the normalized HTML with:
+Language metadata from `data-language`, `syntax`, and existing `language-*` classes is retained as a canonical `language-*` code class before conversion. Both engines then convert the normalized HTML with html-to-markdown 3.14.3.
 
-```text
---from=html --to=gfm --wrap=none
-```
-
-This keeps both Crawlee engines on one Markdown serializer and one content-hash standard.
+The Python engine uses the `html-to-markdown` Python binding and the TypeScript engine uses `@xberg-io/html-to-markdown`. Both are pinned to 3.14.3 so equivalent normalized HTML follows the same Markdown serialization and content-hash standard.
 
 The requested `--language` is compared with the rendered page's HTML language when the page declares one. Pages without a declared HTML language are not discarded solely for lacking that metadata.
 
@@ -186,4 +182,4 @@ Dependency lockfiles are generated from the current manifests by `uv sync` and `
 
 DocsSync intentionally contains no custom browser controller, request frontier, retry engine, rate limiter, robots.txt parser, Markdown parser, site-specific selector set, TUI, or Rich interface.
 
-The project is a small policy layer over Crawlee, Playwright, the browser DOM, and Pandoc.
+The project is a small policy layer over Crawlee, Playwright, the browser DOM, and html-to-markdown.

@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 import re
-import subprocess
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -16,6 +15,7 @@ from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storages import RequestQueue
+from html_to_markdown import convert
 
 NORMALIZE_DOCUMENT = r"""
 () => {
@@ -33,11 +33,12 @@ NORMALIZE_DOCUMENT = r"""
     const language =
       code?.getAttribute('data-language')?.trim() ||
       pre.getAttribute('data-language')?.trim() ||
+      pre.getAttribute('syntax')?.trim() ||
       [...(code?.classList ?? [])].find((value) => value.startsWith('language-'))?.slice(9) ||
       [...pre.classList].find((value) => value.startsWith('language-'))?.slice(9) || '';
     const cleanPre = document.createElement('pre');
     const cleanCode = document.createElement('code');
-    if (language) cleanCode.className = language;
+    if (language) cleanCode.className = `language-${language.toLowerCase()}`;
     cleanCode.textContent = code?.textContent ?? pre.textContent ?? '';
     cleanPre.appendChild(cleanCode);
     pre.replaceWith(cleanPre);
@@ -82,14 +83,8 @@ def _save_state(path: Path, state: dict[str, dict[str, str]]) -> None:
 
 
 def _to_gfm(html: str) -> str:
-    result = subprocess.run(
-        ["pandoc", "--from=html", "--to=gfm", "--wrap=none"],
-        input=html,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    return result.stdout.strip()
+    result = convert(html)
+    return result.content.strip() if result.content else ""
 
 
 async def run_crawler(

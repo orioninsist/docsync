@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { PlaywrightCrawler, RequestQueue } from 'crawlee';
+import { convert } from '@xberg-io/html-to-markdown';
 
 type Manifest = Record<string, { content_hash: string; filename: string }>;
 
@@ -48,29 +48,8 @@ async function saveManifest(file: string, manifest: Manifest): Promise<void> {
   await rename(temporary, file);
 }
 
-async function toGfm(html: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const process = spawn('pandoc', ['--from=html', '--to=gfm', '--wrap=none']);
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-
-    process.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
-    process.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-    process.on('error', reject);
-    process.on('close', (code) => {
-      if (code === 0) {
-        resolve(Buffer.concat(stdout).toString('utf8').trim());
-      } else {
-        reject(
-          new Error(
-            `pandoc exited with code ${code}: ${Buffer.concat(stderr).toString('utf8').trim()}`,
-          ),
-        );
-      }
-    });
-
-    process.stdin.end(html);
-  });
+function toGfm(html: string): string {
+  return convert(html).content?.trim() ?? '';
 }
 
 const startUrl = process.argv[2];
@@ -139,6 +118,7 @@ try {
           const language =
             code?.getAttribute('data-language')?.trim() ||
             pre.getAttribute('data-language')?.trim() ||
+            pre.getAttribute('syntax')?.trim() ||
             [...(code?.classList ?? [])]
               .find((value) => value.startsWith('language-'))
               ?.slice(9) ||
@@ -148,7 +128,7 @@ try {
             '';
           const cleanPre = document.createElement('pre');
           const cleanCode = document.createElement('code');
-          if (language) cleanCode.className = language;
+          if (language) cleanCode.className = `language-${language.toLowerCase()}`;
           cleanCode.textContent = code?.textContent ?? pre.textContent ?? '';
           cleanPre.appendChild(cleanCode);
           pre.replaceWith(cleanPre);
@@ -161,7 +141,7 @@ try {
       });
       if (!html) return;
 
-      const markdown = await toGfm(html);
+      const markdown = toGfm(html);
       if (!markdown) return;
 
       const url = request.loadedUrl ?? request.url;
