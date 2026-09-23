@@ -48,24 +48,26 @@ def _run_typescript(
             check=True,
         )
 
-    completed = subprocess.run(
-        [
-            "npm",
-            "run",
-            "docsync",
-            "--",
-            url,
-            "--language",
-            language,
-            "--output-dir",
-            str(output_dir),
-            "--state-dir",
-            str(state_dir),
-        ],
-        cwd=engine_dir,
-        check=False,
-    )
-    return completed.returncode
+    command = [
+        "npm",
+        "run",
+        "docsync",
+        "--",
+        url,
+        "--language",
+        language,
+        "--output-dir",
+        str(output_dir),
+        "--state-dir",
+        str(state_dir),
+    ]
+    previous_sigint_handler = signal.getsignal(signal.SIGINT)
+    process = subprocess.Popen(command, cwd=engine_dir)
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        return process.wait()
+    finally:
+        signal.signal(signal.SIGINT, previous_sigint_handler)
 
 
 def build_parser() -> argparse.ArgumentParser:
