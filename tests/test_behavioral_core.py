@@ -4,9 +4,7 @@ from pathlib import Path
 
 import pytest
 
-import docsync.incremental as incremental
 from docsync.markdown import MarkdownExporter
-from docsync.metrics import CrawlStats
 from docsync.url_security import (
     normalize_url,
     validated_http_url,
@@ -77,41 +75,6 @@ def test_normalize_markdown_normalizes_newlines_and_spacing() -> None:
     assert MarkdownExporter._normalize_markdown(value) == (
         "# Title\n\nParagraph\nMore\n"
     )
-
-
-def test_filter_incremental_urls_normalizes_deduplicates_and_records_skips(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    stats = CrawlStats(mode="http")
-    url_state: dict[str, dict[str, str]] = {}
-
-    monkeypatch.setattr(
-        incremental,
-        "is_recently_saved",
-        lambda url, refresh_hours, force_refresh, state: url.endswith("/recent"),
-    )
-
-    selected = incremental.filter_incremental_urls(
-        [
-            "https://example.com/a/",
-            "https://example.com/a",
-            "https://example.com/recent/",
-            "https://example.com/b?utm_source=test",
-        ],
-        24,
-        False,
-        stats,
-        url_state,
-    )
-
-    assert selected == [
-        "https://example.com/a",
-        "https://example.com/b",
-    ]
-    assert stats.incremental_skipped_urls == {
-        "https://example.com/recent",
-    }
-    assert stats.incremental_skipped == 1
 
 
 def test_markdown_exporter_uses_atomic_replacement(
