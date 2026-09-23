@@ -1,46 +1,39 @@
 # DocsSync
 
-DocsSync is a small command-line documentation synchronizer built directly on Crawlee Python.
+DocsSync is a thin command-line documentation synchronizer built on Crawlee Python and Trafilatura.
 
-It is intentionally thin: Crawlee owns crawling, discovery, request queues, persistence, retries, concurrency, robots.txt handling, and resume behavior. DocsSync adds only documentation-specific policy:
+DocsSync does not implement its own crawling or extraction framework. Crawlee owns browser crawling, link discovery, request queues, persistence, retries, concurrency, throttling, robots.txt handling, and interrupted-run resume. Trafilatura owns main-content extraction, Markdown conversion, links, tables, and target-language filtering.
 
-- choose a language;
-- save documentation as Markdown;
-- avoid rewriting unchanged content;
-- resume an interrupted crawl through Crawlee's persistent storage.
+DocsSync adds only small product policy: stable Markdown filenames and content fingerprints so unchanged documents are not rewritten.
 
 ## Usage
 
 ```bash
 uv sync
-uv run playwright install chromium
-uv run docsync https://example.com/docs
+uv run docsync https://example.com/docs --language en
 ```
 
-Common options:
+Chromium is installed automatically on first use when the Playwright runtime is missing.
+
+Optional paths:
 
 ```bash
 uv run docsync https://example.com/docs \
   --language en \
   --output-dir ./docs \
-  --state-dir ./storage \
-  --mode http
+  --state-dir ./storage/docsync
 ```
 
 Use `--help` for the complete command-line interface.
 
-## Modes
+## Behavior
 
-`http` uses Crawlee's native `AdaptivePlaywrightCrawler`: static HTTP parsing is preferred and Crawlee can fall back to Playwright when browser rendering is required.
+DocsSync uses Crawlee's native `PlaywrightCrawler` and follows same-origin links. Crawl state is persisted by Crawlee so interrupted work can resume.
 
-`playwright` uses Crawlee's native `PlaywrightCrawler`.
+Rendered HTML is passed directly to Trafilatura. Trafilatura extracts the main content, filters for the requested language, and produces Markdown.
 
-## State
-
-Crawlee owns crawl/request persistence and interrupted-run resume.
-
-DocsSync stores only documentation synchronization metadata such as content hashes and HTTP validators. That state is used to decide whether already-synchronized content needs to be written again.
+DocsSync stores a SHA-256 content fingerprint for each URL. Unchanged Markdown is not rewritten; changed content updates the existing stable file for that URL.
 
 ## Output
 
-The interface is plain terminal text. There is no TUI or Rich-based interface.
+The output is plain Markdown files and plain terminal text. There is no TUI, Rich interface, site-specific selector configuration, or custom crawler engine.
