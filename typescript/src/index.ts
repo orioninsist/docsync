@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 import { Readability } from '@mozilla/readability';
@@ -70,77 +71,81 @@ const hostname = new URL(startUrl).hostname;
 const scopeRoot = startUrl.replace(/\/+$/, '');
 const scopeGlob = `${scopeRoot}/**`;
 const scopeId = sha256(scopeRoot).slice(0, 12);
-const manifestFile = path.join(stateDir, 'typescript', `${hostname}-${scopeId}.json`);
+const manifestFile = path.join(stateDir, `${hostname}.json`);
 
 await mkdir(outputDir, { recursive: true });
 await mkdir(stateDir, { recursive: true });
 
-process.env.CRAWLEE_STORAGE_DIR = path.join(stateDir, 'crawlee', 'typescript', scopeId);
-process.env.CRAWLEE_PURGE_ON_START = 'false';
+const crawlStorage = await mkdtemp(path.join(os.tmpdir(), `docsync-${scopeId}-`));
+process.env.CRAWLEE_STORAGE_DIR = crawlStorage;
+process.env.CRAWLEE_PURGE_ON_START = 'true';
 
 const manifest = await loadManifest(manifestFile);
-const queue = await RequestQueue.open('docsync');
 const turndown = new TurndownService();
 turndown.use(gfm);
 
 const counters = { processed: 0, saved: 0, unchanged: 0 };
 let outputWrite = Promise.resolve();
 
-const crawler = new PlaywrightCrawler({
-  requestQueue: queue,
-  minConcurrency: 1,
-  maxConcurrency: 2,
-  maxRequestsPerMinute: 20,
-  maxRequestsPerCrawl: 10_000,
-  maxRequestRetries: 2,
-  respectRobotsTxtFile: true,
+try {
+  const queue = await RequestQueue.open('docsync');
 
-  async requestHandler({ request, page, enqueueLinks }) {
-    await enqueueLinks({
-      strategy: 'same-origin',
-      globs: [scopeGlob],
-    });
+  const crawler = new PlaywrightCrawler({
+    requestQueue: queue,
+    minConcurrency: 1,
+    maxConcurrency: 2,
+    maxRequestsPerMinute: 20,
+    maxRequestsPerCrawl: 10_000,
+    maxRequestRetries: 2,
+    respectRobotsTxtFile: true,
 
-    const url = request.loadedUrl ?? request.url;
-    const dom = new JSDOM(await page.content(), { url });
-    const article = new Readability(dom.window.document).parse();
-    if (!article?.content || !article.textContent?.trim()) return;
-    if (!languageMatches(article.textContent, language)) return;
+    async requestHandler({ request, page, enqueueLinks }) {
+      await enqueueLinks({
+        strategy: 'same-origin',
+        globs: [scopeGlob],
+      });
 
-    const markdown = turndown.turndown(article.content).trim();
-    if (!markdown) return;
+      const url = request.loadedUrl ?? request.url;
+      const dom = new JSDOM(await page.content(), { url });
+      const article = new Readability(dom.window.document).parse();
+      if (!article?.content || !article.textContent?.trim()) return;
+      if (!languageMatches(article.textContent, language)) return;
 
-    outputWrite = outputWrite.then(async () => {
-      const digest = sha256(markdown);
-      const target = outputPath(outputDir, url);
-      const previous = manifest[url];
+      const markdown = turndown.turndown(article.content).trim();
+      if (!markdown) return;
 
-      counters.processed += 1;
-      try {
-        await readFile(target);
-        if (previous?.content_hash === digest) {
-          counters.unchanged += 1;
-        } else {
+      outputWrite = outputWrite.then(async () => {
+        const digest = sha256(markdown);
+        const target = outputPath(outputDir, url);
+        const previous = manifest[url];
+
+        counters.processed += 1;
+        try {
+          await readFile(target);
+          if (previous?.content_hash === digest) {
+            counters.unchanged += 1;
+          } else {
+            await writeFile(target, markdown + '\n', 'utf8');
+            counters.saved += 1;
+          }
+        } catch {
           await writeFile(target, markdown + '\n', 'utf8');
           counters.saved += 1;
         }
-      } catch {
-        await writeFile(target, markdown + '\n', 'utf8');
-        counters.saved += 1;
-      }
 
-      manifest[url] = { content_hash: digest, filename: path.basename(target) };
-      await saveManifest(manifestFile, manifest);
-    });
+        manifest[url] = { content_hash: digest, filename: path.basename(target) };
+        await saveManifest(manifestFile, manifest);
+      });
 
-    await outputWrite;
-  },
-});
+      await outputWrite;
+    },
+  });
 
-await crawler.run([startUrl]);
-await outputWrite;
-
-if (await queue.isFinished()) await queue.drop();
+  await crawler.run([startUrl]);
+  await outputWrite;
+} finally {
+  await rm(crawlStorage, { recursive: true, force: true });
+}
 
 console.log(
   `done processed=${counters.processed} saved=${counters.saved} unchanged=${counters.unchanged} output=${outputDir} state=${stateDir}`,
