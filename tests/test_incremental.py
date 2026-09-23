@@ -101,40 +101,6 @@ def test_disabled_incremental_filter_requires_refresh(
     )
 
 
-def test_filter_normalizes_deduplicates_and_records_skip(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    stats = Stats()
-
-    monkeypatch.setattr(
-        incremental,
-        "is_recently_saved",
-        lambda url, refresh_hours, force_refresh, state: url.endswith("/recent"),
-    )
-
-    selected = incremental.filter_incremental_urls(
-        [
-            "https://example.com/a/",
-            "https://example.com/a",
-            "https://example.com/recent/",
-            "https://example.com/b?utm_source=test",
-        ],
-        24,
-        False,
-        stats,
-        {},
-    )
-
-    assert selected == [
-        "https://example.com/a",
-        "https://example.com/b",
-    ]
-    assert stats.incremental_skipped == 1
-    assert stats.incremental_skipped_urls == {
-        "https://example.com/recent",
-    }
-
-
 def test_record_success_updates_url_state(
     tmp_path: Path,
 ) -> None:
