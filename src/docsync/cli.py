@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import signal
 import subprocess
 import sys
 from collections.abc import Sequence
