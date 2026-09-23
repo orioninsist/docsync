@@ -1,540 +1,210 @@
-"""Core Crawlee crawler implementation for docsync."""
+"""Thin DocsSync policy on top of Crawlee Python."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from re import Pattern
-from typing import Any, Final, cast
+from typing import Any
 from urllib.parse import urlsplit
 
-from bs4 import BeautifulSoup
-from crawlee import HttpHeaders, RequestOptions, RequestTransformAction
-from crawlee.crawlers import (
-    AdaptivePlaywrightCrawlingContext,
-    BasicCrawlingContext,
-    BeautifulSoupCrawlingContext,
-    PlaywrightCrawlingContext,
-)
-from crawlee.errors import ContextPipelineInterruptedError
-from crawlee.http_clients import ImpitHttpClient
+from crawlee import ConcurrencySettings, RequestOptions, RequestTransformAction
+from crawlee.configuration import Configuration
+from crawlee.crawlers import AdaptivePlaywrightCrawler, AdaptivePlaywrightCrawlingContext
+from crawlee.events import LocalEventManager
+from crawlee.storage_clients import FileSystemStorageClient
+from crawlee.storages import RequestQueue
+from markdownify import markdownify
 
-from docsync.config import Settings
-from docsync.crawl_engine import build_crawler
-from docsync.crawler_runtime import build_crawlee_runtime
-from docsync.incremental import (
-    conditional_request_headers,
-    content_is_unchanged,
-    is_recently_saved,
-    load_url_state,
-    record_incremental_skip,
-    record_incremental_success,
-    response_validators,
-    save_url_state,
-)
-from docsync.language import EnglishPageDetector, LanguagePolicy
-from docsync.markdown import MarkdownDocument, MarkdownExporter
-from docsync.metrics import CrawlStats
-from docsync.sitemap import build_sitemap_request_loader, clear_sitemap_state
-from docsync.url_security import normalize_url, validated_http_url
+_LANGUAGE_SEGMENTS = re.compile(r"/([a-z]{2})(?:[-_][a-z]{2})?(?:/|$)", re.I)
 
-EXCLUDED_URL_PATTERNS: Final[tuple[Pattern[str], ...]] = (
-    re.compile(
-        r"\.(?:"
-        r"7z|avi|css|csv|doc|docx|gif|gz|ico|jpe?g|json|m4a|mov|"
-        r"mp3|mp4|mpeg|mpg|pdf|png|ppt|pptx|rar|rss|svg|tar|tgz|"
-        r"txt|wav|webm|webp|woff2?|xls|xlsx|xml|zip"
-        r")(?:[?#].*)?$",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"/(?:login|signin|signup|cart|checkout)(?:/|$|[?#])",
-        re.IGNORECASE,
-    ),
-)
 
-def normalize_start_url(start_url: str) -> str:
-    """Normalize and validate the starting URL."""
+def _normalize_language(value: str) -> str:
+    language = value.strip().lower().replace("_", "-").split("-", 1)[0]
+    if len(language) != 2 or not language.isalpha():
+        raise ValueError("language must be a two-letter code such as 'en' or 'tr'")
+    return language
 
-    validated: str = validated_http_url(start_url)
-    normalized: str = normalize_url(validated)
-    return normalized
 
-def build_scope_pattern(start_url: str) -> Pattern[str]:
-    """Build a regex restricted to the start URL origin and path tree."""
-    parsed_url = urlsplit(normalize_start_url(start_url))
-    origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
-    path = parsed_url.path
+def _url_language(url: str) -> str | None:
+    match = _LANGUAGE_SEGMENTS.search(urlsplit(url).path)
+    return match.group(1).lower() if match else None
 
-    if path == "/":
-        expression = rf"^{re.escape(origin)}/"
-    elif path.endswith("/"):
-        expression = rf"^{re.escape(origin)}{re.escape(path)}"
-    else:
-        expression = (
-            rf"^{re.escape(origin)}"
-            rf"{re.escape(path)}"
-            rf"(?:/|$)"
-        )
 
-    return re.compile(expression, re.IGNORECASE)
+def _same_language(url: str, language: str) -> bool:
+    detected = _url_language(url)
+    return detected is None or detected == language
 
-def transform_discovered_request(
-    options: RequestOptions,
-    *,
-    should_skip_url: Any,
-) -> RequestOptions | RequestTransformAction:
-    """Normalize a discovered URL and apply DocsSync language policy."""
 
+def _output_path(output_dir: Path, url: str) -> Path:
+    path = urlsplit(url).path.strip("/") or "index"
+    safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", path).strip("-") or "index"
+    return output_dir / f"{safe}.md"
+
+
+def _load_state(path: Path) -> dict[str, dict[str, str]]:
     try:
-        candidate_url = normalize_url(validated_http_url(options["url"]))
-    except (TypeError, ValueError):
-        return "skip"
-
-    if should_skip_url(candidate_url):
-        return "skip"
-
-    options["url"] = candidate_url
-    return options
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
-async def discover_and_enqueue_in_scope_links(
-    *,
-    context: Any,
-    base_url: str,
-    scope_pattern: Pattern[str],
-    should_skip_url: Any,
-) -> None:
-    """Delegate discovery and structural filtering to Crawlee."""
-
-    await context.enqueue_links(
-        selector="a",
-        attribute="href",
-        base_url=base_url,
-        strategy="same-origin",
-        include=[scope_pattern],
-        exclude=list(EXCLUDED_URL_PATTERNS),
-        transform_request_function=lambda options: transform_discovered_request(
-            options,
-            should_skip_url=should_skip_url,
-        ),
+def _save_state(path: Path, state: dict[str, dict[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
     )
+    temporary.replace(path)
+
+
+def _is_fresh(entry: dict[str, str] | None, refresh_hours: int) -> bool:
+    if not entry or refresh_hours == 0:
+        return False
+    try:
+        saved_at = datetime.fromisoformat(entry["saved_at"])
+    except (KeyError, ValueError):
+        return False
+    if saved_at.tzinfo is None:
+        saved_at = saved_at.replace(tzinfo=UTC)
+    return datetime.now(UTC) - saved_at.astimezone(UTC) < timedelta(hours=refresh_hours)
+
+
+def _meaningful_result(result: Any) -> bool:
+    for call in result.push_data_calls:
+        data = call["data"]
+        values = data if isinstance(data, list) else [data]
+        if any(isinstance(value, dict) and value.get("markdown") for value in values):
+            return True
+    return False
+
 
 async def run_crawler(
+    *,
     start_url: str,
-    output_dir: str | Path | None = None,
-    state_dir: str | Path | None = None,
-    max_concurrency: int | None = None,
-    max_requests: int | None = None,
-    language: str | None = None,
-    refresh_hours: int | None = None,
-    force_refresh: bool | None = None,
-    mode: str | None = None,
-    headless: bool | None = None,
-    browser_type: str | None = None,
-) -> CrawlStats:
-    """Crawl HTML pages and synchronize Markdown output."""
-    settings = Settings.from_environment()
+    output_dir: Path,
+    state_dir: Path,
+    language: str = "en",
+    max_concurrency: int = 5,
+    max_requests: int = 10_000,
+    requests_per_minute: int = 120,
+    refresh_hours: int = 24,
+    headless: bool = True,
+) -> dict[str, int]:
+    """Synchronize one documentation tree using Crawlee's native lifecycle."""
 
-    resolved_refresh_hours = (
-        refresh_hours if refresh_hours is not None else settings.refresh_hours
-    )
-    resolved_force_refresh = (
-        force_refresh if force_refresh is not None else settings.force_refresh
-    )
-    resolved_mode = mode.strip().lower() if mode is not None else settings.mode
-    resolved_headless = headless if headless is not None else settings.headless
-    resolved_browser_type = (
-        browser_type.strip().lower()
-        if browser_type is not None
-        else settings.browser_type
-    )
+    language = _normalize_language(language)
+    output_dir = output_dir.expanduser().resolve()
+    state_dir = state_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    state_dir.mkdir(parents=True, exist_ok=True)
 
-    if not 0 <= resolved_refresh_hours <= 8760:
-        raise ValueError("refresh_hours must be between 0 and 8760.")
+    hostname = urlsplit(start_url).hostname
+    if not hostname or urlsplit(start_url).scheme not in {"http", "https"}:
+        raise ValueError("start_url must be an absolute HTTP(S) URL")
 
-    if resolved_mode not in {
-        "http",
-        "playwright",
-    }:
-        raise ValueError("mode must be 'http' or 'playwright'.")
+    state_file = state_dir / f"{hostname}_content.json"
+    content_state = _load_state(state_file)
 
-    if resolved_browser_type not in {
-        "chromium",
-        "firefox",
-        "webkit",
-    }:
-        raise ValueError("browser_type must be chromium, firefox, or webkit.")
-
-    resolved_output_dir = (
-        Path(output_dir).expanduser().resolve()
-        if output_dir is not None
-        else settings.output_dir.resolve()
+    configuration = Configuration(
+        storage_dir=str(state_dir / "crawlee" / hostname),
+        purge_on_start=False,
     )
-    resolved_state_dir = (
-        Path(state_dir).expanduser().resolve()
-        if state_dir is not None
-        else settings.state_dir.resolve()
-    )
-    resolved_max_concurrency = (
-        max_concurrency if max_concurrency is not None else settings.max_concurrency
-    )
-    resolved_max_requests = (
-        max_requests if max_requests is not None else settings.max_requests
-    )
-    resolved_language = (
-        language.strip().lower() if language is not None else settings.language
+    storage_client = FileSystemStorageClient()
+    event_manager = LocalEventManager.from_config(configuration)
+    queue = await RequestQueue.open(
+        name="docsync",
+        storage_client=storage_client,
+        configuration=configuration,
     )
 
-    if resolved_max_concurrency <= 0:
-        raise ValueError("max_concurrency must be greater than zero")
-
-    if resolved_max_requests <= 0:
-        raise ValueError("max_requests must be greater than zero")
-
-    if resolved_language not in {"en", "tr"}:
-        raise ValueError("language must be 'en' or 'tr'.")
-
-    resolved_output_dir.mkdir(parents=True, exist_ok=True)
-    resolved_state_dir.mkdir(parents=True, exist_ok=True)
-
-    stats = CrawlStats(mode=resolved_mode)
-
-    def record_non_english_page() -> None:
-        """Record one successfully handled non-English page."""
-
-        stats.non_english = stats.non_english + 1
-        stats.processed = stats.processed + 1
-
-    normalized_start_url = normalize_start_url(start_url)
-    start_hostname = urlsplit(normalized_start_url).hostname
-
-    if not start_hostname:
-        raise ValueError(
-            f"Unable to determine hostname from start URL: {normalized_start_url}"
-        )
-
-    url_state = load_url_state(
-        resolved_state_dir,
-        start_hostname,
+    concurrency = ConcurrencySettings(
+        min_concurrency=1,
+        desired_concurrency=max_concurrency,
+        max_concurrency=max_concurrency,
+        max_tasks_per_minute=requests_per_minute,
     )
 
-    markdown_exporter = MarkdownExporter(resolved_output_dir)
-    language_detector = EnglishPageDetector()
-    language_policy = LanguagePolicy(resolved_language)
-
-    if language_policy.should_skip_url(normalized_start_url):
-        raise ValueError("The start URL language does not match requested language.")
-    scope_pattern = build_scope_pattern(normalized_start_url)
-
-    runtime = await build_crawlee_runtime(
-        hostname=start_hostname,
-        storage_dir=resolved_state_dir / "crawlee" / "crawl" / start_hostname,
-        max_concurrency=resolved_max_concurrency,
-        requests_per_minute=settings.requests_per_minute,
-        request_timeout_seconds=settings.request_timeout_seconds,
+    crawler = AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(
+        request_manager=queue,
+        storage_client=storage_client,
+        configuration=configuration,
+        event_manager=event_manager,
+        concurrency_settings=concurrency,
+        max_requests_per_crawl=max_requests,
+        max_request_retries=2,
+        respect_robots_txt_file=True,
+        result_checker=_meaningful_result,
+        playwright_crawler_specific_kwargs={"headless": headless},
     )
 
-    def transform_sitemap_request(
-        options: RequestOptions,
-    ) -> RequestOptions | RequestTransformAction:
-        url = normalize_url(validated_http_url(options["url"]))
-        if language_policy.should_skip_url(url):
+    counters = {"processed": 0, "saved": 0, "unchanged": 0, "skipped": 0}
+
+    def transform(options: RequestOptions) -> RequestOptions | RequestTransformAction:
+        url = str(options["url"])
+        if not _same_language(url, language):
+            counters["skipped"] += 1
             return "skip"
-
-        if is_recently_saved(
-            url,
-            resolved_refresh_hours,
-            resolved_force_refresh,
-            url_state,
-        ):
-            record_incremental_skip(url, stats)
+        if _is_fresh(content_state.get(url), refresh_hours):
+            counters["skipped"] += 1
             return "skip"
-
-        options["url"] = url
         return options
 
-    sitemap_http_client = ImpitHttpClient()
-    sitemap_loader = build_sitemap_request_loader(
-        start_url=normalized_start_url,
-        http_client=sitemap_http_client,
-        include=[scope_pattern],
-        exclude=list(EXCLUDED_URL_PATTERNS),
-        transform_request_function=transform_sitemap_request,
-    )
-
-    crawler = build_crawler(
-        mode=resolved_mode,
-        runtime=runtime,
-        max_requests=resolved_max_requests,
-        respect_robots_txt=settings.respect_robots_txt,
-        headless=resolved_headless,
-        browser_type=resolved_browser_type,
-    )
-
-    pending_http_validators: dict[str, tuple[str, str]] = {}
-
-    if resolved_mode == "http":
-
-        async def add_incremental_validators(context: BasicCrawlingContext) -> None:
-            headers = conditional_request_headers(
-                url=context.request.url,
-                url_state=url_state,
-                force_refresh=resolved_force_refresh,
-            )
-            if not headers:
-                return
-
-            existing_headers = context.request.headers or HttpHeaders()
-            context.request.headers = HttpHeaders(
-                {
-                    **dict(existing_headers),
-                    **headers,
-                }
-            )
-
-        async def handle_incremental_response(context: Any) -> None:
-            normalized_url = normalize_url(context.request.url)
-            status_code = context.http_response.status_code
-
-            if status_code == 304:
-                record_incremental_skip(normalized_url, stats)
-                raise ContextPipelineInterruptedError(f"Not modified: {normalized_url}")
-
-            pending_http_validators[normalized_url] = response_validators(
-                context.http_response.headers
-            )
-
-        crawler.pre_navigation_hook(add_incremental_validators)
-        crawler.post_navigation_hook(handle_incremental_response)
-
     @crawler.router.default_handler
-    async def request_handler(
-        context: (
-        AdaptivePlaywrightCrawlingContext
-        | BeautifulSoupCrawlingContext
-        | PlaywrightCrawlingContext
-        ),
-    ) -> None:
+    async def handler(context: AdaptivePlaywrightCrawlingContext) -> None:
+        soup = await context.parse_with_static_parser()
 
-        if resolved_mode == "playwright":
-            playwright_context = cast(Any, context)
-            html = await playwright_context.page.content()
-            soup = BeautifulSoup(html, "lxml")
-            effective_url = str(playwright_context.page.url)
+        await context.enqueue_links(
+            selector="a",
+            attribute="href",
+            strategy="same-origin",
+            transform_request_function=transform,
+        )
+
+        html_language = str(soup.html.get("lang", "") if soup.html else "")
+        if html_language and _normalize_language(html_language) != language:
+            counters["skipped"] += 1
+            return
+
+        for element in soup.select("script, style, nav, footer, noscript"):
+            element.decompose()
+
+        main = soup.select_one("main, article, [role=main]") or soup.body or soup
+        text = markdownify(str(main), heading_style="ATX").strip()
+        if not text:
+            return
+
+        url = context.request.url
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        previous = content_state.get(url, {})
+        target = _output_path(output_dir, url)
+
+        counters["processed"] += 1
+        if previous.get("content_hash") == digest and target.exists():
+            counters["unchanged"] += 1
         else:
-            adaptive_context = cast(Any, context)
-            soup = await adaptive_context.parse_with_static_parser()
-            html = str(soup)
-            effective_url = str(
-                getattr(context.request, "loaded_url", None)
-                or context.request.url
-            )
+            target.write_text(text + "\n", encoding="utf-8")
+            counters["saved"] += 1
 
-        try:
-            normalized_effective_url = normalize_url(
-                validated_http_url(effective_url)
-            )
-        except (TypeError, ValueError):
-            return
+        content_state[url] = {
+            "content_hash": digest,
+            "saved_at": datetime.now(UTC).isoformat(),
+            "filename": target.name,
+        }
+        _save_state(state_file, content_state)
 
-        if scope_pattern.search(normalized_effective_url) is None:
-            context.log.warning(
-                "Redirected outside crawl scope; skipping content: %s",
-                effective_url,
-            )
-            return
+        await context.push_data({"url": url, "markdown": text})
 
-        await discover_and_enqueue_in_scope_links(
-            context=cast(Any, context),
-            base_url=effective_url,
-            scope_pattern=scope_pattern,
-            should_skip_url=language_policy.should_skip_url,
-        )
-        content_language = None
-        if resolved_mode == "http":
-            content_language = cast(Any, context).http_response.headers.get(
-                "content-language"
-            )
-
-        language_decision = language_detector.detect_from_html(
-            url=effective_url,
-            html=html,
-            content_language=content_language,
-        )
-        if not language_policy.accepts(language_decision) and language_decision.source not in {
-            "insufficient-text",
-            "language-detector-no-result",
-        }:
-            context.log.info(
-                "Non-English page skipped after discovery: %s",
-                effective_url,
-            )
-            await context.push_data(
-                {
-                    "outcome": "non_english",
-                    "url": context.request.url,
-                }
-            )
-            return
-
-        title_element = soup.title
-        title = (
-            title_element.get_text(" ", strip=True)
-            if title_element is not None
-            else ""
-        )
-
-        try:
-            document = markdown_exporter.export(
-                url=context.request.url,
-                soup=soup,
-                title=title,
-                language=resolved_language,
-                write=False,
-            )
-        except ValueError as error:
-            if str(error).startswith("No meaningful Markdown content found:"):
-                # The adaptive result checker rejects this marker for static
-                # rendering, which makes Crawlee retry with Playwright. The
-                # browser result is committed normally if it is still empty.
-                await context.push_data(
-                    {
-                        "outcome": "empty",
-                        "url": context.request.url,
-                    }
-                )
-                return
-            raise
-
-        await context.push_data(
-            {
-                "outcome": "document",
-                "url": document.url,
-                "title": document.title,
-                "language": document.language,
-                "output_path": str(document.output_path),
-                "content_hash": document.content_hash,
-                "markdown": document.markdown,
-            }
-        )
-
-    if is_recently_saved(
-        normalized_start_url,
-        resolved_refresh_hours,
-        resolved_force_refresh,
-        url_state,
-    ):
-        record_incremental_skip(normalized_start_url, stats)
-        incremental_urls: list[str] = []
-    else:
-        incremental_urls = [normalized_start_url]
-
-    async def flush_committed_results() -> None:
-        """Apply only the handler results committed by Crawlee's selected renderer."""
-
-        dataset = await crawler.get_dataset()
-        async for item in dataset.iterate_items():
-            outcome = str(item.get("outcome", "document"))
-            if outcome == "non_english":
-                record_non_english_page()
-                continue
-            if outcome == "empty":
-                stats.empty_pages += 1
-                stats.processed += 1
-                continue
-
-            document = MarkdownDocument(
-                url=str(item["url"]),
-                title=str(item["title"]),
-                language=str(item["language"]),
-                markdown=str(item["markdown"]),
-                output_path=Path(str(item["output_path"])),
-                content_hash=str(item["content_hash"]),
-            )
-            unchanged = content_is_unchanged(
-                url=document.url,
-                digest=document.content_hash,
-                url_state=url_state,
-            )
-            if not unchanged:
-                markdown_exporter.write(document)
-                stats.saved += 1
-
-            validator_url = normalize_url(document.url)
-            etag, last_modified = pending_http_validators.pop(
-                validator_url,
-                ("", ""),
-            )
-            record_incremental_success(
-                url=document.url,
-                output_path=document.output_path,
-                digest=document.content_hash,
-                url_state=url_state,
-                etag=etag,
-                last_modified=last_modified,
-            )
-            stats.processed += 1
-
-        await dataset.drop()
-
-    def persist_incremental_state() -> None:
-        save_url_state(
-            url_state,
-            resolved_state_dir,
-            start_hostname,
-        )
-
-    crawl_succeeded = False
-    request_storage_complete = False
+    completed = False
     try:
-        while not await sitemap_loader.is_finished():
-            sitemap_request = await sitemap_loader.fetch_next_request()
-            if sitemap_request is None:
-                continue
-            await runtime.request_manager.add_request(sitemap_request)
-            await sitemap_loader.mark_request_as_handled(sitemap_request)
-
-        if not incremental_urls and await runtime.request_manager.is_finished():
-            stats.sitemap_urls = await sitemap_loader.get_total_count()
-            persist_incremental_state()
-            crawl_succeeded = True
-            request_storage_complete = True
-            return stats
-
-        @crawler.failed_request_handler
-        async def failed_handler(
-            context: BeautifulSoupCrawlingContext | BasicCrawlingContext,
-            error: Exception,
-        ) -> None:
-            stats.failed += 1
-            context.log.error(
-                "Request permanently failed: url=%s error=%s",
-                context.request.url,
-                error,
-            )
-
-        try:
-            await crawler.run(incremental_urls)
-        except BaseException:
-            await flush_committed_results()
-            persist_incremental_state()
-            raise
-
-        await flush_committed_results()
-        request_storage_complete = await runtime.request_manager.is_finished()
-        stats.sitemap_urls = await sitemap_loader.get_total_count()
-
-        persist_incremental_state()
-        crawl_succeeded = True
-        return stats
+        await crawler.run([start_url], purge_request_queue=False)
+        completed = await queue.is_finished()
+        return counters
     finally:
-        await sitemap_loader.close()
-        await sitemap_http_client.cleanup()
-        if crawl_succeeded and request_storage_complete:
-            await clear_sitemap_state(
-                storage_client=runtime.storage_client,
-                configuration=runtime.configuration,
-            )
-            await runtime.drop_request_storage()
-
+        _save_state(state_file, content_state)
+        if completed:
+            await queue.drop()
