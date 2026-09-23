@@ -143,5 +143,5 @@ await outputWrite;
 if (await queue.isFinished()) await queue.drop();
 
 console.log(
-  `done processed=${counters.processed} saved=${counters.saved} unchanged=${counters.unchanged}`,
+  `done processed=${counters.processed} saved=${counters.saved} unchanged=${counters.unchanged} output=${outputDir} state=${stateDir}`,
 );
