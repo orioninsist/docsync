@@ -14,6 +14,7 @@ from crawlee import ConcurrencySettings, RequestOptions, RequestTransformAction
 from crawlee.configuration import Configuration
 from crawlee.crawlers import AdaptivePlaywrightCrawler, AdaptivePlaywrightCrawlingContext
 from crawlee.events import LocalEventManager
+from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
 from markdownify import markdownify
@@ -129,8 +130,14 @@ async def run_crawler(
         max_tasks_per_minute=requests_per_minute,
     )
 
+    request_manager = ThrottlingRequestManager(
+        inner=queue,
+        domains=[hostname],
+        request_manager_opener=RequestQueue.open,
+    )
+
     crawler = AdaptivePlaywrightCrawler.with_beautifulsoup_static_parser(
-        request_manager=queue,
+        request_manager=request_manager,
         storage_client=storage_client,
         configuration=configuration,
         event_manager=event_manager,
@@ -167,7 +174,7 @@ async def run_crawler(
 
         html_language = str(soup.html.get("lang", "") if soup.html else "")
         if html_language and _normalize_language(html_language) != language:
-            counters["skipped"] += 1
+            await context.push_data({"outcome": "skip", "url": context.request.url})
             return
 
         for element in soup.select("script, style, nav, footer, noscript"):
@@ -178,33 +185,51 @@ async def run_crawler(
         if not text:
             return
 
-        url = context.request.url
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        previous = content_state.get(url, {})
-        target = _output_path(output_dir, url)
+        await context.push_data(
+            {
+                "outcome": "document",
+                "url": context.request.url,
+                "markdown": text,
+                "content_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            }
+        )
 
-        counters["processed"] += 1
-        if previous.get("content_hash") == digest and target.exists():
-            counters["unchanged"] += 1
-        else:
-            target.write_text(text + "\n", encoding="utf-8")
-            counters["saved"] += 1
+    async def flush_results() -> None:
+        dataset = await crawler.get_dataset()
+        async for item in dataset.iterate_items():
+            if item.get("outcome") == "skip":
+                counters["skipped"] += 1
+                continue
 
-        content_state[url] = {
-            "content_hash": digest,
-            "saved_at": datetime.now(UTC).isoformat(),
-            "filename": target.name,
-        }
-        _save_state(state_file, content_state)
+            url = str(item["url"])
+            text = str(item["markdown"])
+            digest = str(item["content_hash"])
+            previous = content_state.get(url, {})
+            target = _output_path(output_dir, url)
 
-        await context.push_data({"url": url, "markdown": text})
+            counters["processed"] += 1
+            if previous.get("content_hash") == digest and target.exists():
+                counters["unchanged"] += 1
+            else:
+                target.write_text(text + "\n", encoding="utf-8")
+                counters["saved"] += 1
+
+            content_state[url] = {
+                "content_hash": digest,
+                "saved_at": datetime.now(UTC).isoformat(),
+                "filename": target.name,
+            }
+
+        await dataset.drop()
 
     completed = False
     try:
         await crawler.run([start_url], purge_request_queue=False)
-        completed = await queue.is_finished()
-        return counters
+        completed = await request_manager.is_finished()
     finally:
+        await flush_results()
         _save_state(state_file, content_state)
         if completed:
-            await queue.drop()
+            await request_manager.drop()
+
+    return counters
