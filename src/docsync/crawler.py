@@ -25,7 +25,7 @@ from docsync.crawler_runtime import build_crawlee_runtime
 from docsync.incremental import (
     conditional_request_headers,
     content_is_unchanged,
-    filter_incremental_urls,
+    is_recently_saved,
     load_url_state,
     record_incremental_skip,
     record_incremental_success,
@@ -242,13 +242,13 @@ async def run_crawler(
         if language_policy.should_skip_url(url):
             return "skip"
 
-        if not filter_incremental_urls(
-            [url],
-            refresh_hours=resolved_refresh_hours,
-            force_refresh=resolved_force_refresh,
-            stats=stats,
-            url_state=url_state,
+        if is_recently_saved(
+            url,
+            resolved_refresh_hours,
+            resolved_force_refresh,
+            url_state,
         ):
+            record_incremental_skip(url, stats)
             return "skip"
 
         options["url"] = url
@@ -419,13 +419,16 @@ async def run_crawler(
             }
         )
 
-    incremental_urls = filter_incremental_urls(
-        [normalized_start_url],
-        refresh_hours=resolved_refresh_hours,
-        force_refresh=resolved_force_refresh,
-        stats=stats,
-        url_state=url_state,
-    )
+    if is_recently_saved(
+        normalized_start_url,
+        resolved_refresh_hours,
+        resolved_force_refresh,
+        url_state,
+    ):
+        record_incremental_skip(normalized_start_url, stats)
+        incremental_urls: list[str] = []
+    else:
+        incremental_urls = [normalized_start_url]
 
     async def flush_committed_results() -> None:
         """Apply only the handler results committed by Crawlee's selected renderer."""
