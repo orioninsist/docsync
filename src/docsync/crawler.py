@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -52,18 +51,6 @@ def _save_state(path: Path, state: dict[str, dict[str, str]]) -> None:
     temporary.replace(path)
 
 
-def _is_fresh(entry: dict[str, str] | None, refresh_hours: int) -> bool:
-    if not entry or refresh_hours == 0:
-        return False
-    try:
-        saved_at = datetime.fromisoformat(entry["saved_at"])
-    except (KeyError, ValueError):
-        return False
-    if saved_at.tzinfo is None:
-        saved_at = saved_at.replace(tzinfo=UTC)
-    return datetime.now(UTC) - saved_at.astimezone(UTC) < timedelta(hours=refresh_hours)
-
-
 async def run_crawler(
     *,
     start_url: str,
@@ -73,7 +60,6 @@ async def run_crawler(
     max_concurrency: int = 2,
     max_requests: int = 10_000,
     requests_per_minute: int = 20,
-    refresh_hours: int = 24,
 ) -> dict[str, int]:
     """Synchronize one documentation tree using Crawlee's native lifecycle."""
 
@@ -122,20 +108,12 @@ async def run_crawler(
     )
     counters = {"processed": 0, "saved": 0, "unchanged": 0, "skipped": 0}
 
-    def transform(options: RequestOptions) -> RequestOptions | RequestTransformAction:
-        url = str(options["url"])
-        if _is_fresh(content_state.get(url), refresh_hours):
-            counters["skipped"] += 1
-            return "skip"
-        return options
-
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
         await context.enqueue_links(
             selector="a",
             attribute="href",
             strategy="same-origin",
-            transform_request_function=transform,
         )
 
         text = extract(
@@ -182,7 +160,6 @@ async def run_crawler(
 
             content_state[url] = {
                 "content_hash": digest,
-                "saved_at": datetime.now(UTC).isoformat(),
                 "filename": target.name,
             }
 
