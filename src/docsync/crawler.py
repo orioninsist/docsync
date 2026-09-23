@@ -176,6 +176,21 @@ async def run_crawler(
             return "skip"
         return options
 
+    start = urlsplit(start_url)
+    scope_path = start.path.rstrip("/") or "/"
+
+    def in_scope(url: str) -> bool:
+        parsed = urlsplit(url)
+        return (
+            parsed.scheme in {"http", "https"}
+            and parsed.netloc == start.netloc
+            and (
+                scope_path == "/"
+                or parsed.path == scope_path
+                or parsed.path.startswith(scope_path + "/")
+            )
+        )
+
     @crawler.router.default_handler
     async def handler(context: AdaptivePlaywrightCrawlingContext) -> None:
         soup = await context.parse_with_static_parser()
@@ -184,7 +199,11 @@ async def run_crawler(
             selector="a",
             attribute="href",
             strategy="same-origin",
-            transform_request_function=transform,
+            transform_request_function=lambda options: (
+                transform(options)
+                if in_scope(str(options["url"]))
+                else "skip"
+            ),
         )
 
         html_language = str(soup.html.get("lang", "") if soup.html else "")
