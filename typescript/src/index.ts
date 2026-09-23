@@ -118,23 +118,30 @@ try {
         const digest = sha256(markdown);
         const target = outputPath(outputDir, url);
         const previous = manifest[url];
+        let status: 'saved' | 'unchanged';
 
         counters.processed += 1;
         try {
           await readFile(target);
           if (previous?.content_hash === digest) {
             counters.unchanged += 1;
+            status = 'unchanged';
           } else {
             await writeFile(target, markdown + '\n', 'utf8');
             counters.saved += 1;
+            status = 'saved';
           }
         } catch {
           await writeFile(target, markdown + '\n', 'utf8');
           counters.saved += 1;
+          status = 'saved';
         }
 
         manifest[url] = { content_hash: digest, filename: path.basename(target) };
         await saveManifest(manifestFile, manifest);
+        console.log(
+          `docsync [typescript] processed=${counters.processed} saved=${counters.saved} unchanged=${counters.unchanged} status=${status} url=${url}`,
+        );
       });
 
       await outputWrite;
