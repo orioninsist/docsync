@@ -71,7 +71,9 @@ async def run_crawler(
     if not hostname or urlsplit(start_url).scheme not in {"http", "https"}:
         raise ValueError("start_url must be an absolute HTTP(S) URL")
 
-    scope_root = start_url.rstrip("/")\n    scope_glob = Glob(f"{scope_root}/**")\n    scope_id = hashlib.sha256(scope_root.encode("utf-8")).hexdigest()[:12]
+    scope_root = start_url.rstrip("/")
+    scope_glob = Glob(f"{scope_root}/**")
+    scope_id = hashlib.sha256(scope_root.encode("utf-8")).hexdigest()[:12]
     state_file = state_dir / f"{hostname}-{scope_id}.json"
     content_state = _load_state(state_file)
 
@@ -147,7 +149,8 @@ async def run_crawler(
             if previous.get("content_hash") == digest and target.exists():
                 counters["unchanged"] += 1
             else:
-                target.write_text(text + "\n", encoding="utf-8")
+                target.write_text(text + "
+", encoding="utf-8")
                 counters["saved"] += 1
 
             content_state[url] = {
