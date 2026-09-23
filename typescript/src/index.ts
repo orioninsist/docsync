@@ -67,7 +67,9 @@ const language = normalizeLanguage(arg('--language', 'en'));
 const outputDir = path.resolve(arg('--output-dir', 'docs'));
 const stateDir = path.resolve(arg('--state-dir', 'storage/docsync'));
 const hostname = new URL(startUrl).hostname;
-const scopeId = sha256(startUrl.replace(/\/+$/, '')).slice(0, 12);
+const scopeRoot = startUrl.replace(/\/+$/, '');
+const scopeGlob = `${scopeRoot}/**`;
+const scopeId = sha256(scopeRoot).slice(0, 12);
 const manifestFile = path.join(stateDir, `${hostname}-${scopeId}.json`);
 
 await mkdir(outputDir, { recursive: true });
