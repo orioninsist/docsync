@@ -1,0 +1,19 @@
+{
+  "name": "DocsSync",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspace",
+  "postCreateCommand": "uv sync --locked --all-groups && cd typescript && npm ci",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "charliermarsh.ruff",
+        "ms-python.python",
+        "ms-playwright.playwright",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}

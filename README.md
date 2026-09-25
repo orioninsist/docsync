@@ -30,7 +30,64 @@ DocsSync synchronizes rendered documentation pages to GitHub-Flavored Markdown t
 
 The engine changes only the Crawlee runtime. Both paths use the same document policy: the largest rendered `<main>`, semantic DOM cleanup, canonical code blocks, html-to-markdown 3.14.3, stable filenames, SHA-256 content fingerprints, and the same hostname manifest.
 
-## Requirements
+## Quick start with Docker
+
+Docker is the recommended path when you want the project to behave the same on Linux, macOS, and Windows.
+
+Build the local image:
+
+```bash
+docker compose build
+```
+
+Run a sync with the Python engine:
+
+```bash
+docker compose run --rm docsync sync https://example.com/docs --engine python
+```
+
+Run a sync with the TypeScript engine:
+
+```bash
+docker compose run --rm docsync sync https://example.com/docs --engine typescript
+```
+
+The project directory is mounted into the container, so generated Markdown and state are written back to the same workspace under `docs/<host>/<scope-hash>` and `storage/docsync/<host>/<scope-hash>`.
+
+### Windows notes
+
+Use Docker Desktop with the WSL 2 backend enabled. From PowerShell or Windows Terminal, run the same Compose commands from the repository root:
+
+```powershell
+docker compose build
+docker compose run --rm docsync sync https://example.com/docs --engine python
+```
+
+If you prefer plain `docker run`, use `${PWD}` in PowerShell:
+
+```powershell
+docker run --rm -v ${PWD}:/workspace docsync:local sync https://example.com/docs
+```
+
+In `cmd.exe`, use `%cd%`:
+
+```bat
+docker run --rm -v %cd%:/workspace docsync:local sync https://example.com/docs
+```
+
+### Docker permission notes
+
+If Docker is installed but `docker compose build` fails with a socket permission error, the current user cannot access the Docker daemon. On Linux, add the user to the Docker group and open a new login session:
+
+```bash
+sudo usermod -aG docker "$USER"
+newgrp docker
+docker compose build
+```
+
+If `sudo` asks for a password, run those commands in your normal terminal. On Windows, start Docker Desktop first and confirm that WSL integration is enabled for the distro that contains this repository.
+
+## Local requirements
 
 - Python 3.10+
 - uv
@@ -44,47 +101,54 @@ Install the Python environment:
 uv sync
 ```
 
-TypeScript dependencies are installed automatically on the first TypeScript run. Chromium is installed automatically when the selected Playwright runtime is missing.
+Prepare browser/runtime dependencies explicitly:
+
+```bash
+uv run docsync setup
+```
+
+This installs the selected Playwright Chromium runtime and, for the TypeScript engine, installs Node dependencies with `npm ci`. Sync runs do not silently install dependencies unless `--install-runtime` is passed.
 
 ## CLI
 
 Python engine:
 
 ```bash
-uv run docsync https://example.com/docs \
+uv run docsync sync https://example.com/docs \
   --engine python \
-  --language en \
-  --output-dir docs \
-  --state-dir storage/docsync
+  --language en
 ```
 
 TypeScript engine:
 
 ```bash
-uv run docsync https://example.com/docs \
+uv run docsync sync https://example.com/docs \
   --engine typescript \
-  --language en \
-  --output-dir docs \
-  --state-dir storage/docsync
+  --language en
 ```
 
 Public interface:
 
 ```text
-docsync URL
+docsync setup [--engine {python,typescript,all}]
+
+docsync sync URL
   [--engine {python,typescript}]
   [--language LANGUAGE]
   [--output-dir OUTPUT_DIR]
   [--state-dir STATE_DIR]
+  [--install-runtime]
 ```
+
+The legacy `docsync URL` form is still accepted and maps to `docsync sync URL`.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `url` | required | Documentation start URL |
 | `--engine` | `python` | Crawlee runtime |
 | `--language` | `en` | Two-letter page language |
-| `--output-dir` | `docs` | Markdown output directory |
-| `--state-dir` | `storage/docsync` | Persistent manifest directory |
+| `--output-dir` | `docs/<host>/<scope-hash>` | Markdown output directory |
+| `--state-dir` | `storage/docsync/<host>/<scope-hash>` | Persistent manifest directory |
 
 ## Document pipeline
 
@@ -123,7 +187,19 @@ URL-path slug + first 12 characters of SHA-256(URL)
 
 DocsSync hashes the canonical GFM output. If the stored hash matches and the Markdown file still exists, the file is left unchanged.
 
-Persistent state is one JSON manifest per hostname:
+By default, output and state are scoped by hostname and the start URL hash. This keeps multiple source trees isolated inside one workspace:
+
+```text
+docs/
+└── developers.openai.com/
+    └── <scope-hash>/
+
+storage/docsync/
+└── developers.openai.com/
+    └── <scope-hash>/
+```
+
+Persistent state is one JSON manifest per hostname inside that scoped state directory:
 
 ```text
 STATE_DIR/
@@ -157,6 +233,27 @@ done processed=N saved=N unchanged=N output=/absolute/output/path state=/absolut
 
 Because request-queue storage is temporary, an interrupted process does not resume its in-flight queue. Markdown and manifest entries already written remain durable.
 
+## Verification
+
+Run the local quality checks:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run pytest
+cd typescript && npm run check
+```
+
+Run the same checks through Docker:
+
+```bash
+docker compose run --rm docsync --help
+docker compose run --rm --entrypoint bash docsync -lc "cd /app && /app/.venv/bin/pytest && cd typescript && npm run check"
+```
+
+The included devcontainer uses the same Dockerfile for reproducible local development.
+
 ## Project layout
 
 ```text
@@ -168,7 +265,12 @@ docsync/
 │       ├── __init__.py
 │       ├── __main__.py
 │       ├── cli.py
-│       └── crawler.py
+│       ├── crawler.py
+│       └── policy.py
+├── tests/
+│   └── test_policy.py
+├── Dockerfile
+├── compose.yaml
 └── typescript/
     ├── package.json
     ├── tsconfig.json
@@ -176,7 +278,7 @@ docsync/
         └── index.ts
 ```
 
-Dependency lockfiles are generated from the current manifests by `uv sync` and `npm install`.
+Dependency lockfiles are generated from the current manifests by `uv lock` and `npm install --package-lock-only`. Runtime installs use `uv sync --locked` and `npm ci`.
 
 ## Design boundary
 

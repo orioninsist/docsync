@@ -5,10 +5,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import re
 import tempfile
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from crawlee import ConcurrencySettings, Glob, service_locator
 from crawlee.configuration import Configuration
@@ -17,51 +15,16 @@ from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storages import RequestQueue
 from html_to_markdown import convert
 
-NORMALIZE_DOCUMENT = r"""
-() => {
-  const mains = [...document.querySelectorAll('main')];
-  if (!mains.length) return null;
-  const main = mains.reduce((best, current) =>
-    (current.textContent?.trim().length ?? 0) > (best.textContent?.trim().length ?? 0)
-      ? current : best
-  );
-  const root = main.cloneNode(true);
-  root.querySelectorAll('script,style,noscript,template,svg,button,nav,aside').forEach((el) => el.remove());
-  root.querySelectorAll('.sr-only,[aria-hidden="true"],[role="status"],[role="button"]').forEach((el) => el.remove());
-  for (const pre of [...root.querySelectorAll('pre')]) {
-    const code = pre.querySelector('code');
-    const language =
-      code?.getAttribute('data-language')?.trim() ||
-      pre.getAttribute('data-language')?.trim() ||
-      pre.getAttribute('syntax')?.trim() ||
-      [...(code?.classList ?? [])].find((value) => value.startsWith('language-'))?.slice(9) ||
-      [...pre.classList].find((value) => value.startsWith('language-'))?.slice(9) || '';
-    const cleanPre = document.createElement('pre');
-    const cleanCode = document.createElement('code');
-    if (language) cleanCode.className = `language-${language.toLowerCase()}`;
-    cleanCode.textContent = code?.textContent ?? pre.textContent ?? '';
-    cleanPre.appendChild(cleanCode);
-    pre.replaceWith(cleanPre);
-  }
-  for (const span of [...root.querySelectorAll('span')]) span.replaceWith(...span.childNodes);
-  return root.innerHTML;
-}
-"""
-
-
-def _normalize_language(value: str) -> str:
-    language = value.strip().lower().replace("_", "-").split("-", 1)[0]
-    if len(language) != 2 or not language.isalpha():
-        raise ValueError("language must be a two-letter code such as 'en' or 'tr'")
-    return language
-
-
-def _output_path(output_dir: Path, url: str) -> Path:
-    parsed = urlsplit(url)
-    path = parsed.path.strip("/") or "index"
-    slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", path).strip("-") or "index"
-    url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
-    return output_dir / f"{slug}-{url_hash}.md"
+from docsync.policy import (
+    NORMALIZE_DOCUMENT,
+    default_output_dir,
+    default_state_dir,
+    hostname_for_url,
+    normalize_language,
+    output_path,
+    scope_id,
+    scope_root,
+)
 
 
 def _load_state(path: Path) -> dict[str, dict[str, str]]:
@@ -90,34 +53,32 @@ def _to_gfm(html: str) -> str:
 async def run_crawler(
     *,
     start_url: str,
-    output_dir: Path,
-    state_dir: Path,
+    output_dir: Path | None,
+    state_dir: Path | None,
     language: str = "en",
     max_concurrency: int = 2,
     max_requests: int = 10_000,
     requests_per_minute: int = 20,
 ) -> dict[str, int]:
     """Synchronize one documentation tree using Crawlee's native lifecycle."""
-    language = _normalize_language(language)
-    output_dir = output_dir.expanduser().resolve()
-    state_dir = state_dir.expanduser().resolve()
+    language = normalize_language(language)
+    output_dir = (output_dir or default_output_dir(start_url)).expanduser().resolve()
+    state_dir = (state_dir or default_state_dir(start_url)).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
 
-    parsed_start = urlsplit(start_url)
-    hostname = parsed_start.hostname
-    if not hostname or parsed_start.scheme not in {"http", "https"}:
-        raise ValueError("start_url must be an absolute HTTP(S) URL")
-
-    scope_root = start_url.rstrip("/")
-    scope_glob = Glob(f"{scope_root}/**")
-    scope_id = hashlib.sha256(scope_root.encode("utf-8")).hexdigest()[:12]
+    hostname = hostname_for_url(start_url)
+    crawl_scope_root = scope_root(start_url)
+    crawl_scope_id = scope_id(start_url)
+    scope_glob = Glob(f"{crawl_scope_root}/**")
     state_file = state_dir / f"{hostname}.json"
     content_state = _load_state(state_file)
     state_lock = asyncio.Lock()
     counters = {"processed": 0, "saved": 0, "unchanged": 0}
 
-    with tempfile.TemporaryDirectory(prefix=f"docsync-{scope_id}-") as crawl_storage:
+    with tempfile.TemporaryDirectory(
+        prefix=f"docsync-{crawl_scope_id}-"
+    ) as crawl_storage:
         configuration = Configuration(storage_dir=crawl_storage, purge_on_start=True)
         service_locator.set_configuration(configuration)
         queue = await RequestQueue.open()
@@ -148,7 +109,7 @@ async def run_crawler(
             page_language = await context.page.evaluate(
                 "() => document.documentElement.lang || ''"
             )
-            if page_language and _normalize_language(page_language) != language:
+            if page_language and normalize_language(page_language) != language:
                 return
             html = await context.page.evaluate(NORMALIZE_DOCUMENT)
             if not html:
@@ -159,7 +120,7 @@ async def run_crawler(
 
             url = context.request.url
             digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
-            target = _output_path(output_dir, url)
+            target = output_path(output_dir, url)
             async with state_lock:
                 previous = content_state.get(url, {})
                 counters["processed"] += 1

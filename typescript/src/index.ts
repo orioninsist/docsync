@@ -26,6 +26,24 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function scopeRoot(startUrl: string): string {
+  return startUrl.replace(/\/+$/, '');
+}
+
+function scopeId(startUrl: string): string {
+  return sha256(scopeRoot(startUrl)).slice(0, 12);
+}
+
+function defaultOutputDir(startUrl: string): string {
+  const hostname = new URL(startUrl).hostname;
+  return path.join('docs', hostname, scopeId(startUrl));
+}
+
+function defaultStateDir(startUrl: string): string {
+  const hostname = new URL(startUrl).hostname;
+  return path.join('storage', 'docsync', hostname, scopeId(startUrl));
+}
+
 function outputPath(outputDir: string, url: string): string {
   const parsed = new URL(url);
   const raw = parsed.pathname.replace(/^\/+|\/+$/g, '') || 'index';
@@ -56,18 +74,18 @@ const startUrl = process.argv[2];
 if (!startUrl || startUrl.startsWith('-')) throw new Error('start URL is required');
 
 const language = normalizeLanguage(arg('--language', 'en'));
-const outputDir = path.resolve(arg('--output-dir', 'docs'));
-const stateDir = path.resolve(arg('--state-dir', 'storage/docsync'));
+const outputDir = path.resolve(arg('--output-dir', defaultOutputDir(startUrl)));
+const stateDir = path.resolve(arg('--state-dir', defaultStateDir(startUrl)));
 const hostname = new URL(startUrl).hostname;
-const scopeRoot = startUrl.replace(/\/+$/, '');
-const scopeGlob = `${scopeRoot}/**`;
-const scopeId = sha256(scopeRoot).slice(0, 12);
+const crawlScopeRoot = scopeRoot(startUrl);
+const crawlScopeId = scopeId(startUrl);
+const scopeGlob = `${crawlScopeRoot}/**`;
 const manifestFile = path.join(stateDir, `${hostname}.json`);
 
 await mkdir(outputDir, { recursive: true });
 await mkdir(stateDir, { recursive: true });
 
-const crawlStorage = await mkdtemp(path.join(os.tmpdir(), `docsync-${scopeId}-`));
+const crawlStorage = await mkdtemp(path.join(os.tmpdir(), `docsync-${crawlScopeId}-`));
 process.env.CRAWLEE_STORAGE_DIR = crawlStorage;
 process.env.CRAWLEE_PURGE_ON_START = 'true';
 

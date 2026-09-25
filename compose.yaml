@@ -1,0 +1,9 @@
+services:
+  docsync:
+    build: .
+    image: docsync:local
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      UV_CACHE_DIR: /tmp/uv-cache
