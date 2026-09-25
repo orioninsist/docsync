@@ -29,6 +29,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy
       - run: uv run pytest
+        env:
+          DOCSYNC_NO_SANDBOX: "1"
 
   typescript:
     runs-on: ubuntu-latest

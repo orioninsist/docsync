@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -93,8 +94,14 @@ async def run_crawler(
             max_concurrency=max_concurrency,
             max_tasks_per_minute=requests_per_minute,
         )
+        browser_launch_options = (
+            {"args": ["--no-sandbox"]}
+            if os.environ.get("DOCSYNC_NO_SANDBOX") == "1"
+            else None
+        )
         crawler = PlaywrightCrawler(
             configuration=configuration,
+            browser_launch_options=browser_launch_options,
             event_manager=service_locator.get_event_manager(),
             request_manager=request_manager,
             concurrency_settings=concurrency,
