@@ -245,6 +245,8 @@ uv run pytest
 cd typescript && npm run check
 ```
 
+The pytest suite includes a local HTTP integration test that runs both crawler engines against the same redirecting documentation fixture and verifies identical Markdown output and shared manifest state.
+
 Run the same checks through Docker:
 
 ```bash
@@ -268,6 +270,7 @@ docsync/
 │       ├── crawler.py
 │       └── policy.py
 ├── tests/
+│   ├── test_parity.py
 │   └── test_policy.py
 ├── Dockerfile
 ├── compose.yaml
