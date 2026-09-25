@@ -118,7 +118,7 @@ async def run_crawler(
             if not markdown:
                 return
 
-            url = context.request.url
+            url = context.page.url
             digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
             target = output_path(output_dir, url)
             async with state_lock:
