@@ -51,6 +51,7 @@ def _run_typescript(
     language: str,
     output_dir: Path | None,
     state_dir: Path | None,
+    headful: bool,
 ) -> int:
     root = Path(__file__).resolve().parents[2]
     engine_dir = root / "typescript"
@@ -76,6 +77,8 @@ def _run_typescript(
     ]
     command += ["--output-dir", str(effective_output_dir)]
     command += ["--state-dir", str(effective_state_dir)]
+    if headful:
+        command.append("--headful")
     return subprocess.run(command, cwd=engine_dir, check=False).returncode
 
 
@@ -109,6 +112,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--install-runtime",
         action="store_true",
         help="Install missing browser/dependencies before syncing",
+    )
+    sync.add_argument(
+        "--headful",
+        action="store_true",
+        help="Run Chromium with a visible browser window",
     )
 
     setup = subparsers.add_parser("setup", help="Prepare local runtime dependencies")
@@ -147,6 +155,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             language=args.language,
             output_dir=args.output_dir,
             state_dir=args.state_dir,
+            headful=args.headful,
         )
 
     if args.install_runtime:
@@ -160,6 +169,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_concurrency=2,
             max_requests=10_000,
             requests_per_minute=20,
+            headful=args.headful,
         )
     )
 

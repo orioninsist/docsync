@@ -9,13 +9,14 @@ from urllib.parse import urlsplit
 
 NORMALIZE_DOCUMENT = r"""
 () => {
-  const mains = [...document.querySelectorAll('main')];
-  if (!mains.length) return null;
-  const main = mains.reduce((best, current) =>
+  const candidates = [...document.querySelectorAll('main')];
+  if (!candidates.length) candidates.push(...document.querySelectorAll('article'));
+  if (!candidates.length) return null;
+  const documentRoot = candidates.reduce((best, current) =>
     (current.textContent?.trim().length ?? 0) > (best.textContent?.trim().length ?? 0)
       ? current : best
   );
-  const root = main.cloneNode(true);
+  const root = documentRoot.cloneNode(true);
   root.querySelectorAll('script,style,noscript,template,svg,button,nav,aside').forEach((el) => el.remove());
   root.querySelectorAll('.sr-only,[aria-hidden="true"],[role="status"],[role="button"]').forEach((el) => el.remove());
   for (const pre of [...root.querySelectorAll('pre')]) {

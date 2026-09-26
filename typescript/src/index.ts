@@ -74,6 +74,7 @@ const startUrl = process.argv[2];
 if (!startUrl || startUrl.startsWith('-')) throw new Error('start URL is required');
 
 const language = normalizeLanguage(arg('--language', 'en'));
+const headful = process.argv.includes('--headful');
 const outputDir = path.resolve(arg('--output-dir', defaultOutputDir(startUrl)));
 const stateDir = path.resolve(arg('--state-dir', defaultStateDir(startUrl)));
 const hostname = new URL(startUrl).hostname;
@@ -97,6 +98,10 @@ try {
   const queue = await RequestQueue.open('docsync');
   const crawler = new PlaywrightCrawler({
     requestQueue: queue,
+    headless: !headful,
+    launchContext: {
+      useIncognitoPages: headful,
+    },
     minConcurrency: 1,
     maxConcurrency: 2,
     maxRequestsPerMinute: 20,
@@ -112,15 +117,16 @@ try {
         !pageLanguage || normalizeLanguage(pageLanguage) === language;
 
       const html = shouldProcess ? await page.evaluate(() => {
-        const mains = [...document.querySelectorAll('main')];
-        if (!mains.length) return null;
-        const main = mains.reduce((best, current) =>
+        const candidates = [...document.querySelectorAll('main')];
+        if (!candidates.length) candidates.push(...document.querySelectorAll('article'));
+        if (!candidates.length) return null;
+        const documentRoot = candidates.reduce((best, current) =>
           (current.textContent?.trim().length ?? 0) >
           (best.textContent?.trim().length ?? 0)
             ? current
             : best,
         );
-        const root = main.cloneNode(true) as HTMLElement;
+        const root = documentRoot.cloneNode(true) as HTMLElement;
         root
           .querySelectorAll('script,style,noscript,template,svg,button,nav,aside')
           .forEach((element) => element.remove());

@@ -60,6 +60,7 @@ async def run_crawler(
     max_concurrency: int = 2,
     max_requests: int = 10_000,
     requests_per_minute: int = 20,
+    headful: bool = False,
 ) -> dict[str, int]:
     """Synchronize one documentation tree using Crawlee's native lifecycle."""
     language = normalize_language(language)
@@ -101,6 +102,8 @@ async def run_crawler(
         )
         crawler = PlaywrightCrawler(
             configuration=configuration,
+            headless=not headful,
+            use_incognito_pages=headful,
             browser_launch_options=browser_launch_options,
             event_manager=service_locator.get_event_manager(),
             request_manager=request_manager,

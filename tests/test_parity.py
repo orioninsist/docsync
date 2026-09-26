@@ -27,6 +27,20 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        if self.path == "/docs/article":
+            body = b"""<html lang="en"><body>
+<article>
+<h1>Article fixture</h1>
+<p>Article-only content.</p>
+</article>
+</body></html>"""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if self.path == "/docs/final":
             body = b"""<!doctype html>
 <html lang="en">
@@ -66,6 +80,18 @@ def read_outputs(output_dir: Path) -> dict[str, str]:
     }
 
 
+def test_headful_mode_uses_incognito_pages_in_both_engines() -> None:
+    root = Path(__file__).parents[1]
+
+    python_source = (root / "src/docsync/crawler.py").read_text(encoding="utf-8")
+    assert "headless=not headful" in python_source
+    assert "use_incognito_pages=headful" in python_source
+
+    typescript_source = (root / "typescript/src/index.ts").read_text(encoding="utf-8")
+    assert "headless: !headful" in typescript_source
+    assert "useIncognitoPages: headful" in typescript_source
+
+
 def test_document_is_persisted_before_link_discovery() -> None:
     root = Path(__file__).parents[1]
 
@@ -97,7 +123,7 @@ def test_python_typescript_redirect_parity(tmp_path: Path) -> None:
     thread.start()
 
     try:
-        start_url = f"http://127.0.0.1:{server.server_port}/docs/start"
+        start_url = f"http://127.0.0.1:{server.server_port}/docs/article"
 
         python_output = tmp_path / "python-output"
         python_state = tmp_path / "python-state"
