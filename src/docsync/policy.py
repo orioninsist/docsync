@@ -76,4 +76,4 @@ def output_path(output_dir: Path, url: str) -> Path:
     path = parsed.path.strip("/") or "index"
     slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", path).strip("-") or "index"
     url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
-    return output_dir / f"{slug}-{url_hash}.md"
+    return output_dir / hostname_for_url(url) / f"{slug}-{url_hash}.md"

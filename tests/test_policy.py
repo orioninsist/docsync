@@ -51,5 +51,6 @@ def test_output_path_is_stable_and_url_specific() -> None:
 
     assert first == second
     assert first != sibling
+    assert first.parent == Path("docs/example.com")
     assert first.name.startswith("docs-api-reference-")
     assert first.suffix == ".md"

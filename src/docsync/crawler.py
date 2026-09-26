@@ -129,6 +129,7 @@ async def run_crawler(
                 url = context.page.url
                 digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
                 target = output_path(output_dir, url)
+                target.parent.mkdir(parents=True, exist_ok=True)
                 async with state_lock:
                     previous = content_state.get(url, {})
                     counters["processed"] += 1

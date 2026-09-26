@@ -48,7 +48,7 @@ function outputPath(outputDir: string, url: string): string {
   const parsed = new URL(url);
   const raw = parsed.pathname.replace(/^\/+|\/+$/g, '') || 'index';
   const slug = raw.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'index';
-  return path.join(outputDir, `${slug}-${sha256(url).slice(0, 12)}.md`);
+  return path.join(outputDir, parsed.hostname, `${slug}-${sha256(url).slice(0, 12)}.md`);
 }
 
 async function loadManifest(file: string): Promise<Manifest> {
@@ -176,6 +176,7 @@ try {
         if (exists && previous?.content_hash === digest) {
           counters.unchanged += 1;
         } else {
+          await mkdir(path.dirname(target), { recursive: true });
           await writeFile(target, markdown + '\n', 'utf8');
           counters.saved += 1;
         }

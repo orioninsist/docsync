@@ -61,8 +61,8 @@ def read_manifest(state_dir: Path) -> dict[str, dict[str, str]]:
 
 def read_outputs(output_dir: Path) -> dict[str, str]:
     return {
-        path.name: path.read_text(encoding="utf-8")
-        for path in sorted(output_dir.glob("*.md"))
+        str(path.relative_to(output_dir)): path.read_text(encoding="utf-8")
+        for path in sorted(output_dir.rglob("*.md"))
     }
 
 
