@@ -112,35 +112,38 @@ async def run_crawler(
 
         @crawler.router.default_handler
         async def handler(context: PlaywrightCrawlingContext) -> None:
-            await context.enqueue_links(strategy="same-origin", include=[scope_glob])
             page_language = await context.page.evaluate(
                 "() => document.documentElement.lang || ''"
             )
-            if page_language and normalize_language(page_language) != language:
-                return
-            html = await context.page.evaluate(NORMALIZE_DOCUMENT)
-            if not html:
-                return
-            markdown = await asyncio.to_thread(_to_gfm, html)
-            if not markdown:
-                return
+            should_process = (
+                not page_language or normalize_language(page_language) == language
+            )
+            html = (
+                await context.page.evaluate(NORMALIZE_DOCUMENT)
+                if should_process
+                else None
+            )
+            markdown = await asyncio.to_thread(_to_gfm, html) if html else ""
 
-            url = context.page.url
-            digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
-            target = output_path(output_dir, url)
-            async with state_lock:
-                previous = content_state.get(url, {})
-                counters["processed"] += 1
-                if previous.get("content_hash") == digest and target.exists():
-                    counters["unchanged"] += 1
-                else:
-                    target.write_text(markdown + "\n", encoding="utf-8")
-                    counters["saved"] += 1
-                content_state[url] = {
-                    "content_hash": digest,
-                    "filename": target.name,
-                }
-                _save_state(state_file, content_state)
+            if markdown:
+                url = context.page.url
+                digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+                target = output_path(output_dir, url)
+                async with state_lock:
+                    previous = content_state.get(url, {})
+                    counters["processed"] += 1
+                    if previous.get("content_hash") == digest and target.exists():
+                        counters["unchanged"] += 1
+                    else:
+                        target.write_text(markdown + "\n", encoding="utf-8")
+                        counters["saved"] += 1
+                    content_state[url] = {
+                        "content_hash": digest,
+                        "filename": target.name,
+                    }
+                    _save_state(state_file, content_state)
+
+            await context.enqueue_links(strategy="same-origin", include=[scope_glob])
 
         await crawler.run([start_url], purge_request_queue=False)
 

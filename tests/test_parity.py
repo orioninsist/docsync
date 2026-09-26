@@ -66,6 +66,31 @@ def read_outputs(output_dir: Path) -> dict[str, str]:
     }
 
 
+def test_document_is_persisted_before_link_discovery() -> None:
+    root = Path(__file__).parents[1]
+
+    python_source = (root / "src/docsync/crawler.py").read_text(encoding="utf-8")
+    python_handler = python_source[
+        python_source.index("async def handler(") : python_source.index(
+            "await crawler.run(", python_source.index("async def handler(")
+        )
+    ]
+    assert python_handler.index("_save_state(state_file, content_state)") < (
+        python_handler.index("await context.enqueue_links(")
+    )
+
+    typescript_source = (root / "typescript/src/index.ts").read_text(encoding="utf-8")
+    typescript_handler = typescript_source[
+        typescript_source.index("async requestHandler(") : typescript_source.index(
+            "await crawler.run([startUrl])",
+            typescript_source.index("async requestHandler("),
+        )
+    ]
+    assert typescript_handler.index("await saveManifest(manifestFile, manifest)") < (
+        typescript_handler.index("await enqueueLinks(")
+    )
+
+
 def test_python_typescript_redirect_parity(tmp_path: Path) -> None:
     server = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

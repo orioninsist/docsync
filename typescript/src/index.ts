@@ -105,14 +105,13 @@ try {
     respectRobotsTxtFile: true,
 
     async requestHandler({ request, page, enqueueLinks }) {
-      await enqueueLinks({ strategy: 'same-origin', globs: [scopeGlob] });
-
       const pageLanguage = await page.evaluate(
         () => document.documentElement.lang || '',
       );
-      if (pageLanguage && normalizeLanguage(pageLanguage) !== language) return;
+      const shouldProcess =
+        !pageLanguage || normalizeLanguage(pageLanguage) === language;
 
-      const html = await page.evaluate(() => {
+      const html = shouldProcess ? await page.evaluate(() => {
         const mains = [...document.querySelectorAll('main')];
         if (!mains.length) return null;
         const main = mains.reduce((best, current) =>
@@ -156,14 +155,13 @@ try {
           span.replaceWith(...span.childNodes);
         }
         return root.innerHTML;
-      });
-      if (!html) return;
+      }) : null;
 
-      const markdown = toGfm(html);
-      if (!markdown) return;
+      const markdown = html ? toGfm(html) : '';
 
-      const url = request.loadedUrl ?? request.url;
-      outputWrite = outputWrite.then(async () => {
+      if (markdown) {
+        const url = request.loadedUrl ?? request.url;
+        outputWrite = outputWrite.then(async () => {
         const digest = sha256(markdown);
         const target = outputPath(outputDir, url);
         const previous = manifest[url];
@@ -182,10 +180,16 @@ try {
           counters.saved += 1;
         }
 
-        manifest[url] = { content_hash: digest, filename: path.basename(target) };
-        await saveManifest(manifestFile, manifest);
-      });
-      await outputWrite;
+          manifest[url] = {
+            content_hash: digest,
+            filename: path.basename(target),
+          };
+          await saveManifest(manifestFile, manifest);
+        });
+        await outputWrite;
+      }
+
+      await enqueueLinks({ strategy: 'same-origin', globs: [scopeGlob] });
     },
   });
 
