@@ -1,0 +1,15 @@
+[package]
+name = "docpack"
+version = "0.1.0"
+edition = "2024"
+authors = ["orioninsist"]
+description = "Markdown document packager for AI projects"
+license = "MIT"
+readme = "README.md"
+keywords = ["markdown", "documentation", "ai", "tokenizer"]
+categories = ["command-line-utilities", "text-processing"]
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+tiktoken-rs = "0.12.1"
+walkdir = "2.5.0"
