@@ -192,3 +192,101 @@ def test_python_typescript_redirect_parity(tmp_path: Path) -> None:
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+class ResumeFixtureHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        if self.path == "/robots.txt":
+            body = b"User-agent: *\nAllow: /\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        pages = {
+            "/docs": b"""
+                <html lang="en"><body><main>
+                <h1>Page A</h1><p>A content.</p>
+                <a href="/docs/b">B</a>
+                </main></body></html>
+            """,
+            "/docs/b": b"""
+                <html lang="en"><body><main>
+                <h1>Page B</h1><p>B content.</p>
+                <a href="/docs/c">C</a>
+                </main></body></html>
+            """,
+            "/docs/c": b"""
+                <html lang="en"><body><main>
+                <h1>Page C</h1><p>C content.</p>
+                </main></body></html>
+            """,
+        }
+
+        body = pages.get(self.path)
+        if body is None:
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+def test_python_resumes_persisted_request_queue(tmp_path: Path) -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ResumeFixtureHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        start_url = f"http://127.0.0.1:{server.server_port}/docs"
+        output_dir = tmp_path / "output"
+        state_dir = tmp_path / "state"
+        checkpoint_file = state_dir / "crawl" / "python" / "checkpoint.json"
+
+        first = asyncio.run(
+            run_crawler(
+                start_url=start_url,
+                output_dir=output_dir,
+                state_dir=state_dir,
+                language="en",
+                max_concurrency=1,
+                max_requests=1,
+                requests_per_minute=600,
+            )
+        )
+
+        first_checkpoint = json.loads(checkpoint_file.read_text(encoding="utf-8"))
+        assert first == {"processed": 1, "saved": 1, "unchanged": 0}
+        assert first_checkpoint["status"] == "running"
+        assert len(read_outputs(output_dir)) == 1
+
+        second = asyncio.run(
+            run_crawler(
+                start_url=start_url,
+                output_dir=output_dir,
+                state_dir=state_dir,
+                language="en",
+                max_concurrency=1,
+                max_requests=10,
+                requests_per_minute=600,
+            )
+        )
+
+        second_checkpoint = json.loads(checkpoint_file.read_text(encoding="utf-8"))
+        assert second == {"processed": 2, "saved": 2, "unchanged": 0}
+        assert second_checkpoint["status"] == "complete"
+        assert len(read_outputs(output_dir)) == 3
+        assert (state_dir / "crawl" / "python" / "storage").is_dir()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

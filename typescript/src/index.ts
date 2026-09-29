@@ -1,11 +1,18 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { PlaywrightCrawler, RequestQueue } from 'crawlee';
+import { PlaywrightCrawler, RequestQueueV1 } from 'crawlee';
 import { convert } from '@xberg-io/html-to-markdown';
 
 type Manifest = Record<string, { content_hash: string; filename: string }>;
+
+type Checkpoint = {
+  version: number;
+  status: 'running' | 'complete';
+  engine: 'typescript';
+  start_url: string;
+  language: string;
+};
 
 function arg(name: string, fallback?: string): string {
   const index = process.argv.indexOf(name);
@@ -66,6 +73,55 @@ async function saveManifest(file: string, manifest: Manifest): Promise<void> {
   await rename(temporary, file);
 }
 
+async function loadCheckpoint(file: string): Promise<Partial<Checkpoint>> {
+  try {
+    return JSON.parse(await readFile(file, 'utf8')) as Partial<Checkpoint>;
+  } catch {
+    return {};
+  }
+}
+
+async function saveCheckpoint(file: string, checkpoint: Checkpoint): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  const temporary = `${file}.tmp`;
+  await writeFile(temporary, JSON.stringify(checkpoint, null, 2) + '\n', 'utf8');
+  await rename(temporary, file);
+}
+
+async function prepareCrawlStorage(
+  stateDir: string,
+  startUrl: string,
+  language: string,
+  restart: boolean,
+): Promise<{ storageDir: string; checkpointFile: string; resume: boolean }> {
+  const crawlDir = path.join(stateDir, 'crawl', 'typescript');
+  const storageDir = path.join(crawlDir, 'storage');
+  const checkpointFile = path.join(crawlDir, 'checkpoint.json');
+  const checkpoint = await loadCheckpoint(checkpointFile);
+
+  const resume =
+    !restart &&
+    checkpoint.version === 1 &&
+    checkpoint.status === 'running' &&
+    checkpoint.start_url === startUrl &&
+    checkpoint.language === language;
+
+  if (!resume) {
+    await rm(storageDir, { recursive: true, force: true });
+  }
+
+  await mkdir(storageDir, { recursive: true });
+  await saveCheckpoint(checkpointFile, {
+    version: 1,
+    status: 'running',
+    engine: 'typescript',
+    start_url: startUrl,
+    language,
+  });
+
+  return { storageDir, checkpointFile, resume };
+}
+
 function toGfm(html: string): string {
   return convert(html).content?.trim() ?? '';
 }
@@ -75,27 +131,34 @@ if (!startUrl || startUrl.startsWith('-')) throw new Error('start URL is require
 
 const language = normalizeLanguage(arg('--language', 'en'));
 const headful = process.argv.includes('--headful');
+const restart = process.argv.includes('--restart');
+const maxRequestsPerCrawl = Number.parseInt(arg('--max-requests', '10000'), 10);
+if (!Number.isInteger(maxRequestsPerCrawl) || maxRequestsPerCrawl < 1) {
+  throw new Error('--max-requests must be a positive integer');
+}
 const outputDir = path.resolve(arg('--output-dir', defaultOutputDir(startUrl)));
 const stateDir = path.resolve(arg('--state-dir', defaultStateDir(startUrl)));
 const hostname = new URL(startUrl).hostname;
 const crawlScopeRoot = scopeRoot(startUrl);
-const crawlScopeId = scopeId(startUrl);
 const scopeGlob = `${crawlScopeRoot}/**`;
 const manifestFile = path.join(stateDir, `${hostname}.json`);
 
 await mkdir(outputDir, { recursive: true });
 await mkdir(stateDir, { recursive: true });
 
-const crawlStorage = await mkdtemp(path.join(os.tmpdir(), `docsync-${crawlScopeId}-`));
+const { storageDir: crawlStorage, checkpointFile, resume } =
+  await prepareCrawlStorage(stateDir, startUrl, language, restart);
+
 process.env.CRAWLEE_STORAGE_DIR = crawlStorage;
-process.env.CRAWLEE_PURGE_ON_START = 'true';
+process.env.CRAWLEE_PURGE_ON_START = resume ? 'false' : 'true';
 
 const manifest = await loadManifest(manifestFile);
 const counters = { processed: 0, saved: 0, unchanged: 0 };
 let outputWrite = Promise.resolve();
 
-try {
-  const queue = await RequestQueue.open('docsync');
+const queue = await RequestQueueV1.open('docsync');
+
+{
   const crawler = new PlaywrightCrawler({
     requestQueue: queue,
     headless: !headful,
@@ -105,9 +168,12 @@ try {
     minConcurrency: 1,
     maxConcurrency: 2,
     maxRequestsPerMinute: 20,
-    maxRequestsPerCrawl: 10_000,
+    maxRequestsPerCrawl,
     maxRequestRetries: 2,
     respectRobotsTxtFile: true,
+    experiments: {
+      requestLocking: false,
+    },
 
     async requestHandler({ request, page, enqueueLinks }) {
       const pageLanguage = await page.evaluate(
@@ -196,14 +262,27 @@ try {
         await outputWrite;
       }
 
-      await enqueueLinks({ strategy: 'same-origin', globs: [scopeGlob] });
+      await enqueueLinks({
+        strategy: 'same-origin',
+        globs: [scopeGlob],
+        waitForAllRequestsToBeAdded: true,
+      });
     },
   });
 
-  await crawler.run([startUrl]);
+  const statistics = await crawler.run([startUrl]);
   await outputWrite;
-} finally {
-  await rm(crawlStorage, { recursive: true, force: true });
+
+  const stoppedAtRequestLimit = statistics.requestsTotal >= maxRequestsPerCrawl;
+  if (!stoppedAtRequestLimit && await queue.isFinished()) {
+    await saveCheckpoint(checkpointFile, {
+      version: 1,
+      status: 'complete',
+      engine: 'typescript',
+      start_url: startUrl,
+      language,
+    });
+  }
 }
 
 console.log(

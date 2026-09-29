@@ -52,6 +52,7 @@ def _run_typescript(
     output_dir: Path | None,
     state_dir: Path | None,
     headful: bool,
+    restart: bool,
 ) -> int:
     root = Path(__file__).resolve().parents[2]
     engine_dir = root / "typescript"
@@ -79,6 +80,8 @@ def _run_typescript(
     command += ["--state-dir", str(effective_state_dir)]
     if headful:
         command.append("--headful")
+    if restart:
+        command.append("--restart")
     return subprocess.run(command, cwd=engine_dir, check=False).returncode
 
 
@@ -118,6 +121,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run Chromium with a visible browser window",
     )
+    sync.add_argument(
+        "--restart",
+        action="store_true",
+        help="Discard resumable crawl progress and start a fresh crawl",
+    )
 
     setup = subparsers.add_parser("setup", help="Prepare local runtime dependencies")
     setup.add_argument(
@@ -156,6 +164,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=args.output_dir,
             state_dir=args.state_dir,
             headful=args.headful,
+            restart=args.restart,
         )
 
     if args.install_runtime:
@@ -170,6 +179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_requests=10_000,
             requests_per_minute=20,
             headful=args.headful,
+            restart=args.restart,
         )
     )
 
