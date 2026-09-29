@@ -1,6 +1,6 @@
 FROM node:22-bookworm-slim AS node
 
-FROM mcr.microsoft.com/playwright/python:v1.55.0-noble
+FROM mcr.microsoft.com/playwright/python:v1.63.0-noble
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,6 +18,7 @@ COPY src ./src
 COPY typescript/package.json typescript/package-lock.json ./typescript/
 
 RUN uv sync --locked --all-groups
+RUN /app/.venv/bin/playwright install chromium
 RUN cd typescript && npm ci && npx playwright install chromium
 
 COPY typescript ./typescript
