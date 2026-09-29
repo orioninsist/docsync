@@ -7,3 +7,4 @@ services:
       - .:/workspace
     environment:
       UV_CACHE_DIR: /tmp/uv-cache
+      DOCSYNC_NO_SANDBOX: "1"
