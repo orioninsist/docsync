@@ -117,6 +117,17 @@ def test_document_is_persisted_before_link_discovery() -> None:
     )
 
 
+
+def test_cli_creates_output_and_state_directories_before_sync() -> None:
+    root = Path(__file__).parents[1]
+    cli_source = (root / "src/docsync/cli.py").read_text(encoding="utf-8")
+
+    assert "effective_output_dir.mkdir(parents=True, exist_ok=True)" in cli_source
+    assert "effective_state_dir.mkdir(parents=True, exist_ok=True)" in cli_source
+    assert "output_dir=effective_output_dir" in cli_source
+    assert "state_dir=effective_state_dir" in cli_source
+
+
 def test_python_typescript_redirect_parity(tmp_path: Path) -> None:
     server = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
