@@ -67,6 +67,8 @@ def _run_typescript(
         (output_dir or default_output_dir(url)).expanduser().resolve()
     )
     effective_state_dir = (state_dir or default_state_dir(url)).expanduser().resolve()
+    effective_output_dir.mkdir(parents=True, exist_ok=True)
+    effective_state_dir.mkdir(parents=True, exist_ok=True)
     command = [
         "npm",
         "run",
@@ -155,14 +157,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 2
 
+    effective_output_dir = (
+        (args.output_dir or default_output_dir(args.url)).expanduser().resolve()
+    )
+    effective_state_dir = (
+        (args.state_dir or default_state_dir(args.url)).expanduser().resolve()
+    )
+    effective_output_dir.mkdir(parents=True, exist_ok=True)
+    effective_state_dir.mkdir(parents=True, exist_ok=True)
+
     if args.engine == "typescript":
         if args.install_runtime:
             _ensure_typescript_runtime()
         return _run_typescript(
             url=args.url,
             language=args.language,
-            output_dir=args.output_dir,
-            state_dir=args.state_dir,
+            output_dir=effective_output_dir,
+            state_dir=effective_state_dir,
             headful=args.headful,
             restart=args.restart,
         )
@@ -172,8 +183,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     result = asyncio.run(
         run_crawler(
             start_url=args.url,
-            output_dir=args.output_dir,
-            state_dir=args.state_dir,
+            output_dir=effective_output_dir,
+            state_dir=effective_state_dir,
             language=args.language,
             max_concurrency=2,
             max_requests=10_000,
@@ -188,7 +199,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"processed={result['processed']} "
         f"saved={result['saved']} "
         f"unchanged={result['unchanged']} "
-        f"output={(args.output_dir or default_output_dir(args.url)).expanduser().resolve()} "
-        f"state={(args.state_dir or default_state_dir(args.url)).expanduser().resolve()}"
+        f"output={effective_output_dir} "
+        f"state={effective_state_dir}"
     )
     return 0
