@@ -183,6 +183,8 @@ docsync sync URL
   [--output-dir OUTPUT_DIR]
   [--state-dir STATE_DIR]
   [--install-runtime]
+  [--headful]
+  [--restart]
 ```
 
 The legacy `docsync URL` form is still accepted and maps to `docsync sync URL`.
@@ -193,7 +195,8 @@ The legacy `docsync URL` form is still accepted and maps to `docsync sync URL`.
 | `--engine` | `python` | Crawlee runtime |
 | `--language` | `en` | Two-letter page language |
 | `--output-dir` | `docs/<host>/<scope-hash>` | Markdown output directory |
-| `--state-dir` | `storage/docsync/<host>/<scope-hash>` | Persistent manifest directory |
+| `--state-dir` | `storage/docsync/<host>/<scope-hash>` | Persistent manifest and crawl-state directory |
+| `--restart` | off | Discard resumable operational crawl progress and start from the root URL |
 
 ## Document pipeline
 
@@ -220,7 +223,9 @@ The crawl settings are intentionally fixed and equal in both engines:
 | maximum request retries | `2` |
 | respect robots.txt | `true` |
 
-Crawlee operational storage is created under the operating-system temporary directory for each run and is not part of persistent DocsSync state.
+Crawlee operational request-queue storage is persistent. If a crawl is interrupted, the next run with the same engine, start URL, language, and state directory resumes the unfinished queue. Python and TypeScript keep separate operational storage because their Crawlee storage formats are engine-specific.
+
+Use `--restart` to discard an unfinished engine-specific queue and start again from the root URL. This does not delete generated Markdown or the shared content manifest.
 
 ## Output and shared state
 
@@ -244,14 +249,21 @@ storage/docsync/
     └── <scope-hash>/
 ```
 
-Persistent state is one JSON manifest per hostname inside that scoped state directory:
+The scoped state directory contains the shared content manifest plus engine-specific operational crawl state:
 
 ```text
 STATE_DIR/
-└── developers.openai.com.json
+├── developers.openai.com.json
+└── crawl/
+    ├── python/
+    │   ├── checkpoint.json
+    │   └── storage/
+    └── typescript/
+        ├── checkpoint.json
+        └── storage/
 ```
 
-Each entry contains only the content hash and filename:
+The hostname JSON file is shared by both engines. Each manifest entry contains only the content hash and filename:
 
 ```json
 {
@@ -276,7 +288,7 @@ At the end of a successful run, DocsSync prints one compact summary:
 done processed=N saved=N unchanged=N output=/absolute/output/path state=/absolute/state/path
 ```
 
-Because request-queue storage is temporary, an interrupted process does not resume its in-flight queue. Markdown and manifest entries already written remain durable.
+If a process is interrupted while a crawl is active, its checkpoint remains `running` and the next matching run resumes the persisted request queue. When the queue finishes successfully, the checkpoint becomes `complete`; a later normal sync starts a fresh crawl while reusing the shared content manifest to avoid rewriting unchanged Markdown. `--restart` forces that fresh-crawl behavior even when a `running` checkpoint exists.
 
 ## Verification
 
