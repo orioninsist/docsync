@@ -1,3 +1,5 @@
+FROM node:22-bookworm-slim AS node
+
 FROM mcr.microsoft.com/playwright/python:v1.55.0-noble
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -6,6 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
+
+COPY --from=node /usr/local /usr/local
 
 WORKDIR /app
 

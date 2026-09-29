@@ -34,6 +34,23 @@ The engine changes only the Crawlee runtime. Both paths use the same document po
 
 Docker is the recommended path when you want the project to behave the same on Linux, macOS, and Windows.
 
+If you are preparing this repository on one computer and want to run it later on Windows 11, push the project to GitHub first:
+
+```bash
+git add .
+git commit -m "Add Docker setup"
+git branch -M main
+git remote add origin https://github.com/YOUR_GITHUB_USERNAME/docsync.git
+git push -u origin main
+```
+
+If the `origin` remote already exists, use this instead of `git remote add`:
+
+```bash
+git remote set-url origin https://github.com/YOUR_GITHUB_USERNAME/docsync.git
+git push -u origin main
+```
+
 Build the local image:
 
 ```bash
@@ -56,22 +73,50 @@ The project directory is mounted into the container, so generated Markdown and s
 
 ### Windows notes
 
-Use Docker Desktop with the WSL 2 backend enabled. From PowerShell or Windows Terminal, run the same Compose commands from the repository root:
+Use Windows 11 with Docker Desktop installed and running. During Docker Desktop setup, enable the WSL 2 backend. Then open PowerShell or Windows Terminal and clone the GitHub repository:
+
+```powershell
+git clone https://github.com/YOUR_GITHUB_USERNAME/docsync.git
+cd docsync
+```
+
+Build the Docker image:
 
 ```powershell
 docker compose build
+```
+
+Run the CLI help command to confirm everything is working:
+
+```powershell
+docker compose run --rm docsync --help
+```
+
+Run a real sync with the Python engine:
+
+```powershell
 docker compose run --rm docsync sync https://example.com/docs --engine python
 ```
+
+Run the same sync with the TypeScript engine:
+
+```powershell
+docker compose run --rm docsync sync https://example.com/docs --engine typescript
+```
+
+Replace `https://example.com/docs` with the documentation URL you want to convert. The generated files will appear in the cloned project folder, usually under `docs/<host>/<scope-hash>`.
 
 If you prefer plain `docker run`, use `${PWD}` in PowerShell:
 
 ```powershell
+docker build -t docsync:local .
 docker run --rm -v ${PWD}:/workspace docsync:local sync https://example.com/docs
 ```
 
 In `cmd.exe`, use `%cd%`:
 
 ```bat
+docker build -t docsync:local .
 docker run --rm -v %cd%:/workspace docsync:local sync https://example.com/docs
 ```
 
