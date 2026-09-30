@@ -4,7 +4,7 @@ A deterministic, token-aware Markdown context builder for LLM workflows.
 
 Prepare large Markdown collections for AI usage without changing the original documents.
 
-markdownMerge scans Markdown files, measures tokens, packs complete source files into validated context packages, and keeps every source traceable.
+markdownMerge scans Markdown files, measures tokens, packs sources into validated context packages, and keeps every source traceable. Oversized sources are split into deterministic logical chunks when needed.
 
 ## Why markdownMerge?
 
@@ -22,56 +22,72 @@ markdownMerge solves this by providing:
 ## Features
 
 - Token-aware Markdown packaging
-- Complete source file preservation
+- Source content preservation
 - No rewriting of Markdown body content
 - Source traceability markers
 - Validation after output generation
 - Deterministic numbered output files
 - Configurable tokenizer support through `tiktoken`
 
-markdownMerge recursively scans Markdown files, counts tokens, packs complete source files with First-Fit Decreasing, writes fewer merged Markdown files, and re-tokenizes the written outputs for validation.
+markdownMerge recursively scans Markdown files, counts tokens, splits only oversized sources when necessary, packs source files or logical chunks with First-Fit Decreasing, writes fewer merged Markdown files, and re-tokenizes the written outputs for validation.
 
-Source Markdown files are never split and their body content is never rewritten.
+Markdown body content is preserved. Normal source files remain intact; only a source that exceeds the effective token limit is split into ordered logical chunks.
 
 ## Quick start
 
-Install:
+markdownMerge now lives inside the DocsSync repository:
+
+```text
+docsync/markdownMerge
+```
+
+Install from the embedded project directory:
 
 ```bash
-git clone https://github.com/orioninsist/markdownMerge.git
-cd markdownMerge
+cd /home/murat/Media/6-Project/docsync/markdownMerge
 uv sync
 ```
 
 Daily usage:
 
 ```bash
-uv run mdmerge ./docs ./merged \
-  --name openai \
+uv run mdmerge ./developers.openai.com ./merged \
   --token-limit 120000
 ```
 
 This means:
 
 ```text
-./docs          input directory containing Markdown files
-./merged        output directory
---name openai   output base name
---token-limit   final maximum token count for each generated Markdown part
+./developers.openai.com   input directory containing Markdown files
+./merged                  output directory
+--token-limit             final maximum token count for each generated Markdown part
 ```
 
 If two Markdown parts are created, the output names are:
 
 ```text
 merged/
-├── openai-1.md
-├── openai-2.md
+├── developers.openai.com-1.md
+├── developers.openai.com-2.md
 ├── manifest.json
 ├── summary.txt
 └── validation.txt
 ```
 
-`--name` is required. markdownMerge never guesses a filename from the content or source paths.
+`--name` is optional. When omitted, markdownMerge automatically uses the input directory name as the output base name.
+
+For example:
+
+```text
+input:  ./developers.openai.com
+output: developers.openai.com-1.md
+```
+
+You can still override the automatic name:
+
+```bash
+--name openai
+```
 
 Use a base name only:
 
@@ -81,18 +97,14 @@ Incorrect: --name openai.md
 Incorrect: --name path/openai
 ```
 
-Even when only one part is created, its name is still:
-
-```text
-openai-1.md
-```
+Even when only one part is created, it is still numbered with `-1.md`.
 
 ## Command syntax
 
 ```bash
 uv run mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY \
-  --name NAME \
   --token-limit TOKEN_LIMIT \
+  [--name NAME] \
   [--reserve-tokens RESERVE_TOKENS] \
   [--model MODEL | --encoding ENCODING_NAME]
 ```
@@ -102,13 +114,13 @@ Required:
 ```text
 INPUT_DIRECTORY
 OUTPUT_DIRECTORY
---name
 --token-limit
 ```
 
 Optional:
 
 ```text
+--name
 --reserve-tokens
 --model
 --encoding
@@ -178,7 +190,18 @@ This prevents previously generated files from becoming source files in later run
 
 ### --name
 
-Required output base name.
+Optional output base name.
+
+When omitted, the base name is derived from the resolved input directory name.
+
+Example:
+
+```text
+INPUT_DIRECTORY: /data/docs/developers.openai.com
+generated name:  developers.openai.com
+```
+
+To override it explicitly:
 
 Example:
 
@@ -202,7 +225,7 @@ The name:
 - cannot contain `/` or `\`
 - must not include the `.md` extension
 
-There is no automatic or semantic filename fallback.
+The automatic fallback is the input directory name; markdownMerge does not infer names from document contents.
 
 ### --token-limit
 
@@ -354,7 +377,6 @@ Example:
 
 ```bash
 uv run mdmerge ./docs ./merged \
-  --name openai \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --encoding o200k_base
@@ -368,7 +390,6 @@ This command:
 
 ```bash
 uv run mdmerge ./docs ./merged \
-  --name openai \
   --token-limit 120000
 ```
 
@@ -376,7 +397,6 @@ currently means:
 
 ```bash
 uv run mdmerge ./docs ./merged \
-  --name openai \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --model gpt-4o
@@ -388,7 +408,6 @@ If you want the tokenizer choice to be explicit and independent of model-name ma
 
 ```bash
 uv run mdmerge ./docs ./merged \
-  --name openai \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --encoding o200k_base
@@ -400,7 +419,6 @@ uv run mdmerge ./docs ./merged \
 
 ```bash
 uv run mdmerge ./docs ./merged \
-  --name openai \
   --token-limit 120000
 ```
 
@@ -408,7 +426,6 @@ uv run mdmerge ./docs ./merged \
 
 ```bash
 uv run mdmerge ./docs ./merged \
-  --name openai \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --encoding o200k_base
@@ -418,7 +435,6 @@ uv run mdmerge ./docs ./merged \
 
 ```bash
 uv run mdmerge ./docs ./merged \
-  --name openai \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --model gpt-5
@@ -428,7 +444,6 @@ uv run mdmerge ./docs ./merged \
 
 ```bash
 uv run mdmerge ./docs ./merged \
-  --name openai \
   --token-limit 120000 \
   --reserve-tokens 0 \
   --encoding o200k_base
@@ -438,7 +453,6 @@ uv run mdmerge ./docs ./merged \
 
 ```bash
 uv run mdmerge ./docs ./merged \
-  --name openai \
   --token-limit 120000 \
   --reserve-tokens 10000 \
   --encoding o200k_base
@@ -497,7 +511,7 @@ put each source in the first existing part where it fits
 
 First-Fit Decreasing is a packing heuristic. It generally reduces the number of generated parts, but it does not guarantee the mathematically minimum possible number for every input.
 
-A source Markdown file is never split. If one source is larger than the effective planning limit, the run stops with an error.
+A source Markdown file that fits within the effective planning limit remains intact. If one source exceeds that limit, markdownMerge splits it into ordered logical chunks that each fit the planning budget.
 
 ## Source integrity
 
@@ -509,11 +523,11 @@ markdownMerge does not:
 - normalize Markdown
 - alter code blocks
 - alter syntax-highlight language identifiers
-- split a source Markdown file
+- split a source unless it exceeds the effective token limit
 - semantically cluster text
 - reorder text inside a source file
 
-It only decides which complete source files belong in each generated part.
+It decides which complete source files or oversized-source chunks belong in each generated part.
 
 Every source body is preceded by a traceability marker:
 
@@ -525,29 +539,23 @@ Every source body is preceded by a traceability marker:
 
 ## Output files
 
-For:
-
-```bash
---name openai
-```
-
-an example output directory is:
+For an input directory named `openai.com`, an example output directory is:
 
 ```text
 merged/
-├── openai-1.md
-├── openai-2.md
-├── openai-3.md
+├── openai.com-1.md
+├── openai.com-2.md
+├── openai.com-3.md
 ├── manifest.json
 ├── summary.txt
 └── validation.txt
 ```
 
-### openai-N.md
+### INPUT-DIRECTORY-N.md
 
 Merged Markdown part.
 
-Each part contains one or more complete source Markdown files plus their `# Source:` markers.
+Each part contains one or more source Markdown files or oversized-source chunks plus their `# Source:` markers.
 
 ### summary.txt
 
@@ -586,17 +594,19 @@ Machine-readable metadata containing:
 ```text
 1. validate CLI arguments
 2. recursively discover .md files
-3. count each complete source plus its source marker with tiktoken
-4. reject a source that exceeds the effective planning limit
-5. sort sources by descending token count
+3. count each source plus its source marker with tiktoken
+4. split any source that exceeds the effective planning limit into ordered logical chunks
+5. sort complete sources/chunks deterministically for packing
 6. pack with First-Fit Decreasing
-7. write NAME-1.md, NAME-2.md, ...
-8. re-read every generated Markdown part
-9. re-tokenize every generated Markdown part
-10. create validation.txt
-11. create summary.txt
-12. create manifest.json
-13. exit successfully only when validation passes
+7. derive the output base name from INPUT_DIRECTORY unless --name overrides it
+8. remove stale numbered parts for the current output base name
+9. write NAME-1.md, NAME-2.md, ...
+10. re-read every generated Markdown part
+11. re-tokenize every generated Markdown part
+12. create validation.txt
+13. create summary.txt
+14. create manifest.json
+15. exit successfully only when validation passes
 ```
 
 ## Determinism
@@ -605,7 +615,7 @@ Given the same:
 
 - source contents
 - source paths
-- `--name`
+- resolved output name
 - token limit
 - reserve
 - tokenizer
@@ -616,9 +626,11 @@ markdownMerge produces the same packing order, part membership, and numbered out
 
 You may run the same command again.
 
-If a new run creates fewer parts than an older run in the same output directory, old higher-numbered Markdown parts can remain on disk. For example, an old `openai-4.md` can remain if the new run creates only `openai-1.md` through `openai-3.md`.
+Before writing, markdownMerge removes stale numbered Markdown parts for the current output base name.
 
-Use a dedicated output directory for each corpus and clear or replace it before a fresh run when you do not want stale files retained.
+For example, if an earlier run created `openai.com-1.md` through `openai.com-32.md` and the next run creates only 28 parts, stale `openai.com-29.md` through `openai.com-32.md` are removed automatically.
+
+Unrelated Markdown files and similarly named non-numbered files are preserved.
 
 ## Checking results
 
@@ -707,12 +719,21 @@ uv run python main.py --help
 
 ## Troubleshooting
 
-### --name is required
+### Automatic output name
 
-Every run must include a base name:
+If `--name` is omitted, markdownMerge uses the input directory name automatically.
 
-```bash
---name openai
+For:
+
+```text
+/data/docs/developers.openai.com
+```
+
+the generated files begin with:
+
+```text
+developers.openai.com-1.md
+developers.openai.com-2.md
 ```
 
 ### --name must not include .md
@@ -741,17 +762,15 @@ Pass a directory, not a single Markdown file.
 
 Choose a sibling or otherwise separate output directory.
 
-### Source file exceeds the effective token limit
+### Oversized source files
 
-One complete source file is too large for:
+If one source is larger than:
 
 ```text
 token limit - reserve tokens
 ```
 
-Increase `--token-limit`, reduce `--reserve-tokens`, or handle that source separately.
-
-markdownMerge will not split or silently modify the source.
+markdownMerge automatically splits that source into ordered logical chunks. The source body text is preserved; chunking only creates safe package boundaries so each chunk can fit within the planning budget.
 
 ### Unknown model
 
@@ -795,7 +814,7 @@ It does not:
 - choose `--token-limit` for you
 - modify source content
 - summarize sources
-- split oversized source files
+- summarize or rewrite oversized source files
 - perform semantic clustering
 - crawl websites
 
