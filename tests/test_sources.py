@@ -24,10 +24,11 @@ var Sprite = {};
     assert "official Phaser repository JSDoc" in markdown
     assert "not a mirror of docs.phaser.io" in markdown
     assert "A Sprite Game Object." in markdown
-    assert "- **class:** Sprite" in markdown
-    assert "- **memberof:** Phaser.GameObjects" in markdown
-    assert "- **since:** 3.0.0" in markdown
-    assert "- **param:** {number} x - Horizontal position." in markdown
+    assert "## `Sprite`" in markdown
+    assert "**Kind:** class" in markdown
+    assert "- **Member of:** Phaser.GameObjects" in markdown
+    assert "- **Since:** 3.0.0" in markdown
+    assert "| `x` | `number` | Horizontal position. |" in markdown
 
 
 def test_source_selection_precedes_engine_selection() -> None:
