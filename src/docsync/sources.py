@@ -99,9 +99,8 @@ def _render_jsdoc_block(block: str) -> str:
         rows = ["| Name | Type | Description |", "| --- | --- | --- |"]
         for value in params:
             type_name, name, desc = _split_typed_value(value)
-            rows.append(
-                f"| `{name}` | `{type_name}` | {desc.replace('|', '\|')} |"
-            )
+            safe_desc = desc.replace("|", chr(92) + "|")
+            rows.append(f"| `{name}` | `{type_name}` | {safe_desc} |")
         parts.append("\n".join(rows))
 
     metadata: list[str] = []
