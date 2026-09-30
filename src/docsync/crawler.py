@@ -32,6 +32,23 @@ from docsync.policy import (
 )
 
 
+class _CamoufoxPlugin(PlaywrightBrowserPlugin):
+    """Crawlee's documented Camoufox browser integration."""
+
+    @override
+    async def new_browser(self) -> PlaywrightBrowserController:
+        if not self._playwright:
+            raise RuntimeError("Playwright browser plugin is not initialized.")
+
+        return PlaywrightBrowserController(
+            browser=await AsyncNewBrowser(
+                self._playwright, **self._browser_launch_options
+            ),
+            max_open_pages_per_browser=1,
+            header_generator=None,
+        )
+
+
 def _load_state(path: Path) -> dict[str, dict[str, str]]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
