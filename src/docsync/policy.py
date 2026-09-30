@@ -63,6 +63,7 @@ def hostname_for_url(url: str) -> str:
 
 
 DOCUMENTATION_BASE_DIR = Path("/home/murat/Media/5-Documentation")
+DOCSYNC_STATE_BASE_DIR = Path("/home/murat/Media/8-Document/docsync")
 
 
 def site_dirname(start_url: str) -> str:
@@ -77,11 +78,11 @@ def site_dirname(start_url: str) -> str:
 
 
 def default_output_dir(start_url: str) -> Path:
-    return DOCUMENTATION_BASE_DIR / site_dirname(start_url) / "docs"
+    return DOCUMENTATION_BASE_DIR / site_dirname(start_url)
 
 
 def default_state_dir(start_url: str) -> Path:
-    return DOCUMENTATION_BASE_DIR / site_dirname(start_url) / "state"
+    return DOCSYNC_STATE_BASE_DIR / site_dirname(start_url)
 
 
 def output_path(output_dir: Path, url: str) -> Path:
