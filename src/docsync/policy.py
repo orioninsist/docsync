@@ -62,14 +62,26 @@ def hostname_for_url(url: str) -> str:
     return parsed.hostname
 
 
+DOCUMENTATION_BASE_DIR = Path("/home/murat/Media/5-Documentation")
+
+
+def site_dirname(start_url: str) -> str:
+    parsed = urlsplit(start_url)
+    if not parsed.hostname or parsed.scheme not in {"http", "https"}:
+        raise ValueError("start_url must be an absolute HTTP(S) URL")
+
+    parts = [parsed.hostname]
+    parts.extend(part for part in parsed.path.split("/") if part)
+    name = "-".join(parts)
+    return re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip("-")
+
+
 def default_output_dir(start_url: str) -> Path:
-    return Path("docs") / hostname_for_url(start_url) / scope_id(start_url)
+    return DOCUMENTATION_BASE_DIR / site_dirname(start_url) / "docs"
 
 
 def default_state_dir(start_url: str) -> Path:
-    return (
-        Path("storage") / "docsync" / hostname_for_url(start_url) / scope_id(start_url)
-    )
+    return DOCUMENTATION_BASE_DIR / site_dirname(start_url) / "state"
 
 
 def output_path(output_dir: Path, url: str) -> Path:

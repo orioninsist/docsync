@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import pytest
@@ -11,7 +10,7 @@ from docsync.policy import (
     hostname_for_url,
     normalize_language,
     output_path,
-    scope_id,
+    site_dirname,
 )
 
 
@@ -33,14 +32,22 @@ def test_hostname_requires_absolute_http_url() -> None:
         hostname_for_url("file:///tmp/docs")
 
 
-def test_default_directories_are_scoped_by_host_and_start_url() -> None:
+def test_default_directories_use_documentation_base_and_site_name() -> None:
     start_url = "https://example.com/docs"
-    expected_scope = hashlib.sha256(start_url.encode("utf-8")).hexdigest()[:12]
 
-    assert scope_id(start_url) == expected_scope
-    assert default_output_dir(start_url) == Path("docs/example.com") / expected_scope
-    assert default_state_dir(start_url) == (
-        Path("storage/docsync/example.com") / expected_scope
+    assert site_dirname(start_url) == "example.com-docs"
+    assert default_output_dir(start_url) == Path(
+        "/home/murat/Media/5-Documentation/example.com-docs/docs"
+    )
+    assert default_state_dir(start_url) == Path(
+        "/home/murat/Media/5-Documentation/example.com-docs/state"
+    )
+
+
+def test_site_dirname_uses_full_url_path() -> None:
+    assert (
+        site_dirname("https://github.com/niri-wm/niri/wiki")
+        == "github.com-niri-wm-niri-wiki"
     )
 
 
