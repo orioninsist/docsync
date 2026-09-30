@@ -1,9 +1,8 @@
 import sys
 from pathlib import Path
 
+import markdown_merge.cli as cli
 import pytest
-
-from markdown_merge.cli import main
 
 
 def test_cli_derives_name_from_input_directory(
@@ -11,10 +10,10 @@ def test_cli_derives_name_from_input_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     input_dir = tmp_path / "developers.openai.com"
-    output_dir = tmp_path / "merged"
-
     input_dir.mkdir()
     (input_dir / "index.md").write_text("# Hello", encoding="utf-8")
+    output_root = tmp_path / "markdownMerge"
+    monkeypatch.setattr(cli, "MARKDOWN_MERGE_BASE_DIR", output_root)
 
     monkeypatch.setattr(
         sys,
@@ -22,7 +21,6 @@ def test_cli_derives_name_from_input_directory(
         [
             "mdmerge",
             str(input_dir),
-            str(output_dir),
             "--token-limit",
             "1000",
             "--reserve-tokens",
@@ -32,8 +30,9 @@ def test_cli_derives_name_from_input_directory(
         ],
     )
 
-    main()
+    cli.main()
 
+    output_dir = output_root / "developers.openai.com"
     assert (output_dir / "developers.openai.com-1.md").exists()
 
 
@@ -42,10 +41,10 @@ def test_cli_explicit_name_still_overrides_directory_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     input_dir = tmp_path / "developers.openai.com"
-    output_dir = tmp_path / "merged"
-
     input_dir.mkdir()
     (input_dir / "index.md").write_text("# Hello", encoding="utf-8")
+    output_root = tmp_path / "markdownMerge"
+    monkeypatch.setattr(cli, "MARKDOWN_MERGE_BASE_DIR", output_root)
 
     monkeypatch.setattr(
         sys,
@@ -53,7 +52,6 @@ def test_cli_explicit_name_still_overrides_directory_name(
         [
             "mdmerge",
             str(input_dir),
-            str(output_dir),
             "--name",
             "developers",
             "--token-limit",
@@ -65,6 +63,7 @@ def test_cli_explicit_name_still_overrides_directory_name(
         ],
     )
 
-    main()
+    cli.main()
 
+    output_dir = output_root / "developers.openai.com"
     assert (output_dir / "developers-1.md").exists()

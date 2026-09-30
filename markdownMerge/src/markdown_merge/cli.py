@@ -8,6 +8,8 @@ from .summary import create_summary
 from .validator import validate_output
 from .writer import write_parts
 
+MARKDOWN_MERGE_BASE_DIR = Path("/home/murat/Media/8-Document/markdownMerge")
+
 
 def _paths_overlap(input_directory: str, output_directory: str) -> bool:
     input_path = Path(input_directory).resolve()
@@ -26,7 +28,6 @@ def main() -> None:
     )
 
     parser.add_argument("input_directory")
-    parser.add_argument("output_directory")
     parser.add_argument(
         "--name",
         help=(
@@ -60,11 +61,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    name = (
-        args.name.strip()
-        if args.name is not None
-        else Path(args.input_directory).resolve().name
-    )
+    input_path = Path(args.input_directory).resolve()
+    name = args.name.strip() if args.name is not None else input_path.name
+    output_path = MARKDOWN_MERGE_BASE_DIR / input_path.name
 
     if not name:
         parser.error("Could not derive an output name from INPUT_DIRECTORY.")
@@ -78,9 +77,6 @@ def main() -> None:
         parser.error("--reserve-tokens cannot be negative.")
     if args.reserve_tokens >= args.token_limit:
         parser.error("--reserve-tokens must be smaller than --token-limit.")
-    if _paths_overlap(args.input_directory, args.output_directory):
-        parser.error("OUTPUT_DIRECTORY must be outside INPUT_DIRECTORY.")
-
     model = None if args.encoding_name else args.model
     tokenizer_name = (
         f"encoding:{args.encoding_name}"
@@ -91,7 +87,7 @@ def main() -> None:
     print("Markdown Merge Started")
     print()
     print(f"Input: {args.input_directory}")
-    print(f"Output: {args.output_directory}")
+    print(f"Output: {output_path}")
     print(f"Name: {name}")
     print(f"Token Limit: {args.token_limit}")
     print(f"Reserve Tokens: {args.reserve_tokens}")
@@ -123,7 +119,7 @@ def main() -> None:
     print("Writing output files...")
     created_files = write_parts(
         parts,
-        args.output_directory,
+        str(output_path),
         args.input_directory,
         name,
     )
@@ -134,8 +130,6 @@ def main() -> None:
         model=model,
         encoding_name=args.encoding_name,
     )
-
-    output_path = Path(args.output_directory)
 
     validation_path = output_path / "validation.txt"
     validation_path.write_text(
