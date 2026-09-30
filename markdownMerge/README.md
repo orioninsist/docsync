@@ -621,10 +621,10 @@ Unrelated Markdown files and similarly named non-numbered files are preserved.
 ## Checking results
 
 ```bash
-cat OUTPUT_DIRECTORY/summary.txt
-cat OUTPUT_DIRECTORY/validation.txt
-jq . OUTPUT_DIRECTORY/manifest.json
-find OUTPUT_DIRECTORY -maxdepth 1 -type f -name '*.md' -print | sort
+cat /home/murat/Media/8-Document/markdownMerge/<site-name>/summary.txt
+cat /home/murat/Media/8-Document/markdownMerge/<site-name>/validation.txt
+jq . /home/murat/Media/8-Document/markdownMerge/<site-name>/manifest.json
+find /home/murat/Media/8-Document/markdownMerge/<site-name> -maxdepth 1 -type f -name '*.md' -print | sort
 ```
 
 ## tiktoken
@@ -781,7 +781,7 @@ uv run python -c 'import tiktoken; print(tiktoken.list_encoding_names())'
 Inspect:
 
 ```bash
-cat OUTPUT_DIRECTORY/validation.txt
+cat /home/murat/Media/8-Document/markdownMerge/<site-name>/validation.txt
 ```
 
 ## Scope
