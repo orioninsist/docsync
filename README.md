@@ -69,7 +69,7 @@ Run a sync with the TypeScript engine:
 docker compose run --rm docsync sync https://example.com/docs --engine typescript
 ```
 
-The project directory is mounted into the container, so generated Markdown and state are written back to the same workspace under `docs/<host>/<scope-hash>` and `storage/docsync/<host>/<scope-hash>`.
+The project directory is mounted into the container, so generated Markdown and state are written back to the same workspace under `/home/murat/Media/5-Documentation/<site-name>/docs` and `/home/murat/Media/5-Documentation/<site-name>/state`.
 
 ### Windows notes
 
@@ -104,7 +104,7 @@ Run the same sync with the TypeScript engine:
 docker compose run --rm docsync sync https://example.com/docs --engine typescript
 ```
 
-Replace `https://example.com/docs` with the documentation URL you want to convert. The generated files will appear in the cloned project folder, usually under `docs/<host>/<scope-hash>`.
+Replace `https://example.com/docs` with the documentation URL you want to convert. The generated files will appear in the cloned project folder, under `/home/murat/Media/5-Documentation/<site-name>/docs`.
 
 If you prefer plain `docker run`, use `${PWD}` in PowerShell:
 
@@ -194,8 +194,8 @@ The legacy `docsync URL` form is still accepted and maps to `docsync sync URL`.
 | `url` | required | Documentation start URL |
 | `--engine` | `python` | Crawlee runtime |
 | `--language` | `en` | Two-letter page language |
-| `--output-dir` | `docs/<host>/<scope-hash>` | Markdown output directory |
-| `--state-dir` | `storage/docsync/<host>/<scope-hash>` | Persistent manifest and crawl-state directory |
+| `--output-dir` | `/home/murat/Media/5-Documentation/<site-name>/docs` | Markdown output directory; an explicit value overrides the default |
+| `--state-dir` | `/home/murat/Media/5-Documentation/<site-name>/state` | Persistent manifest and crawl-state directory; an explicit value overrides the default |
 | `--restart` | off | Discard resumable operational crawl progress and start from the root URL |
 
 ## Document pipeline
@@ -237,17 +237,33 @@ URL-path slug + first 12 characters of SHA-256(URL)
 
 DocsSync hashes the canonical GFM output. If the stored hash matches and the Markdown file still exists, the file is left unchanged.
 
-By default, output and state are scoped by hostname and the start URL hash. This keeps multiple source trees isolated inside one workspace:
+By default, DocsSync stores all synchronized documentation under `/home/murat/Media/5-Documentation`. The start URL is converted into a filesystem-safe site directory by joining its hostname and path segments with hyphens. Query strings and fragments are not part of the directory name.
+
+For example:
 
 ```text
-docs/
-└── developers.openai.com/
-    └── <scope-hash>/
-
-storage/docsync/
-└── developers.openai.com/
-    └── <scope-hash>/
+https://github.com/niri-wm/niri/wiki
+        ↓
+/home/murat/Media/5-Documentation/
+└── github.com-niri-wm-niri-wiki/
+    ├── docs/
+    └── state/
 ```
+
+This means the normal command can stay short:
+
+```bash
+uv run docsync sync https://github.com/niri-wm/niri/wiki
+```
+
+For `https://example.com/docs`, the defaults are:
+
+```text
+/home/murat/Media/5-Documentation/example.com-docs/docs
+/home/murat/Media/5-Documentation/example.com-docs/state
+```
+
+`--output-dir` and `--state-dir` remain available when a caller needs to override either generated path.
 
 The scoped state directory contains the shared content manifest plus engine-specific operational crawl state:
 
