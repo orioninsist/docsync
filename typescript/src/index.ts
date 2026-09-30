@@ -185,6 +185,7 @@ const queue = await RequestQueueV1.open('docsync');
       const html = shouldProcess ? await page.evaluate(() => {
         const candidates = [...document.querySelectorAll('main')];
         if (!candidates.length) candidates.push(...document.querySelectorAll('article'));
+        if (!candidates.length && document.body) candidates.push(document.body);
         if (!candidates.length) return null;
         const documentRoot = candidates.reduce((best, current) =>
           (current.textContent?.trim().length ?? 0) >
