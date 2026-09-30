@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright
 
 from docsync.crawler import run_crawler
 from docsync.policy import default_output_dir, default_state_dir
+from docsync.sources import get_source_adapter
 
 
 def _ensure_python_browser() -> None:
@@ -97,6 +98,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync = subparsers.add_parser("sync", help="Synchronize one documentation tree")
     sync.add_argument("url", help="Documentation start URL")
     sync.add_argument(
+        "--source",
+        choices=("web", "phaser"),
+        default="web",
+        help="Documentation source (default: web)",
+    )
+    sync.add_argument(
         "--engine",
         choices=("python", "typescript"),
         default="python",
@@ -165,6 +172,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     effective_output_dir.mkdir(parents=True, exist_ok=True)
     effective_state_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.source != "web":
+        result = get_source_adapter(args.source).sync(
+            output_dir=effective_output_dir,
+            state_dir=effective_state_dir,
+        )
+        print(
+            "done "
+            f"source={args.source} "
+            f"processed={result['processed']} "
+            f"saved={result['saved']} "
+            f"unchanged={result['unchanged']} "
+            f"output={effective_output_dir} "
+            f"state={effective_state_dir}"
+        )
+        return 0
 
     if args.engine == "typescript":
         if args.install_runtime:
