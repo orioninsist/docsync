@@ -9,10 +9,11 @@ import os
 import shutil
 from pathlib import Path
 
-from crawlee import ConcurrencySettings, Glob, service_locator
+from crawlee import ConcurrencySettings, Glob
 from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.events import LocalEventManager
+from crawlee._service_locator import ServiceLocator
 from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
@@ -148,9 +149,11 @@ async def run_crawler(
 
     storage_client = FileSystemStorageClient()
     event_manager = LocalEventManager.from_config(configuration)
-    service_locator.set_configuration(configuration)
-    service_locator.set_storage_client(storage_client)
-    service_locator.set_event_manager(event_manager)
+    crawl_services = ServiceLocator(
+        configuration=configuration,
+        event_manager=event_manager,
+        storage_client=storage_client,
+    )
 
     queue = await RequestQueue.open(
         configuration=configuration,
@@ -160,6 +163,7 @@ async def run_crawler(
         queue,
         domains=[hostname],
         request_manager_opener=RequestQueue.open,
+        service_locator=crawl_services,
     )
     concurrency = ConcurrencySettings(
         min_concurrency=1,
