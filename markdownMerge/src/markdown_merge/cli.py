@@ -29,8 +29,10 @@ def main() -> None:
     parser.add_argument("output_directory")
     parser.add_argument(
         "--name",
-        required=True,
-        help="Base name for generated Markdown parts (for example: openai).",
+        help=(
+            "Base name for generated Markdown parts. "
+            "Defaults to the input directory name."
+        ),
     )
     parser.add_argument(
         "--token-limit",
@@ -58,11 +60,17 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if not args.name.strip():
-        parser.error("--name cannot be empty.")
-    if args.name in {".", ".."} or "/" in args.name or "\\" in args.name:
+    name = (
+        args.name.strip()
+        if args.name is not None
+        else Path(args.input_directory).resolve().name
+    )
+
+    if not name:
+        parser.error("Could not derive an output name from INPUT_DIRECTORY.")
+    if name in {".", ".."} or "/" in name or "\\" in name:
         parser.error("--name must be a filename base, not a path.")
-    if args.name.lower().endswith(".md"):
+    if name.lower().endswith(".md"):
         parser.error("--name must not include the .md extension.")
     if args.token_limit <= 0:
         parser.error("--token-limit must be greater than zero.")
@@ -84,7 +92,7 @@ def main() -> None:
     print()
     print(f"Input: {args.input_directory}")
     print(f"Output: {args.output_directory}")
-    print(f"Name: {args.name}")
+    print(f"Name: {name}")
     print(f"Token Limit: {args.token_limit}")
     print(f"Reserve Tokens: {args.reserve_tokens}")
     print(f"Tokenizer: {tokenizer_name}")
@@ -117,7 +125,7 @@ def main() -> None:
         parts,
         args.output_directory,
         args.input_directory,
-        args.name,
+        name,
     )
 
     validation = validate_output(
