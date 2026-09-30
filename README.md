@@ -69,7 +69,7 @@ Run a sync with the TypeScript engine:
 docker compose run --rm docsync sync https://example.com/docs --engine typescript
 ```
 
-The project directory is mounted into the container, so generated Markdown and state are written back to the same workspace under `/home/murat/Media/5-Documentation/<site-name>/docs` and `/home/murat/Media/5-Documentation/<site-name>/state`.
+The project directory is mounted into the container. By default, generated Markdown is written under `/home/murat/Media/5-Documentation/<site-name>` and DocsSync operational state is written separately under `/home/murat/Media/8-Document/docsync/<site-name>`.
 
 ### Windows notes
 
@@ -104,7 +104,7 @@ Run the same sync with the TypeScript engine:
 docker compose run --rm docsync sync https://example.com/docs --engine typescript
 ```
 
-Replace `https://example.com/docs` with the documentation URL you want to convert. The generated files will appear in the cloned project folder, under `/home/murat/Media/5-Documentation/<site-name>/docs`.
+Replace `https://example.com/docs` with the documentation URL you want to convert. By default, generated Markdown is written under `/home/murat/Media/5-Documentation/<site-name>`.
 
 If you prefer plain `docker run`, use `${PWD}` in PowerShell:
 
@@ -194,8 +194,8 @@ The legacy `docsync URL` form is still accepted and maps to `docsync sync URL`.
 | `url` | required | Documentation start URL |
 | `--engine` | `python` | Crawlee runtime |
 | `--language` | `en` | Two-letter page language |
-| `--output-dir` | `/home/murat/Media/5-Documentation/<site-name>/docs` | Markdown output directory; an explicit value overrides the default |
-| `--state-dir` | `/home/murat/Media/5-Documentation/<site-name>/state` | Persistent manifest and crawl-state directory; an explicit value overrides the default |
+| `--output-dir` | `/home/murat/Media/5-Documentation/<site-name>` | Markdown output directory; an explicit value overrides the default |
+| `--state-dir` | `/home/murat/Media/8-Document/docsync/<site-name>` | Persistent manifest and crawl-state directory; an explicit value overrides the default |
 | `--restart` | off | Discard resumable operational crawl progress and start from the root URL |
 
 ## Document pipeline
@@ -221,6 +221,7 @@ The crawl settings are intentionally fixed and equal in both engines:
 | maximum requests per minute | `20` |
 | maximum requests per crawl | `10000` |
 | maximum request retries | `2` |
+| retry blocked sessions | `false` |
 | respect robots.txt | `true` |
 
 Crawlee operational request-queue storage is persistent. If a crawl is interrupted, the next run with the same engine, start URL, language, and state directory resumes the unfinished queue. Python and TypeScript keep separate operational storage because their Crawlee storage formats are engine-specific.
@@ -244,10 +245,16 @@ For example:
 ```text
 https://github.com/niri-wm/niri/wiki
         ↓
+
+Markdown output:
 /home/murat/Media/5-Documentation/
 └── github.com-niri-wm-niri-wiki/
-    ├── docs/
-    └── state/
+
+DocsSync state:
+/home/murat/Media/8-Document/docsync/
+└── github.com-niri-wm-niri-wiki/
+    ├── github.com.json
+    └── crawl/
 ```
 
 This means the normal command can stay short:
@@ -259,11 +266,11 @@ uv run docsync sync https://github.com/niri-wm/niri/wiki
 For `https://example.com/docs`, the defaults are:
 
 ```text
-/home/murat/Media/5-Documentation/example.com-docs/docs
-/home/murat/Media/5-Documentation/example.com-docs/state
+/home/murat/Media/5-Documentation/example.com-docs
+/home/murat/Media/8-Document/docsync/example.com-docs
 ```
 
-`--output-dir` and `--state-dir` remain available when a caller needs to override either generated path.
+`--output-dir` and `--state-dir` remain available when a caller needs to override either generated path. The documentation tree is intentionally kept free of checkpoint, request-queue, and manifest files; those belong under the separate DocsSync state root.
 
 The scoped state directory contains the shared content manifest plus engine-specific operational crawl state:
 
@@ -296,7 +303,7 @@ Writes are incremental. Each successful document is written immediately, and the
 
 ## Runtime behavior
 
-Crawlee owns crawling, queues, retries, throttling, robots.txt handling, concurrency, discovery, browser lifecycle, and native statistics. DocsSync does not add a second progress framework or custom crawler lifecycle.
+Crawlee owns crawling, queues, retries, throttling, robots.txt handling, concurrency, discovery, browser lifecycle, and native statistics. DocsSync does not add a second progress framework or custom crawler lifecycle. DocsSync disables repeated blocked-session rotation so HTTP 403 responses such as Cloudflare challenges fail fast instead of cycling through multiple sessions.
 
 At the end of a successful run, DocsSync prints one compact summary:
 
