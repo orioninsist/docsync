@@ -48,12 +48,12 @@ def _save_manifest(path: Path, manifest: dict[str, dict[str, str]]) -> None:
 
 
 def _parse_tag(line: str) -> tuple[str, str] | None:
-    match = re.match(r"@(\\S+)\\s*(.*)", line)
+    match = re.match(r"@(\S+)\s*(.*)", line)
     return match.groups() if match else None
 
 
 def _split_typed_value(value: str) -> tuple[str, str, str]:
-    match = re.match(r"\\{([^}]*)\\}\\s+(\\S+)\\s*(?:-\\s*)?(.*)", value)
+    match = re.match(r"\{([^}]*)\}\s+(\S+)\s*(?:-\s*)?(.*)", value)
     if not match:
         return "", value, ""
     return match.groups()
@@ -65,7 +65,7 @@ def _render_jsdoc_block(block: str) -> str:
     in_tags = False
 
     for raw in block.splitlines():
-        line = re.sub(r"^\\s*\\* ?", "", raw).rstrip()
+        line = re.sub(r"^\s*\* ?", "", raw).rstrip()
         if line.startswith(("@author", "@copyright", "@license", "@private")):
             continue
         if line.startswith("@classdesc"):
@@ -89,7 +89,7 @@ def _render_jsdoc_block(block: str) -> str:
         parts.append(f"## `{value}`")
         parts.append(f"**Kind:** {tag}")
 
-    prose = "\\n".join(description).strip()
+    prose = "\n".join(description).strip()
     if prose:
         parts.append(prose)
 
@@ -100,9 +100,9 @@ def _render_jsdoc_block(block: str) -> str:
         for value in params:
             type_name, name, desc = _split_typed_value(value)
             rows.append(
-                f"| `{name}` | `{type_name}` | {desc.replace('|', '\\|')} |"
+                f"| `{name}` | `{type_name}` | {desc.replace('|', '\|')} |"
             )
-        parts.append("\\n".join(rows))
+        parts.append("\n".join(rows))
 
     metadata: list[str] = []
     flags: list[str] = []
@@ -132,14 +132,14 @@ def _render_jsdoc_block(block: str) -> str:
     if flags:
         metadata.append(f"- **Flags:** {', '.join(f'`{flag}`' for flag in flags)}")
     if metadata:
-        parts.append("### Metadata\\n" + "\\n".join(metadata))
+        parts.append("### Metadata\n" + "\n".join(metadata))
 
-    return "\\n\\n".join(part for part in parts if part).strip()
+    return "\n\n".join(part for part in parts if part).strip()
 
 
 def _jsdoc_to_markdown(source_path: str, source: str) -> str:
     """Render official JSDoc blocks without pretending to reproduce docs.phaser.io."""
-    blocks = re.findall(r"/\\*\\*(.*?)\\*/", source, flags=re.DOTALL)
+    blocks = re.findall(r"/\*\*(.*?)\*/", source, flags=re.DOTALL)
     sections = [_render_jsdoc_block(block) for block in blocks]
     sections = [section for section in sections if section]
 
@@ -147,11 +147,11 @@ def _jsdoc_to_markdown(source_path: str, source: str) -> str:
         return ""
 
     return (
-        f"# {source_path}\\n\\n"
+        f"# {source_path}\n\n"
         "> Source: official Phaser repository JSDoc. "
-        "This is source-derived documentation, not a mirror of docs.phaser.io.\\n\\n"
-        + "\\n\\n---\\n\\n".join(sections)
-        + "\\n"
+        "This is source-derived documentation, not a mirror of docs.phaser.io.\n\n"
+        + "\n\n---\n\n".join(sections)
+        + "\n"
     )
 
 
