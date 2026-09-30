@@ -223,6 +223,10 @@ async def run_crawler(
 
     statistics = await crawler.run([start_url], purge_request_queue=False)
 
+    failed_requests = statistics.requests_failed
+    if failed_requests:
+        raise RuntimeError(f"crawl failed: {failed_requests} request(s) failed")
+
     stopped_at_request_limit = statistics.requests_total >= max_requests
     if not stopped_at_request_limit and await queue.is_finished():
         _save_checkpoint(
