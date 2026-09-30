@@ -9,7 +9,9 @@ import os
 import shutil
 from pathlib import Path
 
+from camoufox import AsyncNewBrowser
 from crawlee import ConcurrencySettings, Glob, service_locator
+from crawlee.browsers import BrowserPool, PlaywrightBrowserController, PlaywrightBrowserPlugin
 from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.events import LocalEventManager
@@ -17,6 +19,7 @@ from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
 from html_to_markdown import convert
+from typing_extensions import override
 
 from docsync.policy import (
     NORMALIZE_DOCUMENT,
@@ -172,13 +175,26 @@ async def run_crawler(
         if os.environ.get("DOCSYNC_NO_SANDBOX") == "1"
         else None
     )
+    protected_site = hostname == "docs.phaser.io"
+    browser_pool = (
+        BrowserPool(
+            plugins=[
+                _CamoufoxPlugin(
+                    browser_launch_options={"headless": not headful},
+                )
+            ]
+        )
+        if protected_site
+        else None
+    )
     crawler = PlaywrightCrawler(
         configuration=configuration,
         event_manager=event_manager,
         storage_client=storage_client,
-        headless=not headful,
-        use_incognito_pages=headful,
-        browser_launch_options=browser_launch_options,
+        browser_pool=browser_pool,
+        headless=None if protected_site else not headful,
+        use_incognito_pages=None if protected_site else headful,
+        browser_launch_options=None if protected_site else browser_launch_options,
         request_manager=request_manager,
         concurrency_settings=concurrency,
         max_requests_per_crawl=max_requests,
