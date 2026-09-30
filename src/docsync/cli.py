@@ -91,25 +91,25 @@ def _run_typescript(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="docsync",
-        description="Synchronize rendered documentation to GFM with Crawlee.",
+        description="Synchronize documentation to GFM from the web or an official source adapter.",
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    sync = subparsers.add_parser("sync", help="Synchronize one documentation tree")
+    sync = subparsers.add_parser("sync", help="Synchronize one documentation tree from a selected source")
     sync.add_argument("url", help="Documentation start URL")
     sync.add_argument(
         "--source",
         choices=("web", "phaser"),
         default="web",
-        help="Documentation source (default: web)",
+        help="Documentation source: web uses Crawlee; phaser uses official Phaser source JSDoc (default: web)",
     )
     sync.add_argument(
         "--engine",
         choices=("python", "typescript"),
         default="python",
-        help="Crawlee engine (default: python)",
+        help="Crawlee engine used when --source web is selected (default: python)",
     )
-    sync.add_argument("--language", default="en", help="Language code (default: en)")
+    sync.add_argument("--language", default="en", help="Page language for web crawling (default: en)")
     sync.add_argument(
         "--output-dir",
         type=Path,
@@ -128,12 +128,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument(
         "--headful",
         action="store_true",
-        help="Run Chromium with a visible browser window",
+        help="Run Chromium with a visible browser window when --source web is selected",
     )
     sync.add_argument(
         "--restart",
         action="store_true",
-        help="Discard resumable crawl progress and start a fresh crawl",
+        help="Discard resumable web-crawl progress and start a fresh crawl",
     )
 
     setup = subparsers.add_parser("setup", help="Prepare local runtime dependencies")
