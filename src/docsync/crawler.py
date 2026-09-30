@@ -12,7 +12,9 @@ from pathlib import Path
 from crawlee import ConcurrencySettings, Glob
 from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
+from crawlee.events import LocalEventManager
 from crawlee.request_loaders import ThrottlingRequestManager
+from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
 from html_to_markdown import convert
 
@@ -144,7 +146,13 @@ async def run_crawler(
         purge_on_start=not resume,
     )
 
-    queue = await RequestQueue.open(configuration=configuration)
+    storage_client = FileSystemStorageClient()
+    event_manager = LocalEventManager.from_config(configuration)
+
+    queue = await RequestQueue.open(
+        configuration=configuration,
+        storage_client=storage_client,
+    )
     request_manager = ThrottlingRequestManager(
         queue,
         domains=[hostname],
@@ -163,6 +171,8 @@ async def run_crawler(
     )
     crawler = PlaywrightCrawler(
         configuration=configuration,
+        event_manager=event_manager,
+        storage_client=storage_client,
         headless=not headful,
         use_incognito_pages=headful,
         browser_launch_options=browser_launch_options,
@@ -170,7 +180,7 @@ async def run_crawler(
         concurrency_settings=concurrency,
         max_requests_per_crawl=max_requests,
         max_request_retries=2,
-        retry_on_blocked=False,
+        retry_on_blocked=True,
         respect_robots_txt_file=True,
     )
 
