@@ -1,34 +1,36 @@
 # DocsSync
 
-DocsSync synchronizes rendered documentation pages to GitHub-Flavored Markdown through one CLI and two interchangeable Crawlee engines.
+DocsSync synchronizes documentation to GitHub-Flavored Markdown through one CLI. The default `web` source crawls rendered documentation with interchangeable Crawlee Python and TypeScript engines. Source adapters can instead generate Markdown directly from an official upstream source tree when browser crawling is not the right input.
 
 ## Architecture
 
 ```text
-                         docsync
-                           │
-                 --engine python|typescript
-                           │
-              ┌────────────┴────────────┐
-              │                         │
-       Crawlee Python             Crawlee TypeScript
-              │                         │
-              └────── Playwright ───────┘
-                           │
-                    rendered DOM
-                           │
-                 semantic <main>
-                           │
-                  DOM normalization
-                           │
-                  html-to-markdown
-                           │
-                          GFM
-                           │
-                 Markdown + shared state
+                              docsync
+                                │
+                    --source web|phaser
+                                │
+             ┌──────────────────┴──────────────────┐
+             │                                     │
+        source=web                           source=phaser
+             │                                     │
+   --engine python|typescript               SourceAdapter
+             │                                     │
+      Crawlee + Playwright                 PhaserSourceAdapter
+             │                                     │
+       rendered DOM                    official Phaser JSDoc
+             │                                     │
+     DOM normalization                      Markdown renderer
+             │                                     │
+      html-to-markdown                            GFM
+             │                                     │
+             └──────────── Markdown + state ───────┘
 ```
 
-The engine changes only the Crawlee runtime. Both paths use the same document policy: the largest rendered `<main>`, semantic DOM cleanup, canonical code blocks, html-to-markdown 3.14.3, stable filenames, SHA-256 content fingerprints, and the same hostname manifest.
+`--source` selects where documentation comes from. `--engine` selects the Crawlee implementation only for `--source web`; it does not select or alter source adapters.
+
+The default web source uses the same document policy in both engines: the largest rendered `<main>`, semantic DOM cleanup, canonical code blocks, html-to-markdown 3.14.3, stable filenames, SHA-256 content fingerprints, and the same hostname manifest.
+
+The Phaser source adapter checks out the official Phaser repository and renders JSDoc from its `src/**/*.js` files. This output is source-derived documentation and is intentionally not presented as a byte-for-byte or page-for-page mirror of docs.phaser.io.
 
 ## Quick start with Docker
 
@@ -156,21 +158,35 @@ This installs the selected Playwright Chromium runtime and, for the TypeScript e
 
 ## CLI
 
-Python engine:
+Web crawling with the Python engine:
 
 ```bash
 uv run docsync sync https://example.com/docs \
+  --source web \
   --engine python \
   --language en
 ```
 
-TypeScript engine:
+Web crawling with the TypeScript engine:
 
 ```bash
 uv run docsync sync https://example.com/docs \
+  --source web \
   --engine typescript \
   --language en
 ```
+
+Phaser from its official source JSDoc:
+
+```bash
+uv run docsync sync https://docs.phaser.io/ \
+  --source phaser \
+  --language en \
+  --output-dir /home/murat/Media/5-Documentation/docs.phaser.io \
+  --state-dir /home/murat/Media/8-Document/docsync/docs.phaser.io
+```
+
+For `--source phaser`, DocsSync bypasses Crawlee and Playwright. The `--engine`, `--headful`, `--restart`, and `--install-runtime` web-crawler controls therefore do not affect the source adapter. The URL remains part of the common CLI and default output/state path calculation; the Phaser adapter itself reads the official Phaser repository.
 
 Public interface:
 
@@ -178,6 +194,7 @@ Public interface:
 docsync setup [--engine {python,typescript,all}]
 
 docsync sync URL
+  [--source {web,phaser}]
   [--engine {python,typescript}]
   [--language LANGUAGE]
   [--output-dir OUTPUT_DIR]
@@ -191,12 +208,21 @@ The legacy `docsync URL` form is still accepted and maps to `docsync sync URL`.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `url` | required | Documentation start URL |
-| `--engine` | `python` | Crawlee runtime |
-| `--language` | `en` | Two-letter page language |
+| `url` | required | Documentation start URL; also scopes default output/state paths |
+| `--source` | `web` | Input source: rendered web crawl or an available official-source adapter |
+| `--engine` | `python` | Crawlee runtime used only by `--source web` |
+| `--language` | `en` | Page language used by web crawling |
 | `--output-dir` | `/home/murat/Media/5-Documentation/<site-name>` | Markdown output directory; an explicit value overrides the default |
-| `--state-dir` | `/home/murat/Media/8-Document/docsync/<site-name>` | Persistent manifest and crawl-state directory; an explicit value overrides the default |
-| `--restart` | off | Discard resumable operational crawl progress and start from the root URL |
+| `--state-dir` | `/home/murat/Media/8-Document/docsync/<site-name>` | Persistent manifest/source-state directory; an explicit value overrides the default |
+| `--install-runtime` | off | Prepare the selected web crawler runtime before syncing |
+| `--headful` | off | Run Chromium visibly for the web source |
+| `--restart` | off | Discard resumable web-crawl progress and start from the root URL |
+
+### Phaser source adapter
+
+The Phaser adapter is the first non-web `SourceAdapter`. It fetches the configured official Phaser Git repository ref into the DocsSync state directory, scans JavaScript source files for JSDoc blocks, renders structured Markdown, and records source commit/content hashes in `source-phaser.json`.
+
+Generated paths preserve the Phaser `src/` hierarchy while dropping the leading `src/` and replacing `.js` with `.md`. Re-running against unchanged source and renderer output leaves existing Markdown untouched and reports it as `unchanged`.
 
 ## Document pipeline
 
@@ -221,7 +247,7 @@ The crawl settings are intentionally fixed and equal in both engines:
 | maximum requests per minute | `20` |
 | maximum requests per crawl | `10000` |
 | maximum request retries | `2` |
-| retry blocked sessions | `false` |
+| retry blocked sessions | `true` |
 | respect robots.txt | `true` |
 
 Crawlee operational request-queue storage is persistent. If a crawl is interrupted, the next run with the same engine, start URL, language, and state directory resumes the unfinished queue. Python and TypeScript keep separate operational storage because their Crawlee storage formats are engine-specific.
@@ -306,7 +332,7 @@ Writes are incremental. Each successful document is written immediately, and the
 
 ## Runtime behavior
 
-Crawlee owns crawling, queues, retries, throttling, robots.txt handling, concurrency, discovery, browser lifecycle, and native statistics. DocsSync does not add a second progress framework or custom crawler lifecycle. DocsSync disables repeated blocked-session rotation so HTTP 403 responses such as Cloudflare challenges fail fast instead of cycling through multiple sessions.
+Crawlee owns crawling, queues, retries, throttling, robots.txt handling, concurrency, discovery, browser lifecycle, and native statistics. DocsSync does not add a second progress framework or custom crawler lifecycle. For the web source, Crawlee owns blocked-session retry behavior. DocsSync enables Crawlee blocked-request retries and still propagates a nonzero failure when requests remain failed after the configured retry limit.
 
 At the end of a successful run, DocsSync prints one compact summary:
 
@@ -351,10 +377,12 @@ docsync/
 │       ├── __main__.py
 │       ├── cli.py
 │       ├── crawler.py
-│       └── policy.py
+│       ├── policy.py
+│       └── sources.py
 ├── tests/
 │   ├── test_parity.py
-│   └── test_policy.py
+│   ├── test_policy.py
+│   └── test_sources.py
 ├── Dockerfile
 ├── compose.yaml
 └── typescript/
@@ -368,6 +396,6 @@ Dependency lockfiles are generated from the current manifests by `uv lock` and `
 
 ## Design boundary
 
-DocsSync intentionally contains no custom browser controller, request frontier, retry engine, rate limiter, robots.txt parser, Markdown parser, site-specific selector set, TUI, or Rich interface.
+DocsSync intentionally contains no custom browser controller, request frontier, retry engine, rate limiter, robots.txt parser, site-specific browser selector set, TUI, or Rich interface.
 
-The project is a small policy layer over Crawlee, Playwright, the browser DOM, and html-to-markdown.
+The web path is a small policy layer over Crawlee, Playwright, the browser DOM, and html-to-markdown. Source adapters are a separate extension boundary for documentation that can be derived directly from an authoritative upstream source tree without adding site-specific behavior to the crawler.
