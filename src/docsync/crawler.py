@@ -173,6 +173,7 @@ async def run_crawler(
         configuration=configuration,
         event_manager=event_manager,
         storage_client=storage_client,
+        browser_type="chrome",
         headless=not headful,
         use_incognito_pages=headful,
         browser_launch_options=browser_launch_options,
