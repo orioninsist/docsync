@@ -47,39 +47,111 @@ def _save_manifest(path: Path, manifest: dict[str, dict[str, str]]) -> None:
     temporary.replace(path)
 
 
+def _parse_tag(line: str) -> tuple[str, str] | None:
+    match = re.match(r"@(\\S+)\\s*(.*)", line)
+    return match.groups() if match else None
+
+
+def _split_typed_value(value: str) -> tuple[str, str, str]:
+    match = re.match(r"\\{([^}]*)\\}\\s+(\\S+)\\s*(?:-\\s*)?(.*)", value)
+    if not match:
+        return "", value, ""
+    return match.groups()
+
+
+def _render_jsdoc_block(block: str) -> str:
+    description: list[str] = []
+    tags: list[tuple[str, str]] = []
+    in_tags = False
+
+    for raw in block.splitlines():
+        line = re.sub(r"^\\s*\\* ?", "", raw).rstrip()
+        if line.startswith(("@author", "@copyright", "@license", "@private")):
+            continue
+        if line.startswith("@classdesc"):
+            description.append(line.removeprefix("@classdesc").strip())
+            continue
+        parsed = _parse_tag(line) if line.startswith("@") else None
+        if parsed:
+            in_tags = True
+            tags.append(parsed)
+        elif in_tags and line and tags:
+            tag, value = tags[-1]
+            tags[-1] = (tag, f"{value} {line}".strip())
+        else:
+            description.append(line)
+
+    identity_tags = ("class", "method", "function", "event", "typedef", "namespace", "name")
+    identity = next(((tag, value) for tag, value in tags if tag in identity_tags and value), None)
+    parts: list[str] = []
+    if identity:
+        tag, value = identity
+        parts.append(f"## `{value}`")
+        parts.append(f"**Kind:** {tag}")
+
+    prose = "\\n".join(description).strip()
+    if prose:
+        parts.append(prose)
+
+    params = [value for tag, value in tags if tag in {"param", "property"}]
+    if params:
+        parts.append("### Parameters / Properties")
+        rows = ["| Name | Type | Description |", "| --- | --- | --- |"]
+        for value in params:
+            type_name, name, desc = _split_typed_value(value)
+            rows.append(
+                f"| `{name}` | `{type_name}` | {desc.replace('|', '\\|')} |"
+            )
+        parts.append("\\n".join(rows))
+
+    metadata: list[str] = []
+    flags: list[str] = []
+    skip = set(identity_tags) | {"param", "property"}
+    for tag, value in tags:
+        if tag in skip:
+            continue
+        if tag in {"readonly", "protected", "webglOnly", "canvasOnly", "constructor", "static", "async"}:
+            flags.append(tag)
+        elif tag in {"return", "returns"}:
+            metadata.append(f"- **Returns:** {value}")
+        elif tag == "throws":
+            metadata.append(f"- **Throws:** {value}")
+        elif tag == "fires":
+            metadata.append(f"- **Fires:** {value}")
+        elif tag == "since":
+            metadata.append(f"- **Since:** {value}")
+        elif tag == "extends":
+            metadata.append(f"- **Extends:** {value}")
+        elif tag == "memberof":
+            metadata.append(f"- **Member of:** {value}")
+        elif value:
+            metadata.append(f"- **{tag}:** {value}")
+        else:
+            flags.append(tag)
+
+    if flags:
+        metadata.append(f"- **Flags:** {', '.join(f'`{flag}`' for flag in flags)}")
+    if metadata:
+        parts.append("### Metadata\\n" + "\\n".join(metadata))
+
+    return "\\n\\n".join(part for part in parts if part).strip()
+
+
 def _jsdoc_to_markdown(source_path: str, source: str) -> str:
     """Render official JSDoc blocks without pretending to reproduce docs.phaser.io."""
-    blocks = re.findall(r"/\*\*(.*?)\*/", source, flags=re.DOTALL)
-    sections: list[str] = []
-
-    for block in blocks:
-        lines = []
-        for raw in block.splitlines():
-            line = re.sub(r"^\s*\* ?", "", raw).rstrip()
-            if line.startswith(("@author", "@copyright", "@license", "@private")):
-                continue
-            if line.startswith("@classdesc"):
-                line = line.removeprefix("@classdesc").strip()
-            elif line.startswith("@"):
-                match = re.match(r"@(\S+)\s*(.*)", line)
-                if match:
-                    tag, value = match.groups()
-                    line = f"- **{tag}:** {value}".rstrip()
-            lines.append(line)
-
-        text = "\n".join(lines).strip()
-        if text:
-            sections.append(text)
+    blocks = re.findall(r"/\\*\\*(.*?)\\*/", source, flags=re.DOTALL)
+    sections = [_render_jsdoc_block(block) for block in blocks]
+    sections = [section for section in sections if section]
 
     if not sections:
         return ""
 
     return (
-        f"# {source_path}\n\n"
+        f"# {source_path}\\n\\n"
         "> Source: official Phaser repository JSDoc. "
-        "This is source-derived documentation, not a mirror of docs.phaser.io.\n\n"
-        + "\n\n---\n\n".join(sections)
-        + "\n"
+        "This is source-derived documentation, not a mirror of docs.phaser.io.\\n\\n"
+        + "\\n\\n---\\n\\n".join(sections)
+        + "\\n"
     )
 
 
