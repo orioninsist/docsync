@@ -69,7 +69,7 @@ Run a sync with the TypeScript engine:
 docker compose run --rm docsync sync https://example.com/docs --engine typescript
 ```
 
-The project directory is mounted into the container. By default, generated Markdown is written under `/home/murat/Media/5-Documentation/<site-name>` and DocsSync operational state is written separately under `/home/murat/Media/8-Document/docsync/<site-name>`.
+Generated Markdown and persistent crawl state use separate default roots. Markdown is written directly under `/home/murat/Media/5-Documentation/<site-name>/`, while manifests and operational crawl state are written under `/home/murat/Media/8-Document/docsync/<site-name>/`.
 
 ### Windows notes
 
@@ -104,7 +104,7 @@ Run the same sync with the TypeScript engine:
 docker compose run --rm docsync sync https://example.com/docs --engine typescript
 ```
 
-Replace `https://example.com/docs` with the documentation URL you want to convert. By default, generated Markdown is written under `/home/murat/Media/5-Documentation/<site-name>`.
+Replace `https://example.com/docs` with the documentation URL you want to convert. Generated Markdown is written directly under `/home/murat/Media/5-Documentation/<site-name>/` by default.
 
 If you prefer plain `docker run`, use `${PWD}` in PowerShell:
 
@@ -238,7 +238,7 @@ URL-path slug + first 12 characters of SHA-256(URL)
 
 DocsSync hashes the canonical GFM output. If the stored hash matches and the Markdown file still exists, the file is left unchanged.
 
-By default, DocsSync stores all synchronized documentation under `/home/murat/Media/5-Documentation`. The start URL is converted into a filesystem-safe site directory by joining its hostname and path segments with hyphens. Query strings and fragments are not part of the directory name.
+By default, DocsSync stores synchronized Markdown under `/home/murat/Media/5-Documentation` and persistent crawler state under `/home/murat/Media/8-Document/docsync`. The start URL is converted into the same filesystem-safe site directory for both roots by joining its hostname and path segments with hyphens. Query strings and fragments are not part of the directory name. Markdown files are written directly inside the site directory; no additional hostname subdirectory is created.
 
 For example:
 
@@ -249,6 +249,9 @@ https://github.com/niri-wm/niri/wiki
 Markdown output:
 /home/murat/Media/5-Documentation/
 └── github.com-niri-wm-niri-wiki/
+    ├── niri-Getting-Started-<url-hash>.md
+    ├── niri-Configuration-<url-hash>.md
+    └── ...
 
 DocsSync state:
 /home/murat/Media/8-Document/docsync/
