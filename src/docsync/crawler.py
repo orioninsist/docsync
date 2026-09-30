@@ -170,6 +170,7 @@ async def run_crawler(
         concurrency_settings=concurrency,
         max_requests_per_crawl=max_requests,
         max_request_retries=2,
+        retry_on_blocked=False,
         respect_robots_txt_file=True,
     )
 
