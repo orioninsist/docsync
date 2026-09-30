@@ -51,27 +51,28 @@ uv sync
 Daily usage:
 
 ```bash
-uv run mdmerge ./developers.openai.com ./merged \
+uv run mdmerge /home/murat/Media/5-Documentation/developers.openai.com \
   --token-limit 120000
 ```
 
 This means:
 
 ```text
-./developers.openai.com   input directory containing Markdown files
-./merged                  output directory
+/home/murat/Media/5-Documentation/developers.openai.com   input directory containing Markdown files
+/home/murat/Media/8-Document/markdownMerge/developers.openai.com   automatic output directory
 --token-limit             final maximum token count for each generated Markdown part
 ```
 
 If two Markdown parts are created, the output names are:
 
 ```text
-merged/
-├── developers.openai.com-1.md
-├── developers.openai.com-2.md
-├── manifest.json
-├── summary.txt
-└── validation.txt
+/home/murat/Media/8-Document/markdownMerge/
+└── developers.openai.com/
+    ├── developers.openai.com-1.md
+    ├── developers.openai.com-2.md
+    ├── manifest.json
+    ├── summary.txt
+    └── validation.txt
 ```
 
 `--name` is optional. When omitted, markdownMerge automatically uses the input directory name as the output base name.
@@ -102,7 +103,7 @@ Even when only one part is created, it is still numbered with `-1.md`.
 ## Command syntax
 
 ```bash
-uv run mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY \
+uv run mdmerge INPUT_DIRECTORY \
   --token-limit TOKEN_LIMIT \
   [--name NAME] \
   [--reserve-tokens RESERVE_TOKENS] \
@@ -113,7 +114,6 @@ Required:
 
 ```text
 INPUT_DIRECTORY
-OUTPUT_DIRECTORY
 --token-limit
 ```
 
@@ -159,34 +159,19 @@ All `.md` files under `docs/` are discovered.
 
 The input path must be a directory.
 
-### OUTPUT_DIRECTORY
+### Automatic output directory
 
-Directory where generated Markdown parts and reports are written.
-
-The output directory must be outside the input directory.
-
-Valid:
+The output directory is derived automatically from the input directory name:
 
 ```text
-input:  /data/docs
-output: /data/merged
+INPUT:
+/home/murat/Media/5-Documentation/<site-name>
+
+OUTPUT:
+/home/murat/Media/8-Document/markdownMerge/<site-name>
 ```
 
-Invalid:
-
-```text
-input:  /data/docs
-output: /data/docs/merged
-```
-
-Also invalid:
-
-```text
-input:  /data/docs
-output: /data/docs
-```
-
-This prevents previously generated files from becoming source files in later runs.
+No `OUTPUT_DIRECTORY` positional argument is required.
 
 ### --name
 
@@ -376,7 +361,7 @@ For current GPT-5, GPT-4.1, GPT-4o, o1, o3, and o4-mini families, upstream tikto
 Example:
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --encoding o200k_base
@@ -389,14 +374,14 @@ Do not use `--model` and `--encoding` together.
 This command:
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --token-limit 120000
 ```
 
 currently means:
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --model gpt-4o
@@ -407,7 +392,7 @@ Because tiktoken currently resolves `gpt-4o` to `o200k_base`, the tokenizer used
 If you want the tokenizer choice to be explicit and independent of model-name mapping, use:
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --encoding o200k_base
@@ -418,14 +403,14 @@ uv run mdmerge ./docs ./merged \
 ### Standard daily use
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --token-limit 120000
 ```
 
 ### Explicit tokenizer encoding
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --encoding o200k_base
@@ -434,7 +419,7 @@ uv run mdmerge ./docs ./merged \
 ### Model-name tokenizer selection
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --model gpt-5
@@ -443,7 +428,7 @@ uv run mdmerge ./docs ./merged \
 ### No reserve
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --token-limit 120000 \
   --reserve-tokens 0 \
   --encoding o200k_base
@@ -452,7 +437,7 @@ uv run mdmerge ./docs ./merged \
 ### Larger reserve
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --token-limit 120000 \
   --reserve-tokens 10000 \
   --encoding o200k_base
@@ -461,7 +446,7 @@ uv run mdmerge ./docs ./merged \
 ### Smaller token limit
 
 ```bash
-uv run mdmerge ./docs ./merged \
+uv run mdmerge ./docs \
   --name openai \
   --token-limit 50000 \
   --reserve-tokens 5000 \
@@ -473,7 +458,7 @@ uv run mdmerge ./docs ./merged \
 No special option is required for thousands of Markdown files.
 
 ```bash
-uv run mdmerge /data/docs /data/merged-docs \
+uv run mdmerge /data/docs \
   --name docs \
   --token-limit 120000 \
   --reserve-tokens 5000 \
@@ -542,13 +527,14 @@ Every source body is preceded by a traceability marker:
 For an input directory named `openai.com`, an example output directory is:
 
 ```text
-merged/
-├── openai.com-1.md
-├── openai.com-2.md
-├── openai.com-3.md
-├── manifest.json
-├── summary.txt
-└── validation.txt
+/home/murat/Media/8-Document/markdownMerge/
+└── openai.com/
+    ├── openai.com-1.md
+    ├── openai.com-2.md
+    ├── openai.com-3.md
+    ├── manifest.json
+    ├── summary.txt
+    └── validation.txt
 ```
 
 ### INPUT-DIRECTORY-N.md
@@ -757,10 +743,6 @@ The input directory contains no recursively discoverable `.md` files.
 ### Input path is not a directory
 
 Pass a directory, not a single Markdown file.
-
-### OUTPUT_DIRECTORY must be outside INPUT_DIRECTORY
-
-Choose a sibling or otherwise separate output directory.
 
 ### Oversized source files
 
