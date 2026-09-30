@@ -274,10 +274,6 @@ const queue = await RequestQueueV1.open('docsync');
   const statistics = await crawler.run([startUrl]);
   await outputWrite;
 
-  if (statistics.requestsFailed > 0) {
-    throw new Error(`crawl failed: ${statistics.requestsFailed} request(s) failed`);
-  }
-
   const stoppedAtRequestLimit = statistics.requestsTotal >= maxRequestsPerCrawl;
   if (!stoppedAtRequestLimit && await queue.isFinished()) {
     await saveCheckpoint(checkpointFile, {

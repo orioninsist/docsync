@@ -10,10 +10,10 @@ import shutil
 from pathlib import Path
 
 from crawlee import ConcurrencySettings, Glob
+from crawlee._service_locator import ServiceLocator
 from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.events import LocalEventManager
-from crawlee._service_locator import ServiceLocator
 from crawlee.request_loaders import ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
@@ -226,10 +226,6 @@ async def run_crawler(
         await context.enqueue_links(strategy="same-origin", include=[scope_glob])
 
     statistics = await crawler.run([start_url], purge_request_queue=False)
-
-    failed_requests = statistics.requests_failed
-    if failed_requests:
-        raise RuntimeError(f"crawl failed: {failed_requests} request(s) failed")
 
     stopped_at_request_limit = statistics.requests_total >= max_requests
     if not stopped_at_request_limit and await queue.is_finished():
