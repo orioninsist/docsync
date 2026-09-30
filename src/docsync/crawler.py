@@ -128,7 +128,6 @@ async def run_crawler(
     state_dir.mkdir(parents=True, exist_ok=True)
 
     hostname = hostname_for_url(start_url)
-    phaser_docs = hostname == "docs.phaser.io"
     crawl_scope_root = scope_root(start_url)
     scope_glob = Glob(f"{crawl_scope_root}/**")
     state_file = state_dir / f"{hostname}.json"
@@ -174,7 +173,6 @@ async def run_crawler(
         configuration=configuration,
         event_manager=event_manager,
         storage_client=storage_client,
-        browser_type="chrome" if phaser_docs else "chromium",
         headless=not headful,
         use_incognito_pages=headful,
         browser_launch_options=browser_launch_options,
@@ -182,22 +180,12 @@ async def run_crawler(
         concurrency_settings=concurrency,
         max_requests_per_crawl=max_requests,
         max_request_retries=2,
-        retry_on_blocked=not phaser_docs,
-        ignore_http_error_status_codes=[403] if phaser_docs else None,
+        retry_on_blocked=True,
         respect_robots_txt_file=True,
     )
 
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
-        if phaser_docs:
-            # Phaser may initially return a Cloudflare challenge response. Let the
-            # browser finish that JavaScript flow instead of rotating the session
-            # immediately on the challenge's transient 403 response.
-            await context.page.wait_for_function(
-                "() => !!document.querySelector('nav') && !!document.querySelector('main')",
-                timeout=30_000,
-            )
-
         page_language = await context.page.evaluate(
             "() => document.documentElement.lang || ''"
         )
