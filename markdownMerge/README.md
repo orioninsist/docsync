@@ -12,7 +12,7 @@ Current defaults intentionally stay below the official per-file upload ceilings:
 - planning reserve: 50,000 tokens
 - effective packing budget: 1,750,000 tokens
 - tokenizer: o200k_base
-- hard byte validation: 512 MiB per generated file
+- hard byte validation: 512,000,000 bytes (512 MB) per generated file
 
 OpenAI currently documents a 2,000,000-token cap for text/document uploads and a 512 MB hard file-size limit. The defaults leave token headroom rather than targeting the absolute ceiling.
 
@@ -56,17 +56,17 @@ If the entire corpus fits safely in one output, only `<input-name>-1.md` is prod
 2. Preserve each source body exactly.
 3. Prefix each source or chunk with a traceability marker:
    `# Source: relative/path.md`.
-4. Split only an individual source that cannot fit inside the effective token budget.
+4. Split only an individual source that cannot fit inside the effective token budget, tokenizing oversized content once and preserving exact UTF-8 source bytes.
 5. Pack normal sources and oversized-source chunks together with deterministic First-Fit Decreasing.
 6. Re-tokenize the written output.
-7. Validate both token count and 512 MiB byte size.
+7. Validate both token count and 512 MB byte size.
 8. Mark the run `upload_ready: true` in `manifest.json` only when validation passes.
 
 First-Fit Decreasing is a deterministic packing heuristic and normally produces a small number of parts, though it does not mathematically guarantee the absolute minimum bin count for every possible input.
 
 ## Source integrity
 
-markdownMerge does not summarize, rewrite, normalize, or remove source content. It does not alter code blocks. Only sources too large for one package are split into ordered chunks.
+markdownMerge does not summarize, rewrite, normalize, or remove source content. It does not alter code blocks. Only sources too large for one package are split into ordered chunks. Split output is checked for byte-for-byte UTF-8 continuity before writing.
 
 ## Optional overrides
 
@@ -116,6 +116,10 @@ uv sync --group dev
 ```
 
 The quality pipeline checks formatting, linting, strict type checking, tests, and CLI entry points.
+
+### Reference benchmark
+
+On the `developers.openai.com` corpus used during v1.0 validation (1,485 Markdown files), the oversized-source splitter optimization reduced the end-to-end run from 5m48s to 1m09.834s (about 5x faster). The optimized run completed with `Validation Result: PASSED`. Benchmark results are workload- and machine-dependent.
 
 ## Scope
 
