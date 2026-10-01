@@ -201,6 +201,9 @@ docsync sync URL
   [--state-dir STATE_DIR]
   [--install-runtime]
   [--headful]
+  [--max-requests MAX_REQUESTS]
+  [--crawl-strategy {same-origin,same-hostname,same-domain}]
+  [--no-sitemap]
   [--restart]
 ```
 
@@ -216,6 +219,9 @@ The legacy `docsync URL` form is still accepted and maps to `docsync sync URL`.
 | `--state-dir` | `/home/murat/Media/8-Document/docsync/<site-name>` | Persistent manifest/source-state directory; an explicit value overrides the default |
 | `--install-runtime` | off | Prepare the selected web crawler runtime before syncing |
 | `--headful` | off | Run Chromium visibly for the web source |
+| `--max-requests` | unlimited | Optional safety limit for requests in one crawl |
+| `--crawl-strategy` | `same-origin` | Crawlee URL relation used for recursive discovery and sitemap filtering |
+| `--no-sitemap` | off | Disable automatic sitemap seeding |
 | `--restart` | off | Discard resumable web-crawl progress and start from the root URL |
 
 ### Phaser source adapter
@@ -226,7 +232,7 @@ Generated paths preserve the Phaser `src/` hierarchy while dropping the leading 
 
 ## Document pipeline
 
-Each rendered page is reduced to its largest `<main>` element. Presentation-only elements are removed, heading text is unwrapped from decorative spans, and `<pre>/<code>` blocks are rebuilt from their text content so syntax-highlighting markup and line-number UI cannot leak into Markdown.
+Each rendered page is reduced to its largest `<main>` element. Presentation-only elements are removed while semantic `<aside>` content and interactive-role content are preserved; heading text is unwrapped from decorative spans, and `<pre>/<code>` blocks are rebuilt from their text content so syntax-highlighting markup and line-number UI cannot leak into Markdown.
 
 Language metadata from `data-language`, `syntax`, and existing `language-*` classes is retained as a canonical `language-*` code class before conversion. Both engines then convert the normalized HTML with html-to-markdown 3.14.3.
 
@@ -236,16 +242,18 @@ The requested `--language` is compared with the rendered page's HTML language wh
 
 ## Crawl policy
 
-The start URL defines the crawl tree. For example, `https://example.com/docs` allows descendants such as `/docs/guide` and `/docs/api/reference`. Discovery stays on the same origin and inside the start-URL path glob.
+The start URL seeds the crawl. By default, recursive discovery uses Crawlee's `same-origin` strategy rather than treating the literal start path as a hard boundary, so a landing page such as `/docs/get-started` can still discover sibling documentation routes. Use `--crawl-strategy same-hostname` to allow HTTP/HTTPS changes on the same hostname, or `same-domain` when documentation legitimately spans subdomains.
 
-The crawl settings are intentionally fixed and equal in both engines:
+DocsSync also seeds URLs from published sitemaps when available. TypeScript checks robots.txt sitemap declarations and common sitemap names; Python uses Crawlee's native `SitemapRequestLoader` for the conventional `/sitemap.xml`. Pass `--no-sitemap` to rely only on link discovery.
+
+The crawl settings are intentionally conservative and equal in both engines:
 
 | Setting | Value |
 | --- | ---: |
 | minimum concurrency | `1` |
 | maximum concurrency | `2` |
 | maximum requests per minute | `20` |
-| maximum requests per crawl | `10000` |
+| maximum requests per crawl | unlimited by default (`--max-requests` to cap) |
 | maximum request retries | `2` |
 | retry blocked sessions | `true` |
 | respect robots.txt | `true` |
@@ -326,7 +334,7 @@ The hostname JSON file is shared by both engines. Each manifest entry contains o
 }
 ```
 
-Python and TypeScript read and update this same manifest. Switching engines does not reset, namespace, or rebuild it. Existing URL entries remain in place; new URLs are added and changed URLs are updated.
+Python and TypeScript read and update this same manifest. Switching engines does not reset, namespace, or rebuild it. New URLs are added and changed URLs are updated. After a fresh crawl reaches a complete queue, manifest entries not observed in that crawl are pruned together with their generated Markdown files. Resume runs do not prune because part of the tree may have been processed before the interruption.
 
 Writes are incremental. Each successful document is written immediately, and the manifest is atomically replaced through a temporary file.
 

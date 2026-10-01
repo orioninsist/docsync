@@ -7,7 +7,9 @@ import hashlib
 import json
 import os
 import shutil
+from contextlib import suppress
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from crawlee import ConcurrencySettings
 from crawlee._service_locator import ServiceLocator
@@ -135,7 +137,7 @@ async def run_crawler(
     state_file = state_dir / f"{hostname}.json"
     content_state = _load_state(state_file)
     state_lock = asyncio.Lock()
-    counters = {"processed": 0, "saved": 0, "unchanged": 0, "removed": 0}
+    counters = {"processed": 0, "saved": 0, "unchanged": 0}
     seen_urls: set[str] = set()
 
     crawl_storage, checkpoint_file, resume = _prepare_crawl_storage(
@@ -232,8 +234,9 @@ async def run_crawler(
         await context.enqueue_links(strategy=crawl_strategy)
 
     if discover_sitemap:
-        sitemap_url = f"{scope_root(start_url).split('://', 1)[0]}://{hostname}/sitemap.xml"
-        try:
+        parsed_start = urlsplit(start_url)
+        sitemap_url = f"{parsed_start.scheme}://{parsed_start.netloc}/sitemap.xml"
+        with suppress(Exception):
             async with ImpitHttpClient() as http_client, SitemapRequestLoader(
                 sitemap_urls=[sitemap_url],
                 http_client=http_client,
@@ -242,8 +245,6 @@ async def run_crawler(
                 while request := await sitemap_loader.fetch_next_request():
                     await queue.add_request(request)
                     await sitemap_loader.mark_request_as_handled(request)
-        except Exception:
-            pass
 
     statistics = await crawler.run([start_url], purge_request_queue=False)
 
@@ -259,7 +260,6 @@ async def run_crawler(
                 filename = stale.get("filename")
                 if filename:
                     (output_dir / filename).unlink(missing_ok=True)
-                counters["removed"] += 1
             if stale_urls:
                 _save_state(state_file, content_state)
 
