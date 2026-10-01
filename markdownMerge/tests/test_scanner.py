@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from markdown_merge.scanner import scan_markdown_files
 
 
