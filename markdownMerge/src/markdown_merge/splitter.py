@@ -151,13 +151,21 @@ def _pack_first_fit_decreasing(
     *,
     effective_limit: int,
 ) -> list[Part]:
-    ordered = sorted(
-        chunks,
+    oversized_chunks = [chunk for chunk in chunks if chunk.content is not None]
+    normal_chunks = sorted(
+        (chunk for chunk in chunks if chunk.content is None),
         key=lambda chunk: (-chunk.tokens, chunk.source_path),
     )
-    parts: list[Part] = []
 
-    for chunk in ordered:
+    # Oversized-source chunks are already emitted in source order. Pack them
+    # first so output part numbering preserves that order. Normal sources are
+    # then allowed to fill any remaining capacity in those parts.
+    parts = [
+        Part(number=index, files=[chunk], tokens=chunk.tokens)
+        for index, chunk in enumerate(oversized_chunks, start=1)
+    ]
+
+    for chunk in normal_chunks:
         for part in parts:
             if part.tokens + chunk.tokens <= effective_limit:
                 part.files.append(chunk)
