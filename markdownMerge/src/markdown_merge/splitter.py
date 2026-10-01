@@ -47,7 +47,6 @@ def _split_oversized_content(
         chunk_source_path = f"{source_path} [chunk {chunk_number}]"
         source_header = f"# Source: {chunk_source_path}\n\n"
 
-        # Find the largest character prefix that fits using binary search.
         low = 1
         high = len(remaining)
         best = 0
@@ -55,9 +54,7 @@ def _split_oversized_content(
         while low <= high:
             middle = (low + high) // 2
             candidate = remaining[:middle]
-            candidate_tokens = counter.count(
-                source_header + candidate + "\n\n"
-            )
+            candidate_tokens = counter.count(source_header + candidate + "\n\n")
 
             if candidate_tokens <= effective_limit:
                 best = middle
@@ -73,30 +70,20 @@ def _split_oversized_content(
 
         cut = best
         candidate = remaining[:best]
-
-        # Prefer a natural Markdown/text boundary, but only if it is
-        # reasonably close to the maximum fitting position.
         search_from = int(best * 0.80)
 
         for separator in ("\n## ", "\n# ", "\n\n", "\n"):
             boundary = candidate.rfind(separator, search_from)
-
             if boundary != -1:
-                # Keep the newline with the current chunk so concatenating
-                # chunk contents reconstructs the original source exactly.
                 cut = boundary + 1
                 break
 
         piece = remaining[:cut]
-
         if not piece:
             piece = remaining[:best]
             cut = best
 
-        piece_tokens = counter.count(
-            source_header + piece + "\n\n"
-        )
-
+        piece_tokens = counter.count(source_header + piece + "\n\n")
         chunks.append(
             FileChunk(
                 path=file_path,
@@ -164,19 +151,8 @@ def _pack_first_fit_decreasing(
     *,
     effective_limit: int,
 ) -> list[Part]:
-    # Keep chunks from the same oversized source in their original order.
-    # Normal files still use first-fit decreasing.
-    oversized_chunks = [
-        chunk for chunk in chunks
-        if chunk.content is not None
-    ]
-    normal_chunks = [
-        chunk for chunk in chunks
-        if chunk.content is None
-    ]
-
     ordered = sorted(
-        normal_chunks,
+        chunks,
         key=lambda chunk: (-chunk.tokens, chunk.source_path),
     )
     parts: list[Part] = []
@@ -196,16 +172,8 @@ def _pack_first_fit_decreasing(
                 )
             )
 
-    # Oversized source chunks must preserve source order and must not be
-    # mixed back together by the bin-packing algorithm.
-    for chunk in oversized_chunks:
-        parts.append(
-            Part(
-                number=len(parts) + 1,
-                files=[chunk],
-                tokens=chunk.tokens,
-            )
-        )
+    for index, part in enumerate(parts, start=1):
+        part.number = index
 
     return parts
 
@@ -215,9 +183,9 @@ def split_files(
     token_limit: int,
     *,
     input_directory: str | None = None,
-    reserve_tokens: int = 5000,
-    model: str | None = "gpt-4o",
-    encoding_name: str | None = None,
+    reserve_tokens: int = 50_000,
+    model: str | None = None,
+    encoding_name: str | None = "o200k_base",
 ) -> list[Part]:
     if token_limit <= 0:
         raise ValueError("token_limit must be greater than zero.")
