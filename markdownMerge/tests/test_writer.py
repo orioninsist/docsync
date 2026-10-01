@@ -90,11 +90,7 @@ def test_write_parts_writes_split_source_content(tmp_path: Path) -> None:
 
     assert "# Source: large.md [chunk 1]" in written
 
-    chunks = [
-        chunk
-        for part in parts
-        for chunk in part.files
-    ]
+    chunks = [chunk for part in parts for chunk in part.files]
 
     assert len(chunks) > 1
 
@@ -139,6 +135,4 @@ def test_write_parts_removes_stale_part_files(tmp_path: Path) -> None:
     assert not (output / "docs-99.md").exists()
 
     assert (output / "other-99.md").read_text(encoding="utf-8") == "keep me"
-    assert (
-        output / "docs-not-a-part.md"
-    ).read_text(encoding="utf-8") == "keep me too"
+    assert (output / "docs-not-a-part.md").read_text(encoding="utf-8") == "keep me too"
