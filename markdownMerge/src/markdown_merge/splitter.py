@@ -38,39 +38,42 @@ def _split_oversized_content(
     counter: TokenCounter,
     effective_limit: int,
 ) -> list[FileChunk]:
-    """Split a source file into chunks that fit within the token limit."""
+    """Split a source with one full tokenization and bounded final verification."""
     chunks: list[FileChunk] = []
-    remaining = content
+    content_tokens = counter.encode(content)
+    content_bytes = content.encode("utf-8")
+    token_start = 0
+    byte_start = 0
     chunk_number = 1
 
-    while remaining:
+    while token_start < len(content_tokens):
         chunk_source_path = f"{source_path} [chunk {chunk_number}]"
         source_header = f"# Source: {chunk_source_path}\n\n"
+        framing_tokens = counter.count(source_header + "\n\n")
+        available_tokens = effective_limit - framing_tokens
 
-        low = 1
-        high = len(remaining)
-        best = 0
-
-        while low <= high:
-            middle = (low + high) // 2
-            candidate = remaining[:middle]
-            candidate_tokens = counter.count(source_header + candidate + "\n\n")
-
-            if candidate_tokens <= effective_limit:
-                best = middle
-                low = middle + 1
-            else:
-                high = middle - 1
-
-        if best == 0:
+        if available_tokens <= 0:
             raise ValueError(
                 f"Effective token limit is too small to split source: "
                 f"{source_path} ({effective_limit} tokens)."
             )
 
-        cut = best
-        candidate = remaining[:best]
-        search_from = int(best * 0.80)
+        token_end = min(token_start + available_tokens, len(content_tokens))
+        piece_bytes = counter.decode_bytes(content_tokens[token_start:token_end])
+
+        # A BPE token boundary may fall inside a UTF-8 code point. Extend only
+        # until the accumulated token bytes form valid UTF-8 again.
+        while token_end < len(content_tokens):
+            try:
+                piece_bytes.decode("utf-8")
+                break
+            except UnicodeDecodeError:
+                piece_bytes += counter.decode_bytes([content_tokens[token_end]])
+                token_end += 1
+
+        candidate = piece_bytes.decode("utf-8")
+        search_from = int(len(candidate) * 0.80)
+        cut = len(candidate)
 
         for separator in ("\n## ", "\n# ", "\n\n", "\n"):
             boundary = candidate.rfind(separator, search_from)
@@ -78,12 +81,33 @@ def _split_oversized_content(
                 cut = boundary + 1
                 break
 
-        piece = remaining[:cut]
-        if not piece:
-            piece = remaining[:best]
-            cut = best
-
+        piece = candidate[:cut]
         piece_tokens = counter.count(source_header + piece + "\n\n")
+
+        # Framing can merge with adjacent content tokens, so verify the final
+        # serialized chunk. In the rare over-limit case, trim by natural text
+        # boundaries without re-running a binary search over the whole source.
+        while piece_tokens > effective_limit:
+            reduced = max(1, int(len(piece) * 0.995))
+            boundary = piece.rfind("\n", 0, reduced)
+            cut = boundary + 1 if boundary != -1 else reduced
+            piece = piece[:cut]
+            piece_tokens = counter.count(source_header + piece + "\n\n")
+
+        if not piece:
+            raise ValueError(
+                f"Unable to split source within token limit: {source_path}."
+            )
+
+        encoded_piece = piece.encode("utf-8")
+        byte_end = byte_start + len(encoded_piece)
+        if content_bytes[byte_start:byte_end] != encoded_piece:
+            raise ValueError(f"Split integrity check failed for source: {source_path}.")
+
+        consumed_tokens = len(counter.encode(piece))
+        if consumed_tokens <= 0:
+            raise ValueError(f"Unable to advance split for source: {source_path}.")
+
         chunks.append(
             FileChunk(
                 path=file_path,
@@ -93,8 +117,12 @@ def _split_oversized_content(
             )
         )
 
-        remaining = remaining[cut:]
+        token_start += consumed_tokens
+        byte_start = byte_end
         chunk_number += 1
+
+    if byte_start != len(content_bytes):
+        raise ValueError(f"Split integrity check failed for source: {source_path}.")
 
     return chunks
 
