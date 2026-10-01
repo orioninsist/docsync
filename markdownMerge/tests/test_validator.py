@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from markdown_merge.validator import validate_output
+from markdown_merge.validator import CHATGPT_MAX_BYTES, validate_output
 
 
 def test_validator_passes_valid_output(tmp_path: Path) -> None:
