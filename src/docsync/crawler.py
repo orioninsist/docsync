@@ -29,7 +29,6 @@ from docsync.policy import (
     hostname_for_url,
     normalize_language,
     output_path,
-    scope_root,
 )
 
 
