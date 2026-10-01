@@ -98,6 +98,7 @@ def test_write_parts_writes_split_source_content(tmp_path: Path) -> None:
         assert chunk.content is not None
         assert chunk.content in written
 
+
 def test_write_parts_removes_stale_part_files(tmp_path: Path) -> None:
     source = tmp_path / "source.md"
     source.write_text("hello world", encoding="utf-8")
