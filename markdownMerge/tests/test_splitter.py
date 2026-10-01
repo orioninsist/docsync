@@ -132,3 +132,21 @@ def test_split_files_is_deterministic_for_equal_sizes(tmp_path: Path) -> None:
         "b.md",
         "c.md",
     ]
+
+
+def test_split_files_preserves_unicode_when_splitting(tmp_path: Path) -> None:
+    file = tmp_path / "unicode.md"
+    original = ("Merhaba 🌍 — こんにちは — café\n" * 80).rstrip("\n")
+    file.write_text(original, encoding="utf-8")
+
+    parts = split_files(
+        [file],
+        40,
+        input_directory=str(tmp_path),
+        reserve_tokens=0,
+    )
+
+    chunks = [chunk for part in parts for chunk in part.files]
+    assert len(chunks) > 1
+    assert all(chunk.tokens <= 40 for chunk in chunks)
+    assert "".join(chunk.content or "" for chunk in chunks) == original
