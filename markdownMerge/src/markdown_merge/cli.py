@@ -44,10 +44,7 @@ def main() -> None:
         "--token-limit",
         type=int,
         default=DEFAULT_TOKEN_LIMIT,
-        help=(
-            "Final token ceiling per output file "
-            f"(default: {DEFAULT_TOKEN_LIMIT})."
-        ),
+        help=(f"Final token ceiling per output file (default: {DEFAULT_TOKEN_LIMIT})."),
     )
     parser.add_argument(
         "--reserve-tokens",
@@ -96,9 +93,7 @@ def main() -> None:
     if model is None and encoding_name is None:
         encoding_name = "o200k_base"
 
-    tokenizer_name = (
-        f"encoding:{encoding_name}" if encoding_name else f"model:{model}"
-    )
+    tokenizer_name = f"encoding:{encoding_name}" if encoding_name else f"model:{model}"
 
     print("Markdown Merge Started")
     print()
