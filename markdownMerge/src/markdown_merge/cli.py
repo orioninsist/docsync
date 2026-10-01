@@ -5,10 +5,12 @@ from pathlib import Path
 from .scanner import scan_markdown_files
 from .splitter import split_files
 from .summary import create_summary
-from .validator import validate_output
+from .validator import CHATGPT_MAX_BYTES, validate_output
 from .writer import write_parts
 
 MARKDOWN_MERGE_BASE_DIR = Path("/home/murat/Media/8-Document/markdownMerge")
+DEFAULT_TOKEN_LIMIT = 1_800_000
+DEFAULT_RESERVE_TOKENS = 50_000
 
 
 def _paths_overlap(input_directory: str, output_directory: str) -> bool:
@@ -24,7 +26,10 @@ def _paths_overlap(input_directory: str, output_directory: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Merge Markdown files by token limit without modifying content."
+        description=(
+            "Merge Markdown into a minimal number of ChatGPT/OpenAI-safe files "
+            "without modifying source content."
+        )
     )
 
     parser.add_argument("input_directory")
@@ -38,25 +43,33 @@ def main() -> None:
     parser.add_argument(
         "--token-limit",
         type=int,
-        required=True,
+        default=DEFAULT_TOKEN_LIMIT,
+        help=(
+            "Final token ceiling per output file "
+            f"(default: {DEFAULT_TOKEN_LIMIT})."
+        ),
     )
     parser.add_argument(
         "--reserve-tokens",
         type=int,
-        default=5000,
-        help="Token budget kept unused in each part (default: 5000).",
+        default=DEFAULT_RESERVE_TOKENS,
+        help=(
+            "Planning safety reserve kept unused in each part "
+            f"(default: {DEFAULT_RESERVE_TOKENS})."
+        ),
     )
 
     tokenizer_group = parser.add_mutually_exclusive_group()
     tokenizer_group.add_argument(
         "--model",
-        default="gpt-4o",
-        help="Model name passed to tiktoken.encoding_for_model (default: gpt-4o).",
+        default=None,
+        help="Optional model name passed to tiktoken.encoding_for_model.",
     )
     tokenizer_group.add_argument(
         "--encoding",
         dest="encoding_name",
-        help="Explicit tiktoken encoding name, for example o200k_base.",
+        default=None,
+        help="Explicit tiktoken encoding name. Default: o200k_base.",
     )
 
     args = parser.parse_args()
@@ -77,11 +90,14 @@ def main() -> None:
         parser.error("--reserve-tokens cannot be negative.")
     if args.reserve_tokens >= args.token_limit:
         parser.error("--reserve-tokens must be smaller than --token-limit.")
-    model = None if args.encoding_name else args.model
+
+    encoding_name = args.encoding_name
+    model = args.model
+    if model is None and encoding_name is None:
+        encoding_name = "o200k_base"
+
     tokenizer_name = (
-        f"encoding:{args.encoding_name}"
-        if args.encoding_name
-        else f"model:{args.model}"
+        f"encoding:{encoding_name}" if encoding_name else f"model:{model}"
     )
 
     print("Markdown Merge Started")
@@ -91,6 +107,7 @@ def main() -> None:
     print(f"Name: {name}")
     print(f"Token Limit: {args.token_limit}")
     print(f"Reserve Tokens: {args.reserve_tokens}")
+    print(f"Max File Bytes: {CHATGPT_MAX_BYTES}")
     print(f"Tokenizer: {tokenizer_name}")
     print()
 
@@ -110,7 +127,7 @@ def main() -> None:
         input_directory=args.input_directory,
         reserve_tokens=args.reserve_tokens,
         model=model,
-        encoding_name=args.encoding_name,
+        encoding_name=encoding_name,
     )
 
     print(f"Created parts: {len(parts)}")
@@ -127,15 +144,13 @@ def main() -> None:
     validation = validate_output(
         created_files,
         args.token_limit,
+        max_bytes=CHATGPT_MAX_BYTES,
         model=model,
-        encoding_name=args.encoding_name,
+        encoding_name=encoding_name,
     )
 
     validation_path = output_path / "validation.txt"
-    validation_path.write_text(
-        validation.report,
-        encoding="utf-8",
-    )
+    validation_path.write_text(validation.report, encoding="utf-8")
     validation_path.chmod(0o644)
 
     summary = create_summary(
@@ -148,10 +163,7 @@ def main() -> None:
     )
 
     summary_path = output_path / "summary.txt"
-    summary_path.write_text(
-        summary,
-        encoding="utf-8",
-    )
+    summary_path.write_text(summary, encoding="utf-8")
     summary_path.chmod(0o644)
 
     manifest = {
@@ -159,14 +171,17 @@ def main() -> None:
         "token_limit": args.token_limit,
         "reserve_tokens": args.reserve_tokens,
         "effective_token_limit": args.token_limit - args.reserve_tokens,
+        "max_file_bytes": CHATGPT_MAX_BYTES,
         "tokenizer": tokenizer_name,
         "input_files": len(files),
         "created_parts": len(created_files),
         "validation_passed": validation.passed,
+        "upload_ready": validation.passed,
         "parts": [
             {
                 "file": item.name,
                 "tokens": item.tokens,
+                "bytes": item.bytes,
                 "sources": item.sources,
                 "status": item.status,
                 "source_files": [
