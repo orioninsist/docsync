@@ -49,14 +49,14 @@ def _save_manifest(path: Path, manifest: dict[str, dict[str, str]]) -> None:
 
 def _parse_tag(line: str) -> tuple[str, str] | None:
     match = re.match(r"@(\S+)\s*(.*)", line)
-    return match.groups() if match else None
+    return (match.group(1), match.group(2)) if match else None
 
 
 def _split_typed_value(value: str) -> tuple[str, str, str]:
     match = re.match(r"\{([^}]*)\}\s+(\S+)\s*(?:-\s*)?(.*)", value)
     if not match:
         return "", value, ""
-    return match.groups()
+    return match.group(1), match.group(2), match.group(3)
 
 
 def _render_jsdoc_block(block: str) -> str:
@@ -81,8 +81,18 @@ def _render_jsdoc_block(block: str) -> str:
         else:
             description.append(line)
 
-    identity_tags = ("class", "method", "function", "event", "typedef", "namespace", "name")
-    identity = next(((tag, value) for tag, value in tags if tag in identity_tags and value), None)
+    identity_tags = (
+        "class",
+        "method",
+        "function",
+        "event",
+        "typedef",
+        "namespace",
+        "name",
+    )
+    identity = next(
+        ((tag, value) for tag, value in tags if tag in identity_tags and value), None
+    )
     parts: list[str] = []
     if identity:
         tag, value = identity
@@ -109,7 +119,15 @@ def _render_jsdoc_block(block: str) -> str:
     for tag, value in tags:
         if tag in skip:
             continue
-        if tag in {"readonly", "protected", "webglOnly", "canvasOnly", "constructor", "static", "async"}:
+        if tag in {
+            "readonly",
+            "protected",
+            "webglOnly",
+            "canvasOnly",
+            "constructor",
+            "static",
+            "async",
+        }:
             flags.append(tag)
         elif tag in {"return", "returns"}:
             metadata.append(f"- **Returns:** {value}")

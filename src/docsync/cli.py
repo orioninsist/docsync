@@ -103,7 +103,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    sync = subparsers.add_parser(\n        "sync", help="Synchronize one documentation tree from a selected source"\n    )
+    sync = subparsers.add_parser(
+        "sync", help="Synchronize one documentation tree from a selected source"
+    )
     sync.add_argument("url", help="Documentation start URL")
     sync.add_argument(
         "--source",
@@ -117,7 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="python",
         help="Crawlee engine used when --source web is selected (default: python)",
     )
-    sync.add_argument(\n        "--language", default="en", help="Page language for web crawling (default: en)"\n    )
+    sync.add_argument(
+        "--language", default="en", help="Page language for web crawling (default: en)"
+    )
     sync.add_argument(
         "--output-dir",
         type=Path,

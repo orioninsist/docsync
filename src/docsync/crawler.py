@@ -9,6 +9,7 @@ import os
 import shutil
 from contextlib import suppress
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from crawlee import ConcurrencySettings
@@ -120,7 +121,9 @@ async def run_crawler(
     max_concurrency: int = 2,
     max_requests: int | None = None,
     requests_per_minute: int = 20,
-    crawl_strategy: str = "same-origin",
+    crawl_strategy: Literal[
+        "all", "same-domain", "same-hostname", "same-origin"
+    ] = "same-origin",
     discover_sitemap: bool = True,
     headful: bool = False,
     restart: bool = False,
@@ -236,11 +239,14 @@ async def run_crawler(
         parsed_start = urlsplit(start_url)
         sitemap_url = f"{parsed_start.scheme}://{parsed_start.netloc}/sitemap.xml"
         with suppress(Exception):
-            async with ImpitHttpClient() as http_client, SitemapRequestLoader(
-                sitemap_urls=[sitemap_url],
-                http_client=http_client,
-                enqueue_strategy=crawl_strategy,
-            ) as sitemap_loader:
+            async with (
+                ImpitHttpClient() as http_client,
+                SitemapRequestLoader(
+                    sitemap_urls=[sitemap_url],
+                    http_client=http_client,
+                    enqueue_strategy=crawl_strategy,
+                ) as sitemap_loader,
+            ):
                 while request := await sitemap_loader.fetch_next_request():
                     await queue.add_request(request)
                     await sitemap_loader.mark_request_as_handled(request)

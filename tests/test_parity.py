@@ -117,7 +117,6 @@ def test_document_is_persisted_before_link_discovery() -> None:
     )
 
 
-
 def test_cli_creates_output_and_state_directories_before_sync() -> None:
     root = Path(__file__).parents[1]
     cli_source = (root / "src/docsync/cli.py").read_text(encoding="utf-8")
