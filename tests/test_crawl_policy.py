@@ -31,3 +31,19 @@ def test_web_crawl_can_set_explicit_limit_scope_and_disable_sitemap() -> None:
 def test_document_normalizer_preserves_semantic_asides_and_role_buttons() -> None:
     assert "nav,aside" not in NORMALIZE_DOCUMENT
     assert '[role="button"]' not in NORMALIZE_DOCUMENT
+
+
+def test_sitemap_requests_use_crawler_request_manager() -> None:
+    source = (
+        __import__("pathlib").Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+    )
+    assert "await request_manager.add_request(request)" in source
+    assert "await queue.add_request(request)" not in source
+
+
+def test_crawl_completion_uses_crawler_request_manager() -> None:
+    source = (
+        __import__("pathlib").Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+    )
+    assert "await request_manager.is_finished()" in source
+    assert "await queue.is_finished()" not in source

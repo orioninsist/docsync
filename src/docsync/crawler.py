@@ -248,7 +248,7 @@ async def run_crawler(
                 ) as sitemap_loader,
             ):
                 while request := await sitemap_loader.fetch_next_request():
-                    await queue.add_request(request)
+                    await request_manager.add_request(request)
                     await sitemap_loader.mark_request_as_handled(request)
 
     statistics = await crawler.run([start_url], purge_request_queue=False)
@@ -256,7 +256,9 @@ async def run_crawler(
     stopped_at_request_limit = (
         max_requests is not None and statistics.requests_total >= max_requests
     )
-    crawl_complete = not stopped_at_request_limit and await queue.is_finished()
+    crawl_complete = (
+        not stopped_at_request_limit and await request_manager.is_finished()
+    )
     if crawl_complete:
         if not resume:
             stale_urls = set(content_state) - seen_urls
