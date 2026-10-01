@@ -83,10 +83,7 @@ def test_write_parts_writes_split_source_content(tmp_path: Path) -> None:
         "docs",
     )
 
-    written = "\n".join(
-        file.read_text(encoding="utf-8")
-        for file in files
-    )
+    written = "\n".join(file.read_text(encoding="utf-8") for file in files)
 
     assert "# Source: large.md [chunk 1]" in written
 
