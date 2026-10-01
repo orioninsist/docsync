@@ -1,806 +1,125 @@
 # markdownMerge
 
-A deterministic, token-aware Markdown context builder for LLM workflows.
+A deterministic Markdown packer optimized for ChatGPT/OpenAI file uploads.
 
-Prepare large Markdown collections for AI usage without changing the original documents.
+It recursively scans Markdown sources, preserves their original body content, and packs them into as few upload-safe Markdown files as practical.
 
-markdownMerge scans Markdown files, measures tokens, packs sources into validated context packages, and keeps every source traceable. Oversized sources are split into deterministic logical chunks when needed.
+## Default ChatGPT/OpenAI profile
 
-## Why markdownMerge?
+Current defaults intentionally stay below the official per-file upload ceilings:
 
-Large documentation collections become difficult to upload and manage in LLM workflows.
+- final token target: 1,800,000 tokens
+- planning reserve: 50,000 tokens
+- effective packing budget: 1,750,000 tokens
+- tokenizer: o200k_base
+- hard byte validation: 512 MiB per generated file
 
-markdownMerge solves this by providing:
+OpenAI currently documents a 2,000,000-token cap for text/document uploads and a 512 MB hard file-size limit. The defaults leave token headroom rather than targeting the absolute ceiling.
 
-- predictable token limits
-- deterministic output files
-- complete source preservation
-- source traceability
-- validation after generation
-- machine-readable metadata with `manifest.json`
+## Daily usage
 
-## Features
-
-- Token-aware Markdown packaging
-- Source content preservation
-- No rewriting of Markdown body content
-- Source traceability markers
-- Validation after output generation
-- Deterministic numbered output files
-- Configurable tokenizer support through `tiktoken`
-
-markdownMerge recursively scans Markdown files, counts tokens, splits only oversized sources when necessary, packs source files or logical chunks with First-Fit Decreasing, writes fewer merged Markdown files, and re-tokenizes the written outputs for validation.
-
-Markdown body content is preserved. Normal source files remain intact; only a source that exceeds the effective token limit is split into ordered logical chunks.
-
-## Quick start
-
-markdownMerge now lives inside the DocsSync repository:
-
-```text
-docsync/markdownMerge
-```
-
-Install from the embedded project directory:
+After installing once with `uv sync`, the normal command is simply:
 
 ```bash
-cd /home/murat/Media/6-Project/docsync/markdownMerge
-uv sync
+uv run mdmerge /path/to/site-markdown
 ```
 
-Daily usage:
+Example:
 
 ```bash
-uv run mdmerge /home/murat/Media/5-Documentation/developers.openai.com \
-  --token-limit 120000
+cd /home/murat/Media/6-Project/docsync/markdownMerge && \
+uv run mdmerge /home/murat/Media/5-Documentation/developers.openai.com
 ```
 
-This means:
+Output is written automatically to:
 
 ```text
-/home/murat/Media/5-Documentation/developers.openai.com   input directory containing Markdown files
-/home/murat/Media/8-Document/markdownMerge/developers.openai.com   automatic output directory
---token-limit             final maximum token count for each generated Markdown part
+/home/murat/Media/8-Document/markdownMerge/<input-directory-name>/
 ```
 
-If two Markdown parts are created, the output names are:
+Generated files:
 
 ```text
-/home/murat/Media/8-Document/markdownMerge/
-└── developers.openai.com/
-    ├── developers.openai.com-1.md
-    ├── developers.openai.com-2.md
-    ├── manifest.json
-    ├── summary.txt
-    └── validation.txt
+<input-name>-1.md
+<input-name>-2.md
+...
+manifest.json
+summary.txt
+validation.txt
 ```
 
-`--name` is optional. When omitted, markdownMerge automatically uses the input directory name as the output base name.
+If the entire corpus fits safely in one output, only `<input-name>-1.md` is produced.
 
-For example:
+## Packing behavior
 
-```text
-input:  ./developers.openai.com
-output: developers.openai.com-1.md
-```
+1. Recursively discover all `.md` sources.
+2. Preserve each source body exactly.
+3. Prefix each source or chunk with a traceability marker:
+   `# Source: relative/path.md`.
+4. Split only an individual source that cannot fit inside the effective token budget.
+5. Pack normal sources and oversized-source chunks together with deterministic First-Fit Decreasing.
+6. Re-tokenize the written output.
+7. Validate both token count and 512 MiB byte size.
+8. Mark the run `upload_ready: true` in `manifest.json` only when validation passes.
 
-You can still override the automatic name:
+First-Fit Decreasing is a deterministic packing heuristic and normally produces a small number of parts, though it does not mathematically guarantee the absolute minimum bin count for every possible input.
 
-```bash
---name openai
-```
+## Source integrity
 
-Use a base name only:
+markdownMerge does not summarize, rewrite, normalize, or remove source content. It does not alter code blocks. Only sources too large for one package are split into ordered chunks.
 
-```text
-Correct:   --name openai
-Incorrect: --name openai.md
-Incorrect: --name path/openai
-```
+## Optional overrides
 
-Even when only one part is created, it is still numbered with `-1.md`.
-
-## Command syntax
+The default command needs only an input directory. Advanced overrides remain available:
 
 ```bash
 uv run mdmerge INPUT_DIRECTORY \
-  --token-limit TOKEN_LIMIT \
   [--name NAME] \
+  [--token-limit TOKEN_LIMIT] \
   [--reserve-tokens RESERVE_TOKENS] \
   [--model MODEL | --encoding ENCODING_NAME]
 ```
 
-Required:
-
-```text
-INPUT_DIRECTORY
---token-limit
-```
-
-Optional:
-
-```text
---name
---reserve-tokens
---model
---encoding
-```
-
-Current defaults:
-
-```text
---reserve-tokens 5000
---model gpt-4o
-```
-
-`--model` and `--encoding` are mutually exclusive.
-
-## Parameters
-
-### INPUT_DIRECTORY
-
-Directory containing the source Markdown files.
-
-markdownMerge searches recursively, so nested directories are included automatically.
-
-Example:
-
-```text
-docs/
-├── index.md
-├── api/
-│   ├── authentication.md
-│   └── errors.md
-└── guides/
-    └── linux.md
-```
-
-All `.md` files under `docs/` are discovered.
-
-The input path must be a directory.
-
-### Automatic output directory
-
-The output directory is derived automatically from the input directory name:
-
-```text
-INPUT:
-/home/murat/Media/5-Documentation/<site-name>
-
-OUTPUT:
-/home/murat/Media/8-Document/markdownMerge/<site-name>
-```
-
-No `OUTPUT_DIRECTORY` positional argument is required.
-
-### --name
-
-Optional output base name.
-
-When omitted, the base name is derived from the resolved input directory name.
-
-Example:
-
-```text
-INPUT_DIRECTORY: /data/docs/developers.openai.com
-generated name:  developers.openai.com
-```
-
-To override it explicitly:
-
-Example:
-
-```bash
---name openai
-```
-
-Generated Markdown filenames are always numbered from 1:
-
-```text
-openai-1.md
-openai-2.md
-openai-3.md
-...
-```
-
-The name:
-
-- cannot be empty
-- cannot be `.` or `..`
-- cannot contain `/` or `\`
-- must not include the `.md` extension
-
-The automatic fallback is the input directory name; markdownMerge does not infer names from document contents.
-
-### --token-limit
-
-Required final maximum token count for each generated Markdown part.
-
-Example:
-
-```bash
---token-limit 120000
-```
-
-The value must be greater than zero.
-
-Final generated Markdown files are re-tokenized and validation fails if any part exceeds this value.
-
-markdownMerge does not choose an AI platform's upload or context limit for you. Set this value according to your intended use.
-
-### --reserve-tokens
-
-Optional planning safety reserve.
-
-Default:
-
-```text
-5000
-```
-
-The packing budget is:
-
-```text
-effective limit = token limit - reserve tokens
-```
-
-For:
-
-```text
-token limit:      120000
-reserve tokens:     5000
-effective limit:  115000
-```
-
-First-Fit Decreasing packs source files against 115,000 tokens. The final written part must still remain at or below 120,000 tokens.
-
-Rules:
-
-- must be zero or greater
-- must be smaller than `--token-limit`
-
-To remove the reserve:
-
-```bash
---reserve-tokens 0
-```
-
-### --model
-
-Optional tiktoken model-name resolution.
-
-Default:
-
-```text
-gpt-4o
-```
-
-Example:
-
-```bash
---model gpt-4o
-```
-
-markdownMerge passes this value to:
-
-```python
-tiktoken.encoding_for_model(MODEL)
-```
-
-The model name is used only to choose the tokenizer encoding. markdownMerge does not call the OpenAI API and does not send your files to a remote model.
-
-Current upstream tiktoken mappings include:
-
-```text
-Model / prefix                 Encoding
------------------------------  -------------
-gpt-5                          o200k_base
-gpt-5...                       o200k_base
-gpt-4.5-...                    o200k_base
-gpt-4.1                        o200k_base
-gpt-4.1-...                    o200k_base
-gpt-4o                         o200k_base
-gpt-4o-...                     o200k_base
-chatgpt-4o-...                 o200k_base
-o1                             o200k_base
-o1-...                         o200k_base
-o3                             o200k_base
-o3-...                         o200k_base
-o4-mini                        o200k_base
-o4-mini-...                    o200k_base
-gpt-oss-...                    o200k_harmony
-gpt-4                          cl100k_base
-gpt-4-...                      cl100k_base
-gpt-3.5-turbo                  cl100k_base
-gpt-3.5-turbo-...              cl100k_base
-gpt-35-turbo                   cl100k_base
-gpt-35-turbo-...               cl100k_base
-davinci-002                    cl100k_base
-babbage-002                    cl100k_base
-text-embedding-ada-002         cl100k_base
-text-embedding-3-small         cl100k_base
-text-embedding-3-large         cl100k_base
-```
-
-tiktoken also keeps mappings for older/deprecated model names. Because upstream mappings can change as tiktoken evolves, the installed tiktoken version is authoritative for `--model`.
-
-If an unknown model name is supplied, tiktoken raises an error. In that case, either use a model name supported by your installed tiktoken version or use `--encoding` explicitly.
-
-### --encoding
-
-Optional explicit tiktoken encoding name.
-
-Example:
-
-```bash
---encoding o200k_base
-```
-
-markdownMerge passes this value to:
-
-```python
-tiktoken.get_encoding(ENCODING_NAME)
-```
-
-Current upstream public tiktoken encoding names include:
-
-```text
-o200k_base
-o200k_harmony
-cl100k_base
-p50k_base
-p50k_edit
-r50k_base
-gpt2
-```
-
-Use `--encoding` when you want to pin the exact tokenizer rather than let tiktoken resolve one from a model name.
-
-For current GPT-5, GPT-4.1, GPT-4o, o1, o3, and o4-mini families, upstream tiktoken maps model names to `o200k_base`.
-
-Example:
+Example with explicit defaults:
 
 ```bash
 uv run mdmerge ./docs \
-  --token-limit 120000 \
-  --reserve-tokens 5000 \
+  --token-limit 1800000 \
+  --reserve-tokens 50000 \
   --encoding o200k_base
 ```
 
-Do not use `--model` and `--encoding` together.
+## Validation and metadata
 
-## Defaults and equivalent commands
+`validation.txt` reports tokens, bytes, source-marker count, and status for every generated Markdown file.
 
-This command:
-
-```bash
-uv run mdmerge ./docs \
-  --token-limit 120000
-```
-
-currently means:
-
-```bash
-uv run mdmerge ./docs \
-  --token-limit 120000 \
-  --reserve-tokens 5000 \
-  --model gpt-4o
-```
-
-Because tiktoken currently resolves `gpt-4o` to `o200k_base`, the tokenizer used by the default model is currently `o200k_base`.
-
-If you want the tokenizer choice to be explicit and independent of model-name mapping, use:
-
-```bash
-uv run mdmerge ./docs \
-  --token-limit 120000 \
-  --reserve-tokens 5000 \
-  --encoding o200k_base
-```
-
-## Usage examples
-
-### Standard daily use
-
-```bash
-uv run mdmerge ./docs \
-  --token-limit 120000
-```
-
-### Explicit tokenizer encoding
-
-```bash
-uv run mdmerge ./docs \
-  --token-limit 120000 \
-  --reserve-tokens 5000 \
-  --encoding o200k_base
-```
-
-### Model-name tokenizer selection
-
-```bash
-uv run mdmerge ./docs \
-  --token-limit 120000 \
-  --reserve-tokens 5000 \
-  --model gpt-5
-```
-
-### No reserve
-
-```bash
-uv run mdmerge ./docs \
-  --token-limit 120000 \
-  --reserve-tokens 0 \
-  --encoding o200k_base
-```
-
-### Larger reserve
-
-```bash
-uv run mdmerge ./docs \
-  --token-limit 120000 \
-  --reserve-tokens 10000 \
-  --encoding o200k_base
-```
-
-### Smaller token limit
-
-```bash
-uv run mdmerge ./docs \
-  --name openai \
-  --token-limit 50000 \
-  --reserve-tokens 5000 \
-  --encoding o200k_base
-```
-
-### Large corpus
-
-No special option is required for thousands of Markdown files.
-
-```bash
-uv run mdmerge /data/docs \
-  --name docs \
-  --token-limit 120000 \
-  --reserve-tokens 5000 \
-  --encoding o200k_base
-```
-
-## Packing behavior
-
-Each complete source is measured together with its generated source marker:
-
-```markdown
-# Source: guides/setup.md
-```
-
-Sources are sorted by:
-
-1. token count, descending
-2. source path, ascending as the deterministic tie-breaker
-
-They are packed with First-Fit Decreasing.
-
-Conceptually:
-
-```text
-measure all source files
-        |
-        v
-sort largest -> smallest
-        |
-        v
-put each source in the first existing part where it fits
-        |
-        +-- none fits --> create a new part
-```
-
-First-Fit Decreasing is a packing heuristic. It generally reduces the number of generated parts, but it does not guarantee the mathematically minimum possible number for every input.
-
-A source Markdown file that fits within the effective planning limit remains intact. If one source exceeds that limit, markdownMerge splits it into ordered logical chunks that each fit the planning budget.
-
-## Source integrity
-
-markdownMerge does not:
-
-- rewrite prose
-- summarize content
-- remove sections
-- normalize Markdown
-- alter code blocks
-- alter syntax-highlight language identifiers
-- split a source unless it exceeds the effective token limit
-- semantically cluster text
-- reorder text inside a source file
-
-It decides which complete source files or oversized-source chunks belong in each generated part.
-
-Every source body is preceded by a traceability marker:
-
-```markdown
-# Source: api/authentication.md
-
-(original source content)
-```
-
-## Output files
-
-For an input directory named `openai.com`, an example output directory is:
-
-```text
-/home/murat/Media/8-Document/markdownMerge/
-└── openai.com/
-    ├── openai.com-1.md
-    ├── openai.com-2.md
-    ├── openai.com-3.md
-    ├── manifest.json
-    ├── summary.txt
-    └── validation.txt
-```
-
-### INPUT-DIRECTORY-N.md
-
-Merged Markdown part.
-
-Each part contains one or more source Markdown files or oversized-source chunks plus their `# Source:` markers.
-
-### summary.txt
-
-Human-readable run summary containing part and token statistics.
-
-### validation.txt
-
-Human-readable validation report for every generated Markdown part.
-
-Validation fails when:
-
-- no output parts were generated
-- an output part has no source marker
-- a final output part exceeds `--token-limit`
-
-The written output file is authoritative, not only the planning estimate.
-
-### manifest.json
-
-Machine-readable metadata containing:
+`manifest.json` records:
 
 - input directory
-- token limit
+- token limit and effective token limit
 - reserve tokens
-- effective token limit
-- tokenizer selection
-- input file count
-- created part count
-- validation result
-- output filename for each part
-- final token count for each part
-- source files contained in each part
-
-## What happens during a run
-
-```text
-1. validate CLI arguments
-2. recursively discover .md files
-3. count each source plus its source marker with tiktoken
-4. split any source that exceeds the effective planning limit into ordered logical chunks
-5. sort complete sources/chunks deterministically for packing
-6. pack with First-Fit Decreasing
-7. derive the output base name from INPUT_DIRECTORY unless --name overrides it
-8. remove stale numbered parts for the current output base name
-9. write NAME-1.md, NAME-2.md, ...
-10. re-read every generated Markdown part
-11. re-tokenize every generated Markdown part
-12. create validation.txt
-13. create summary.txt
-14. create manifest.json
-15. exit successfully only when validation passes
-```
-
-## Determinism
-
-Given the same:
-
-- source contents
-- source paths
-- resolved output name
-- token limit
-- reserve
+- maximum file bytes
 - tokenizer
+- input file count
+- generated part count
+- per-part tokens and bytes
+- source membership
+- validation state
+- `upload_ready`
 
-markdownMerge produces the same packing order, part membership, and numbered output names.
-
-## Re-running
-
-You may run the same command again.
-
-Before writing, markdownMerge removes stale numbered Markdown parts for the current output base name.
-
-For example, if an earlier run created `openai.com-1.md` through `openai.com-32.md` and the next run creates only 28 parts, stale `openai.com-29.md` through `openai.com-32.md` are removed automatically.
-
-Unrelated Markdown files and similarly named non-numbered files are preserved.
-
-## Checking results
+## Development
 
 ```bash
-cat /home/murat/Media/8-Document/markdownMerge/<site-name>/summary.txt
-cat /home/murat/Media/8-Document/markdownMerge/<site-name>/validation.txt
-jq . /home/murat/Media/8-Document/markdownMerge/<site-name>/manifest.json
-find /home/murat/Media/8-Document/markdownMerge/<site-name> -maxdepth 1 -type f -name '*.md' -print | sort
-```
-
-## tiktoken
-
-markdownMerge uses the published `tiktoken` Python package.
-
-The project currently declares:
-
-```text
-tiktoken>=0.9.0
-```
-
-Install dependencies with:
-
-```bash
-uv sync
-```
-
-You do not need to clone or build the tiktoken repository separately.
-
-Important distinction:
-
-```text
---model MODEL
-    -> tiktoken.encoding_for_model(MODEL)
-
---encoding ENCODING_NAME
-    -> tiktoken.get_encoding(ENCODING_NAME)
-```
-
-`--model` is therefore a tokenizer-selection convenience. It is not a remote inference request.
-
-Upstream reference:
-
-https://github.com/openai/tiktoken
-
-## Requirements
-
-- Python 3.11 or newer
-- `uv`
-- a platform supported by the installed `tiktoken` package
-
-## Development and verification
-
-Install development dependencies:
-
-```bash
+cd /home/murat/Media/6-Project/docsync/markdownMerge
 uv sync --group dev
-```
-
-Run the complete project quality pipeline:
-
-```bash
 ./quality.sh
 ```
 
-The pipeline checks:
-
-```text
-Ruff formatting
-Ruff lint
-Mypy strict type checking
-Pytest
-CLI help
-Direct entry point
-```
-
-Individual commands:
-
-```bash
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy
-uv run --group dev python -m pytest
-uv run mdmerge --help
-uv run python main.py --help
-```
-
-## Troubleshooting
-
-### Automatic output name
-
-If `--name` is omitted, markdownMerge uses the input directory name automatically.
-
-For:
-
-```text
-/data/docs/developers.openai.com
-```
-
-the generated files begin with:
-
-```text
-developers.openai.com-1.md
-developers.openai.com-2.md
-```
-
-### --name must not include .md
-
-Use:
-
-```text
---name openai
-```
-
-not:
-
-```text
---name openai.md
-```
-
-### No Markdown files found
-
-The input directory contains no recursively discoverable `.md` files.
-
-### Input path is not a directory
-
-Pass a directory, not a single Markdown file.
-
-### Oversized source files
-
-If one source is larger than:
-
-```text
-token limit - reserve tokens
-```
-
-markdownMerge automatically splits that source into ordered logical chunks. The source body text is preserved; chunking only creates safe package boundaries so each chunk can fit within the planning budget.
-
-### Unknown model
-
-The supplied model name is not recognized by the installed tiktoken version.
-
-Use a supported model name or choose an encoding explicitly:
-
-```bash
---encoding o200k_base
-```
-
-### Unknown encoding
-
-The supplied encoding name is not registered by the installed tiktoken version.
-
-Use an encoding returned by the installed tiktoken package.
-
-You can inspect them locally with:
-
-```bash
-uv run python -c 'import tiktoken; print(tiktoken.list_encoding_names())'
-```
-
-### Validation failed
-
-Inspect:
-
-```bash
-cat /home/murat/Media/8-Document/markdownMerge/<site-name>/validation.txt
-```
+The quality pipeline checks formatting, linting, strict type checking, tests, and CLI entry points.
 
 ## Scope
 
-markdownMerge intentionally does one job.
-
-It does not:
-
-- upload files to an AI service
-- call OpenAI, Gemini, Grok, Copilot, or another remote model API
-- infer an AI platform's upload or context limit
-- choose `--token-limit` for you
-- modify source content
-- summarize sources
-- summarize or rewrite oversized source files
-- perform semantic clustering
-- crawl websites
-
-It takes a Markdown corpus and a token budget and produces fewer validated Markdown files.
+markdownMerge only prepares local Markdown packages. It does not upload files, call OpenAI APIs, crawl websites, summarize content, or modify source prose.
 
 ## License
 
