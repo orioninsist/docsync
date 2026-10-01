@@ -5,7 +5,7 @@ from pathlib import Path
 from .tokenizer import TokenCounter
 
 SOURCE_MARKER_RE = re.compile(r"(?m)^# Source: .+$")
-CHATGPT_MAX_BYTES = 512 * 1024 * 1024
+CHATGPT_MAX_BYTES = 512_000_000
 
 
 @dataclass(frozen=True)
