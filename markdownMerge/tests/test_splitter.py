@@ -43,11 +43,7 @@ def test_split_files_splits_oversized_source(tmp_path: Path) -> None:
         reserve_tokens=0,
     )
 
-    chunks = [
-        chunk
-        for part in parts
-        for chunk in part.files
-    ]
+    chunks = [chunk for part in parts for chunk in part.files]
 
     assert len(chunks) > 1
     assert all(chunk.tokens <= 20 for chunk in chunks)
@@ -97,6 +93,25 @@ def test_split_files_uses_first_fit_decreasing(tmp_path: Path) -> None:
     assert len(parts) == 2
     assert {chunk.source_path for chunk in parts[0].files} == {"a.md", "c.md"}
     assert {chunk.source_path for chunk in parts[1].files} == {"b.md", "d.md"}
+
+
+def test_split_files_packs_oversized_chunks_with_other_content(tmp_path: Path) -> None:
+    large = tmp_path / "large.md"
+    small = tmp_path / "small.md"
+    large.write_text(("token " * 100).strip(), encoding="utf-8")
+    small.write_text("tiny", encoding="utf-8")
+
+    probe = split_files(
+        [large, small],
+        30,
+        input_directory=str(tmp_path),
+        reserve_tokens=0,
+    )
+
+    assert any(
+        len(part.files) > 1 and any(chunk.content is not None for chunk in part.files)
+        for part in probe
+    )
 
 
 def test_split_files_is_deterministic_for_equal_sizes(tmp_path: Path) -> None:
