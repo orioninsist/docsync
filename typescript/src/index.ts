@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { PlaywrightCrawler, RequestQueueV1 } from 'crawlee';
+import { PlaywrightCrawler, RequestQueueV1, RobotsTxtFile, Sitemap } from 'crawlee';
 import { convert } from '@xberg-io/html-to-markdown';
 
 type Manifest = Record<string, { content_hash: string; filename: string }>;
@@ -132,15 +132,19 @@ if (!startUrl || startUrl.startsWith('-')) throw new Error('start URL is require
 const language = normalizeLanguage(arg('--language', 'en'));
 const headful = process.argv.includes('--headful');
 const restart = process.argv.includes('--restart');
-const maxRequestsPerCrawl = Number.parseInt(arg('--max-requests', '10000'), 10);
-if (!Number.isInteger(maxRequestsPerCrawl) || maxRequestsPerCrawl < 1) {
+const maxRequestsRaw = process.argv.includes('--max-requests') ? arg('--max-requests') : undefined;
+const maxRequestsPerCrawl = maxRequestsRaw === undefined ? undefined : Number.parseInt(maxRequestsRaw, 10);
+if (maxRequestsPerCrawl !== undefined && (!Number.isInteger(maxRequestsPerCrawl) || maxRequestsPerCrawl < 1)) {
   throw new Error('--max-requests must be a positive integer');
 }
+const crawlStrategy = arg('--crawl-strategy', 'same-origin') as 'same-origin' | 'same-hostname' | 'same-domain';
+if (!['same-origin', 'same-hostname', 'same-domain'].includes(crawlStrategy)) {
+  throw new Error('--crawl-strategy must be same-origin, same-hostname, or same-domain');
+}
+const discoverSitemap = !process.argv.includes('--no-sitemap');
 const outputDir = path.resolve(arg('--output-dir', defaultOutputDir(startUrl)));
 const stateDir = path.resolve(arg('--state-dir', defaultStateDir(startUrl)));
 const hostname = new URL(startUrl).hostname;
-const crawlScopeRoot = scopeRoot(startUrl);
-const scopeGlob = `${crawlScopeRoot}/**`;
 const manifestFile = path.join(stateDir, `${hostname}.json`);
 
 await mkdir(outputDir, { recursive: true });
@@ -153,7 +157,8 @@ process.env.CRAWLEE_STORAGE_DIR = crawlStorage;
 process.env.CRAWLEE_PURGE_ON_START = resume ? 'false' : 'true';
 
 const manifest = await loadManifest(manifestFile);
-const counters = { processed: 0, saved: 0, unchanged: 0 };
+const counters = { processed: 0, saved: 0, unchanged: 0, removed: 0 };
+const seenUrls = new Set<string>();
 let outputWrite = Promise.resolve();
 
 const queue = await RequestQueueV1.open('docsync');
@@ -168,7 +173,7 @@ const queue = await RequestQueueV1.open('docsync');
     minConcurrency: 1,
     maxConcurrency: 2,
     maxRequestsPerMinute: 20,
-    maxRequestsPerCrawl,
+    ...(maxRequestsPerCrawl === undefined ? {} : { maxRequestsPerCrawl }),
     maxRequestRetries: 2,
     respectRobotsTxtFile: true,
     experiments: {
@@ -176,6 +181,7 @@ const queue = await RequestQueueV1.open('docsync');
     },
 
     async requestHandler({ request, page, enqueueLinks }) {
+      await page.locator('main, article, body').first().waitFor({ state: 'attached', timeout: 5000 });
       const pageLanguage = await page.evaluate(
         () => document.documentElement.lang || '',
       );
@@ -195,11 +201,11 @@ const queue = await RequestQueueV1.open('docsync');
         );
         const root = documentRoot.cloneNode(true) as HTMLElement;
         root
-          .querySelectorAll('script,style,noscript,template,svg,button,nav,aside')
+          .querySelectorAll('script,style,noscript,template,svg,button,nav')
           .forEach((element) => element.remove());
         root
           .querySelectorAll(
-            '.sr-only,[aria-hidden="true"],[role="status"],[role="button"]',
+            '.sr-only,[aria-hidden="true"],[role="status"]',
           )
           .forEach((element) => element.remove());
 
@@ -235,6 +241,7 @@ const queue = await RequestQueueV1.open('docsync');
       if (markdown) {
         const url = request.loadedUrl ?? request.url;
         outputWrite = outputWrite.then(async () => {
+        seenUrls.add(url);
         const digest = sha256(markdown);
         const target = outputPath(outputDir, url);
         const previous = manifest[url];
@@ -264,18 +271,41 @@ const queue = await RequestQueueV1.open('docsync');
       }
 
       await enqueueLinks({
-        strategy: 'same-origin',
-        globs: [scopeGlob],
+        strategy: crawlStrategy,
         waitForAllRequestsToBeAdded: true,
       });
     },
   });
 
+  if (discoverSitemap) {
+    const sitemapUrls = new Set<string>();
+    try {
+      const robots = await RobotsTxtFile.find(startUrl);
+      for (const url of await robots.parseUrlsFromSitemaps({ enqueueStrategy: crawlStrategy })) sitemapUrls.add(url);
+    } catch {}
+    try {
+      const sitemap = await Sitemap.tryCommonNames(new URL(startUrl).origin);
+      for (const url of sitemap.urls) sitemapUrls.add(url);
+    } catch {}
+    if (sitemapUrls.size) await crawler.addRequests([...sitemapUrls]);
+  }
+
   const statistics = await crawler.run([startUrl]);
   await outputWrite;
 
-  const stoppedAtRequestLimit = statistics.requestsTotal >= maxRequestsPerCrawl;
-  if (!stoppedAtRequestLimit && await queue.isFinished()) {
+  const stoppedAtRequestLimit =
+    maxRequestsPerCrawl !== undefined && statistics.requestsTotal >= maxRequestsPerCrawl;
+  const crawlComplete = !stoppedAtRequestLimit && await queue.isFinished();
+  if (crawlComplete) {
+    if (!resume) {
+      for (const [url, entry] of Object.entries(manifest)) {
+        if (seenUrls.has(url)) continue;
+        await rm(path.join(outputDir, entry.filename), { force: true });
+        delete manifest[url];
+        counters.removed += 1;
+      }
+      await saveManifest(manifestFile, manifest);
+    }
     await saveCheckpoint(checkpointFile, {
       version: 1,
       status: 'complete',
@@ -287,5 +317,5 @@ const queue = await RequestQueueV1.open('docsync');
 }
 
 console.log(
-  `done processed=${counters.processed} saved=${counters.saved} unchanged=${counters.unchanged} output=${outputDir} state=${stateDir}`,
+  `done processed=${counters.processed} saved=${counters.saved} unchanged=${counters.unchanged} removed=${counters.removed} output=${outputDir} state=${stateDir}`,
 );

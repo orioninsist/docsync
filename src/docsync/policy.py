@@ -18,8 +18,8 @@ NORMALIZE_DOCUMENT = r"""
       ? current : best
   );
   const root = documentRoot.cloneNode(true);
-  root.querySelectorAll('script,style,noscript,template,svg,button,nav,aside').forEach((el) => el.remove());
-  root.querySelectorAll('.sr-only,[aria-hidden="true"],[role="status"],[role="button"]').forEach((el) => el.remove());
+  root.querySelectorAll('script,style,noscript,template,svg,button,nav').forEach((el) => el.remove());
+  root.querySelectorAll('.sr-only,[aria-hidden="true"],[role="status"]').forEach((el) => el.remove());
   for (const pre of [...root.querySelectorAll('pre')]) {
     const code = pre.querySelector('code');
     const language =

@@ -9,12 +9,13 @@ import os
 import shutil
 from pathlib import Path
 
-from crawlee import ConcurrencySettings, Glob
+from crawlee import ConcurrencySettings
 from crawlee._service_locator import ServiceLocator
 from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.events import LocalEventManager
-from crawlee.request_loaders import ThrottlingRequestManager
+from crawlee.http_clients import ImpitHttpClient
+from crawlee.request_loaders import SitemapRequestLoader, ThrottlingRequestManager
 from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
 from html_to_markdown import convert
@@ -116,8 +117,10 @@ async def run_crawler(
     state_dir: Path | None,
     language: str = "en",
     max_concurrency: int = 2,
-    max_requests: int = 10_000,
+    max_requests: int | None = None,
     requests_per_minute: int = 20,
+    crawl_strategy: str = "same-origin",
+    discover_sitemap: bool = True,
     headful: bool = False,
     restart: bool = False,
 ) -> dict[str, int]:
@@ -129,12 +132,11 @@ async def run_crawler(
     state_dir.mkdir(parents=True, exist_ok=True)
 
     hostname = hostname_for_url(start_url)
-    crawl_scope_root = scope_root(start_url)
-    scope_glob = Glob(f"{crawl_scope_root}/**")
     state_file = state_dir / f"{hostname}.json"
     content_state = _load_state(state_file)
     state_lock = asyncio.Lock()
-    counters = {"processed": 0, "saved": 0, "unchanged": 0}
+    counters = {"processed": 0, "saved": 0, "unchanged": 0, "removed": 0}
+    seen_urls: set[str] = set()
 
     crawl_storage, checkpoint_file, resume = _prepare_crawl_storage(
         state_dir,
@@ -193,6 +195,9 @@ async def run_crawler(
 
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
+        await context.page.locator("main, article, body").first.wait_for(
+            state="attached", timeout=5_000
+        )
         page_language = await context.page.evaluate(
             "() => document.documentElement.lang || ''"
         )
@@ -210,6 +215,7 @@ async def run_crawler(
             target = output_path(output_dir, url)
             target.parent.mkdir(parents=True, exist_ok=True)
             async with state_lock:
+                seen_urls.add(url)
                 previous = content_state.get(url, {})
                 counters["processed"] += 1
                 if previous.get("content_hash") == digest and target.exists():
@@ -223,12 +229,40 @@ async def run_crawler(
                 }
                 _save_state(state_file, content_state)
 
-        await context.enqueue_links(strategy="same-origin", include=[scope_glob])
+        await context.enqueue_links(strategy=crawl_strategy)
+
+    if discover_sitemap:
+        sitemap_url = f"{scope_root(start_url).split('://', 1)[0]}://{hostname}/sitemap.xml"
+        try:
+            async with ImpitHttpClient() as http_client, SitemapRequestLoader(
+                sitemap_urls=[sitemap_url],
+                http_client=http_client,
+                enqueue_strategy=crawl_strategy,
+            ) as sitemap_loader:
+                while request := await sitemap_loader.fetch_next_request():
+                    await queue.add_request(request)
+                    await sitemap_loader.mark_request_as_handled(request)
+        except Exception:
+            pass
 
     statistics = await crawler.run([start_url], purge_request_queue=False)
 
-    stopped_at_request_limit = statistics.requests_total >= max_requests
-    if not stopped_at_request_limit and await queue.is_finished():
+    stopped_at_request_limit = (
+        max_requests is not None and statistics.requests_total >= max_requests
+    )
+    crawl_complete = not stopped_at_request_limit and await queue.is_finished()
+    if crawl_complete:
+        if not resume:
+            stale_urls = set(content_state) - seen_urls
+            for stale_url in stale_urls:
+                stale = content_state.pop(stale_url)
+                filename = stale.get("filename")
+                if filename:
+                    (output_dir / filename).unlink(missing_ok=True)
+                counters["removed"] += 1
+            if stale_urls:
+                _save_state(state_file, content_state)
+
         _save_checkpoint(
             checkpoint_file,
             {

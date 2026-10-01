@@ -54,6 +54,9 @@ def _run_typescript(
     state_dir: Path | None,
     headful: bool,
     restart: bool,
+    max_requests: int | None,
+    crawl_strategy: str,
+    discover_sitemap: bool,
 ) -> int:
     root = Path(__file__).resolve().parents[2]
     engine_dir = root / "typescript"
@@ -85,6 +88,11 @@ def _run_typescript(
         command.append("--headful")
     if restart:
         command.append("--restart")
+    if max_requests is not None:
+        command += ["--max-requests", str(max_requests)]
+    command += ["--crawl-strategy", crawl_strategy]
+    if not discover_sitemap:
+        command.append("--no-sitemap")
     return subprocess.run(command, cwd=engine_dir, check=False).returncode
 
 
@@ -129,6 +137,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--headful",
         action="store_true",
         help="Run Chromium with a visible browser window when --source web is selected",
+    )
+    sync.add_argument(
+        "--max-requests",
+        type=int,
+        help="Optional crawl request limit; omitted means no request-count limit",
+    )
+    sync.add_argument(
+        "--crawl-strategy",
+        choices=("same-origin", "same-hostname", "same-domain"),
+        default="same-origin",
+        help="Crawlee link scope strategy (default: same-origin)",
+    )
+    sync.add_argument(
+        "--no-sitemap",
+        action="store_true",
+        help="Disable automatic sitemap seeding",
     )
     sync.add_argument(
         "--restart",
@@ -199,6 +223,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             state_dir=effective_state_dir,
             headful=args.headful,
             restart=args.restart,
+            max_requests=args.max_requests,
+            crawl_strategy=args.crawl_strategy,
+            discover_sitemap=not args.no_sitemap,
         )
 
     if args.install_runtime:
@@ -210,8 +237,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             state_dir=effective_state_dir,
             language=args.language,
             max_concurrency=2,
-            max_requests=10_000,
+            max_requests=args.max_requests,
             requests_per_minute=20,
+            crawl_strategy=args.crawl_strategy,
+            discover_sitemap=not args.no_sitemap,
             headful=args.headful,
             restart=args.restart,
         )
