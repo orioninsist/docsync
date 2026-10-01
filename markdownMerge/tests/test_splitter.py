@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from markdown_merge.splitter import split_files
 
 
