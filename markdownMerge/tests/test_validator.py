@@ -74,3 +74,7 @@ def test_validator_fails_for_empty_part_list() -> None:
 
     assert result.passed is False
     assert "Parts Found: 0" in result.report
+
+
+def test_chatgpt_max_bytes_uses_decimal_megabytes() -> None:
+    assert CHATGPT_MAX_BYTES == 512_000_000
