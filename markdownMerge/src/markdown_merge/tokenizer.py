@@ -14,13 +14,17 @@ class TokenCounter:
         else:
             raise ValueError("Either model or encoding_name must be provided.")
 
-    def count(self, text: str) -> int:
-        return len(
-            self.encoding.encode(
-                text,
-                disallowed_special=(),
-            )
+    def encode(self, text: str) -> list[int]:
+        return self.encoding.encode(
+            text,
+            disallowed_special=(),
         )
+
+    def count(self, text: str) -> int:
+        return len(self.encode(text))
+
+    def decode_bytes(self, tokens: list[int]) -> bytes:
+        return self.encoding.decode_bytes(tokens)
 
 
 def count_tokens(
