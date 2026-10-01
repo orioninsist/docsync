@@ -60,16 +60,12 @@ def _split_oversized_content(
 
         token_end = min(token_start + available_tokens, len(content_tokens))
 
-        while True:
+        while token_end > token_start:
             piece_bytes = counter.decode_bytes(content_tokens[token_start:token_end])
             try:
                 piece = piece_bytes.decode("utf-8")
             except UnicodeDecodeError:
-                if token_end >= len(content_tokens):
-                    raise ValueError(
-                        f"Unable to find a UTF-8-safe split for source: {source_path}."
-                    ) from None
-                token_end += 1
+                token_end -= 1
                 continue
 
             piece_tokens = counter.count(source_header + piece + "\n\n")
@@ -77,10 +73,10 @@ def _split_oversized_content(
                 break
 
             token_end -= 1
-            if token_end <= token_start:
-                raise ValueError(
-                    f"Unable to split source within token limit: {source_path}."
-                )
+        else:
+            raise ValueError(
+                f"Unable to split source within token limit: {source_path}."
+            )
 
         byte_end = byte_start + len(piece_bytes)
         if content_bytes[byte_start:byte_end] != piece_bytes:
