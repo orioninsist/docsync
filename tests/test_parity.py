@@ -21,7 +21,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-        if self.path == "/docs/start":
+        if self.path.startswith("/docs/start"):
             self.send_response(302)
             self.send_header("Location", "/docs/final")
             self.end_headers()
@@ -108,7 +108,7 @@ def test_document_is_persisted_before_link_discovery() -> None:
     typescript_source = (root / "typescript/src/index.ts").read_text(encoding="utf-8")
     typescript_handler = typescript_source[
         typescript_source.index("async requestHandler(") : typescript_source.index(
-            "await crawler.run([startUrl])",
+            "await crawler.run([canonicalizeUrl(startUrl)])",
             typescript_source.index("async requestHandler("),
         )
     ]
@@ -133,7 +133,9 @@ def test_python_typescript_redirect_parity(tmp_path: Path) -> None:
     thread.start()
 
     try:
-        start_url = f"http://127.0.0.1:{server.server_port}/docs/article"
+        start_url = (
+            f"http://127.0.0.1:{server.server_port}/docs/start?utm_source=test#seed"
+        )
 
         python_output = tmp_path / "python-output"
         python_state = tmp_path / "python-state"
@@ -171,7 +173,11 @@ def test_python_typescript_redirect_parity(tmp_path: Path) -> None:
         )
 
         assert read_outputs(python_output) == read_outputs(typescript_output)
-        assert read_manifest(python_state) == read_manifest(typescript_state)
+        python_manifest = read_manifest(python_state)
+        typescript_manifest = read_manifest(typescript_state)
+        assert python_manifest == typescript_manifest
+        canonical_url = f"http://127.0.0.1:{server.server_port}/docs/final"
+        assert set(python_manifest) == {canonical_url}
 
         second_python_run = subprocess.run(
             [

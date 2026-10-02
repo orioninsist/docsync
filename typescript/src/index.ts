@@ -242,7 +242,7 @@ const queue = await RequestQueueV1.open('docsync');
       const markdown = html ? toGfm(html) : '';
 
       if (markdown) {
-        const url = request.loadedUrl ?? request.url;
+        const url = canonicalizeUrl(request.loadedUrl ?? request.url);
         outputWrite = outputWrite.then(async () => {
         seenUrls.add(url);
         const digest = sha256(markdown);
@@ -299,7 +299,7 @@ const queue = await RequestQueueV1.open('docsync');
     }
   }
 
-  const statistics = await crawler.run([startUrl]);
+  const statistics = await crawler.run([canonicalizeUrl(startUrl)]);
   await outputWrite;
 
   const stoppedAtRequestLimit =

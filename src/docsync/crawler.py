@@ -221,7 +221,7 @@ async def run_crawler(
         markdown = await asyncio.to_thread(_to_gfm, html) if html else ""
 
         if markdown:
-            url = context.page.url
+            url = canonicalize_url(context.page.url)
             digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
             target = output_path(output_dir, url)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -279,7 +279,10 @@ async def run_crawler(
                     )
                     await request_manager.add_request(request)
 
-    statistics = await crawler.run([start_url], purge_request_queue=False)
+    statistics = await crawler.run(
+        [canonicalize_url(start_url)],
+        purge_request_queue=False,
+    )
 
     stopped_at_request_limit = (
         max_requests is not None and statistics.requests_total >= max_requests
