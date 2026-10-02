@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 import shutil
-from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -252,14 +251,18 @@ async def run_crawler(
         async with ImpitHttpClient() as http_client:
             sitemap_sources: set[str] = set()
 
-            with suppress(Exception):
+            try:
                 robots = await RobotsTxtFile.find(start_url, http_client)
                 sitemap_sources.update(
                     robots.get_sitemaps(enqueue_strategy=crawl_strategy)
                 )
+            except Exception as exc:
+                crawler.log.warning(
+                    "Unable to discover sitemaps from robots.txt: %s", exc
+                )
 
             if sitemap_sources:
-                with suppress(Exception):
+                try:
                     async with SitemapRequestLoader(
                         sitemap_urls=sorted(sitemap_sources),
                         http_client=http_client,
@@ -269,8 +272,10 @@ async def run_crawler(
                         while request := await sitemap_loader.fetch_next_request():
                             await request_manager.add_request(request)
                             await sitemap_loader.mark_request_as_handled(request)
+                except Exception as exc:
+                    crawler.log.warning("Unable to load declared sitemaps: %s", exc)
 
-            with suppress(Exception):
+            try:
                 common_sitemap = await Sitemap.try_common_names(origin, http_client)
                 for url in common_sitemap.urls:
                     request = Request.from_url(
@@ -278,6 +283,8 @@ async def run_crawler(
                         enqueue_strategy=crawl_strategy,
                     )
                     await request_manager.add_request(request)
+            except Exception as exc:
+                crawler.log.warning("Unable to discover common sitemaps: %s", exc)
 
     statistics = await crawler.run(
         [canonicalize_url(start_url)],

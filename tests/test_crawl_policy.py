@@ -101,3 +101,17 @@ def test_url_transform_is_used_for_links_and_sitemaps() -> None:
 
     assert "transform_request_function=transform_request" in source
     assert source.count("transform_request_function=transform_request") == 2
+
+
+def test_optional_sitemap_discovery_errors_are_observable() -> None:
+    python_source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+    typescript_source = Path("typescript/src/index.ts").read_text(encoding="utf-8")
+
+    assert "suppress(Exception)" not in python_source
+    assert "Unable to discover sitemaps from robots.txt" in python_source
+    assert "Unable to load declared sitemaps" in python_source
+    assert "Unable to discover common sitemaps" in python_source
+
+    assert "catch {}" not in typescript_source
+    assert "Unable to discover sitemaps from robots.txt" in typescript_source
+    assert "Unable to discover common sitemaps" in typescript_source

@@ -289,11 +289,15 @@ const queue = await RequestQueueV1.open('docsync');
     try {
       const robots = await RobotsTxtFile.find(startUrl);
       for (const url of await robots.parseUrlsFromSitemaps({ enqueueStrategy: crawlStrategy })) sitemapUrls.add(url);
-    } catch {}
+    } catch (error) {
+      console.warn('Unable to discover sitemaps from robots.txt:', error);
+    }
     try {
       const sitemap = await Sitemap.tryCommonNames(new URL(startUrl).origin);
       for (const url of sitemap.urls) sitemapUrls.add(url);
-    } catch {}
+    } catch (error) {
+      console.warn('Unable to discover common sitemaps:', error);
+    }
     if (sitemapUrls.size) {
       await crawler.addRequests([...sitemapUrls].map(canonicalizeUrl));
     }
