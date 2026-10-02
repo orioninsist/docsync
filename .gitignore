@@ -26,3 +26,12 @@ storage/
 .DS_Store
 *.swp
 *~
+
+# Backup / temporary files
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+*.tmp
+*.temp
