@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from docsync.cli import build_parser
 from docsync.policy import NORMALIZE_DOCUMENT
 
@@ -47,3 +49,20 @@ def test_crawl_completion_uses_crawler_request_manager() -> None:
     )
     assert "await request_manager.is_finished()" in source
     assert "await queue.is_finished()" not in source
+
+
+def test_python_sitemap_discovery_matches_expected_sources() -> None:
+    source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+
+    assert "RobotsTxtFile.find(start_url, http_client)" in source
+    assert "robots.get_sitemaps(enqueue_strategy=crawl_strategy)" in source
+    assert "Sitemap.try_common_names(origin, http_client)" in source
+    assert "sitemap_urls.update(common_sitemap.urls)" in source
+    assert "sitemap_urls=sorted(sitemap_urls)" in source
+
+
+def test_discovered_sitemap_requests_use_throttled_request_manager() -> None:
+    source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+
+    assert "await request_manager.add_request(request)" in source
+    assert "await queue.add_request(request)" not in source

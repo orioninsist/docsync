@@ -14,6 +14,8 @@ from urllib.parse import urlsplit
 
 from crawlee import ConcurrencySettings
 from crawlee._service_locator import ServiceLocator
+from crawlee._utils.robots import RobotsTxtFile
+from crawlee._utils.sitemap import Sitemap
 from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.events import LocalEventManager
@@ -237,19 +239,30 @@ async def run_crawler(
 
     if discover_sitemap:
         parsed_start = urlsplit(start_url)
-        sitemap_url = f"{parsed_start.scheme}://{parsed_start.netloc}/sitemap.xml"
-        with suppress(Exception):
-            async with (
-                ImpitHttpClient() as http_client,
-                SitemapRequestLoader(
-                    sitemap_urls=[sitemap_url],
-                    http_client=http_client,
-                    enqueue_strategy=crawl_strategy,
-                ) as sitemap_loader,
-            ):
-                while request := await sitemap_loader.fetch_next_request():
-                    await request_manager.add_request(request)
-                    await sitemap_loader.mark_request_as_handled(request)
+        origin = f"{parsed_start.scheme}://{parsed_start.netloc}"
+        sitemap_urls: set[str] = set()
+
+        async with ImpitHttpClient() as http_client:
+            with suppress(Exception):
+                robots = await RobotsTxtFile.find(start_url, http_client)
+                sitemap_urls.update(
+                    robots.get_sitemaps(enqueue_strategy=crawl_strategy)
+                )
+
+            with suppress(Exception):
+                common_sitemap = await Sitemap.try_common_names(origin, http_client)
+                sitemap_urls.update(common_sitemap.urls)
+
+            if sitemap_urls:
+                with suppress(Exception):
+                    async with SitemapRequestLoader(
+                        sitemap_urls=sorted(sitemap_urls),
+                        http_client=http_client,
+                        enqueue_strategy=crawl_strategy,
+                    ) as sitemap_loader:
+                        while request := await sitemap_loader.fetch_next_request():
+                            await request_manager.add_request(request)
+                            await sitemap_loader.mark_request_as_handled(request)
 
     statistics = await crawler.run([start_url], purge_request_queue=False)
 
