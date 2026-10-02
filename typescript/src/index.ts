@@ -54,6 +54,27 @@ function canonicalizeUrl(rawUrl: string): string {
   return url.toString();
 }
 
+function urlIsWithinStartScope(startUrl: string, candidateUrl: string): boolean {
+  const start = new URL(canonicalizeUrl(startUrl));
+  const candidate = new URL(canonicalizeUrl(candidateUrl));
+
+  if (candidate.protocol !== start.protocol || candidate.host !== start.host) {
+    return false;
+  }
+
+  const rootPath =
+    start.pathname === '/' ? '' : start.pathname.replace(/\/+$/, '');
+  const candidatePath =
+    candidate.pathname === '/' ? '' : candidate.pathname.replace(/\/+$/, '');
+
+  if (!rootPath) {
+    return true;
+  }
+
+  return candidatePath === rootPath || candidatePath.startsWith(`${rootPath}/`);
+}
+
+
 function outputPath(outputDir: string, url: string): string {
   const parsed = new URL(url);
   const raw = parsed.pathname.replace(/^\/+|\/+$/g, '') || 'index';
@@ -277,7 +298,11 @@ const queue = await RequestQueueV1.open('docsync');
         strategy: crawlStrategy,
         waitForAllRequestsToBeAdded: true,
         transformRequestFunction: (request) => {
-          request.url = canonicalizeUrl(request.url);
+          const url = canonicalizeUrl(request.url);
+          if (!urlIsWithinStartScope(startUrl, url)) {
+            return false;
+          }
+          request.url = url;
           return request;
         },
       });
@@ -299,7 +324,11 @@ const queue = await RequestQueueV1.open('docsync');
       console.warn('Unable to discover common sitemaps:', error);
     }
     if (sitemapUrls.size) {
-      await crawler.addRequests([...sitemapUrls].map(canonicalizeUrl));
+      await crawler.addRequests(
+        [...sitemapUrls]
+          .map(canonicalizeUrl)
+          .filter((url) => urlIsWithinStartScope(startUrl, url)),
+      );
     }
   }
 

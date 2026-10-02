@@ -78,6 +78,29 @@ def hostname_for_url(url: str) -> str:
     return parsed.hostname
 
 
+def url_is_within_start_scope(start_url: str, candidate_url: str) -> bool:
+    """Return True only for the start URL itself or descendants of its path."""
+    start = urlsplit(canonicalize_url(start_url))
+    candidate = urlsplit(canonicalize_url(candidate_url))
+
+    if (
+        candidate.scheme != start.scheme
+        or candidate.netloc != start.netloc
+    ):
+        return False
+
+    root_path = start.path.rstrip("/")
+    candidate_path = candidate.path.rstrip("/")
+
+    if not root_path:
+        return True
+
+    return (
+        candidate_path == root_path
+        or candidate_path.startswith(root_path + "/")
+    )
+
+
 DOCUMENTATION_BASE_DIR = Path("/home/murat/Media/5-Documentation")
 DOCSYNC_STATE_BASE_DIR = Path("/home/murat/Media/8-Document/docsync")
 

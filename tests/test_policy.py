@@ -11,6 +11,7 @@ from docsync.policy import (
     normalize_language,
     output_path,
     site_dirname,
+    url_is_within_start_scope,
 )
 
 
@@ -61,3 +62,57 @@ def test_output_path_is_stable_and_url_specific() -> None:
     assert first.parent == Path("docs")
     assert first.name.startswith("docs-api-reference-")
     assert first.suffix == ".md"
+
+
+def test_url_scope_accepts_root_and_descendants_only() -> None:
+    root = "https://github.com/espanso/espanso/wiki"
+
+    assert url_is_within_start_scope(
+        root,
+        "https://github.com/espanso/espanso/wiki",
+    )
+    assert url_is_within_start_scope(
+        root,
+        "https://github.com/espanso/espanso/wiki/Getting-Started",
+    )
+    assert url_is_within_start_scope(
+        root,
+        "https://github.com/espanso/espanso/wiki/Install/Linux?x=1#section",
+    )
+
+
+def test_url_scope_rejects_parent_sibling_domain_and_subdomain() -> None:
+    root = "https://github.com/espanso/espanso/wiki"
+
+    assert not url_is_within_start_scope(
+        root,
+        "https://github.com/espanso/espanso",
+    )
+    assert not url_is_within_start_scope(
+        root,
+        "https://github.com/espanso/espanso/issues",
+    )
+    assert not url_is_within_start_scope(
+        root,
+        "https://github.com/features",
+    )
+    assert not url_is_within_start_scope(
+        root,
+        "https://github.com/another/repository/wiki",
+    )
+    assert not url_is_within_start_scope(
+        root,
+        "https://gist.github.com/espanso/example",
+    )
+    assert not url_is_within_start_scope(
+        root,
+        "https://example.com/espanso/espanso/wiki",
+    )
+
+
+def test_url_scope_does_not_confuse_similar_prefixes() -> None:
+    root = "https://example.com/docs"
+
+    assert url_is_within_start_scope(root, "https://example.com/docs/api")
+    assert not url_is_within_start_scope(root, "https://example.com/docs-old")
+    assert not url_is_within_start_scope(root, "https://example.com/documentation")

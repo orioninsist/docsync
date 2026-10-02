@@ -32,6 +32,7 @@ from docsync.policy import (
     hostname_for_url,
     normalize_language,
     output_path,
+    url_is_within_start_scope,
 )
 
 
@@ -199,8 +200,11 @@ async def run_crawler(
         respect_robots_txt_file=True,
     )
 
-    def transform_request(options: RequestOptions) -> RequestOptions:
-        options["url"] = canonicalize_url(options["url"])
+    def transform_request(options: RequestOptions) -> RequestOptions | str:
+        url = canonicalize_url(options["url"])
+        if not url_is_within_start_scope(start_url, url):
+            return "skip"
+        options["url"] = url
         return options
 
     @crawler.router.default_handler
@@ -270,7 +274,8 @@ async def run_crawler(
                         transform_request_function=transform_request,
                     ) as sitemap_loader:
                         while request := await sitemap_loader.fetch_next_request():
-                            await request_manager.add_request(request)
+                            if url_is_within_start_scope(start_url, request.url):
+                                await request_manager.add_request(request)
                             await sitemap_loader.mark_request_as_handled(request)
                 except Exception as exc:
                     crawler.log.warning("Unable to load declared sitemaps: %s", exc)
@@ -278,8 +283,11 @@ async def run_crawler(
             try:
                 common_sitemap = await Sitemap.try_common_names(origin, http_client)
                 for url in common_sitemap.urls:
+                    canonical_url = canonicalize_url(url)
+                    if not url_is_within_start_scope(start_url, canonical_url):
+                        continue
                     request = Request.from_url(
-                        canonicalize_url(url),
+                        canonical_url,
                         enqueue_strategy=crawl_strategy,
                     )
                     await request_manager.add_request(request)

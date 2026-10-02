@@ -115,3 +115,18 @@ def test_optional_sitemap_discovery_errors_are_observable() -> None:
     assert "catch {}" not in typescript_source
     assert "Unable to discover sitemaps from robots.txt" in typescript_source
     assert "Unable to discover common sitemaps" in typescript_source
+
+
+def test_python_link_discovery_is_restricted_to_start_path_scope() -> None:
+    source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+
+    assert "url_is_within_start_scope(start_url, url)" in source
+    assert 'return "skip"' in source
+    assert "url_is_within_start_scope(start_url, request.url)" in source
+
+
+def test_python_common_sitemap_is_restricted_to_start_path_scope() -> None:
+    source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+
+    assert "canonical_url = canonicalize_url(url)" in source
+    assert "if not url_is_within_start_scope(start_url, canonical_url):" in source

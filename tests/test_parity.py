@@ -306,3 +306,17 @@ def test_python_resumes_persisted_request_queue(tmp_path: Path) -> None:
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+
+def test_typescript_crawl_is_restricted_to_start_path_scope() -> None:
+    source = Path("typescript/src/index.ts").read_text(encoding="utf-8")
+
+    assert "function urlIsWithinStartScope(" in source
+    assert "candidate.protocol !== start.protocol" in source
+    assert "candidate.host !== start.host" in source
+    assert "candidatePath === rootPath" in source
+    assert "candidatePath.startsWith(`${rootPath}/`)" in source
+    assert "if (!urlIsWithinStartScope(startUrl, url))" in source
+    assert "return false;" in source
+    assert ".filter((url) => urlIsWithinStartScope(startUrl, url))" in source
