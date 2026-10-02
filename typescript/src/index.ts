@@ -51,6 +51,27 @@ function defaultStateDir(startUrl: string): string {
   return path.join('storage', 'docsync', hostname, scopeId(startUrl));
 }
 
+const TRACKING_QUERY_PARAMETERS = new Set([
+  'dclid',
+  'fbclid',
+  'gclid',
+  'msclkid',
+]);
+
+function canonicalizeUrl(rawUrl: string): string {
+  const url = new URL(rawUrl);
+  url.hash = '';
+
+  for (const key of [...url.searchParams.keys()]) {
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey.startsWith('utm_') || TRACKING_QUERY_PARAMETERS.has(normalizedKey)) {
+      url.searchParams.delete(key);
+    }
+  }
+
+  return url.toString();
+}
+
 function outputPath(outputDir: string, url: string): string {
   const parsed = new URL(url);
   const raw = parsed.pathname.replace(/^\/+|\/+$/g, '') || 'index';
@@ -273,6 +294,10 @@ const queue = await RequestQueueV1.open('docsync');
       await enqueueLinks({
         strategy: crawlStrategy,
         waitForAllRequestsToBeAdded: true,
+        transformRequestFunction: (request) => {
+          request.url = canonicalizeUrl(request.url);
+          return request;
+        },
       });
     },
   });
@@ -287,7 +312,9 @@ const queue = await RequestQueueV1.open('docsync');
       const sitemap = await Sitemap.tryCommonNames(new URL(startUrl).origin);
       for (const url of sitemap.urls) sitemapUrls.add(url);
     } catch {}
-    if (sitemapUrls.size) await crawler.addRequests([...sitemapUrls]);
+    if (sitemapUrls.size) {
+      await crawler.addRequests([...sitemapUrls].map(canonicalizeUrl));
+    }
   }
 
   const statistics = await crawler.run([startUrl]);
