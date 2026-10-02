@@ -32,129 +32,110 @@ The default web source uses the same document policy in both engines: the larges
 
 The Phaser source adapter checks out the official Phaser repository and renders JSDoc from its `src/**/*.js` files. This output is source-derived documentation and is intentionally not presented as a byte-for-byte or page-for-page mirror of docs.phaser.io.
 
-## Quick start with Docker
+## Installation
 
-Docker is the recommended path when you want the project to behave the same on Linux, macOS, and Windows.
+Docker is the recommended way to run DocsSync on a new Fedora or Windows 11 machine because it keeps Python, Node.js, Crawlee, Playwright, and Chromium in one reproducible environment.
 
-If you are preparing this repository on one computer and want to run it later on Windows 11, push the project to GitHub first:
-
-```bash
-git add .
-git commit -m "Add Docker setup"
-git branch -M main
-git remote add origin https://github.com/YOUR_GITHUB_USERNAME/docsync.git
-git push -u origin main
-```
-
-If the `origin` remote already exists, use this instead of `git remote add`:
+### Fedora / Linux with Docker
 
 ```bash
-git remote set-url origin https://github.com/YOUR_GITHUB_USERNAME/docsync.git
-git push -u origin main
-```
-
-Build the local image:
-
-```bash
-docker compose build
-```
-
-Run a sync with the Python engine:
-
-```bash
-docker compose run --rm docsync sync https://example.com/docs --engine python
-```
-
-Run a sync with the TypeScript engine:
-
-```bash
-docker compose run --rm docsync sync https://example.com/docs --engine typescript
-```
-
-Generated Markdown and persistent crawl state use separate default roots. Markdown is written directly under `/home/murat/Media/5-Documentation/<site-name>/`, while manifests and operational crawl state are written under `/home/murat/Media/8-Document/docsync/<site-name>/`.
-
-### Windows notes
-
-Use Windows 11 with Docker Desktop installed and running. During Docker Desktop setup, enable the WSL 2 backend. Then open PowerShell or Windows Terminal and clone the GitHub repository:
-
-```powershell
-git clone https://github.com/YOUR_GITHUB_USERNAME/docsync.git
+git clone https://github.com/orioninsist/docsync.git
 cd docsync
-```
-
-Build the Docker image:
-
-```powershell
 docker compose build
-```
-
-Run the CLI help command to confirm everything is working:
-
-```powershell
 docker compose run --rm docsync --help
+mkdir -p docs-output docs-state
+
+docker compose run --rm \
+  -v "$PWD/docs-output:/data/output" \
+  -v "$PWD/docs-state:/data/state" \
+  docsync sync https://ai.google.dev/gemini-api/docs \
+  --engine python \
+  --language en \
+  --output-dir /data/output \
+  --state-dir /data/state
 ```
 
-Run a real sync with the Python engine:
+Use `--engine typescript` to run the TypeScript crawler.
+
+### Windows 11 with Docker Desktop
+
+Install Git and Docker Desktop, enable the WSL 2 backend, and start Docker Desktop. Then open PowerShell:
 
 ```powershell
-docker compose run --rm docsync sync https://example.com/docs --engine python
-```
-
-Run the same sync with the TypeScript engine:
-
-```powershell
-docker compose run --rm docsync sync https://example.com/docs --engine typescript
-```
-
-Replace `https://example.com/docs` with the documentation URL you want to convert. Generated Markdown is written directly under `/home/murat/Media/5-Documentation/<site-name>/` by default.
-
-If you prefer plain `docker run`, use `${PWD}` in PowerShell:
-
-```powershell
-docker build -t docsync:local .
-docker run --rm -v ${PWD}:/workspace docsync:local sync https://example.com/docs
-```
-
-In `cmd.exe`, use `%cd%`:
-
-```bat
-docker build -t docsync:local .
-docker run --rm -v %cd%:/workspace docsync:local sync https://example.com/docs
-```
-
-### Docker permission notes
-
-If Docker is installed but `docker compose build` fails with a socket permission error, the current user cannot access the Docker daemon. On Linux, add the user to the Docker group and open a new login session:
-
-```bash
-sudo usermod -aG docker "$USER"
-newgrp docker
+git clone https://github.com/orioninsist/docsync.git
+cd docsync
 docker compose build
+docker compose run --rm docsync --help
+New-Item -ItemType Directory -Force docs-output, docs-state | Out-Null
+
+docker compose run --rm `
+  -v "${PWD}/docs-output:/data/output" `
+  -v "${PWD}/docs-state:/data/state" `
+  docsync sync https://ai.google.dev/gemini-api/docs `
+  --engine python `
+  --language en `
+  --output-dir /data/output `
+  --state-dir /data/state
 ```
 
-If `sudo` asks for a password, run those commands in your normal terminal. On Windows, start Docker Desktop first and confirm that WSL integration is enabled for the distro that contains this repository.
+The generated Markdown is written to `docs-output`; resumable crawler state is written to `docs-state`.
 
-## Local requirements
+### Native Fedora / Linux
 
-- Python 3.10+
-- uv
-- html-to-markdown 3.14.3 (Python and Node bindings)
-- Node.js + npm when using the TypeScript engine
-- Chromium through Playwright
-
-Install the Python environment:
+Requirements: Python 3.10+, Git, `uv`, and Playwright Chromium. Node.js and npm are only required for the TypeScript engine.
 
 ```bash
-uv sync
+git clone https://github.com/orioninsist/docsync.git
+cd docsync
+uv sync --locked
+uv run docsync setup --engine python
 ```
 
-Prepare browser/runtime dependencies explicitly:
+If Chromium cannot start because Linux system libraries are missing, Playwright can install its Linux dependencies:
 
 ```bash
-uv run docsync setup
+uv run playwright install-deps chromium
+uv run playwright install chromium
 ```
 
-This installs the selected Playwright Chromium runtime and, for the TypeScript engine, installs Node dependencies with `npm ci`. Sync runs do not silently install dependencies unless `--install-runtime` is passed.
+Run with portable directories:
+
+```bash
+uv run docsync sync https://ai.google.dev/gemini-api/docs \
+  --engine python \
+  --language en \
+  --output-dir "$PWD/docs-output" \
+  --state-dir "$PWD/docs-state"
+```
+
+For the TypeScript engine, install Node.js/npm first and then run:
+
+```bash
+uv run docsync setup --engine typescript
+```
+
+### Native Windows 11
+
+Native Windows is also supported. Docker remains the simplest path, but PowerShell can run the project directly after installing Python 3.10+, Git, and `uv`:
+
+```powershell
+git clone https://github.com/orioninsist/docsync.git
+cd docsync
+uv sync --locked
+uv run docsync setup --engine python
+
+uv run docsync sync https://ai.google.dev/gemini-api/docs `
+  --engine python `
+  --language en `
+  --output-dir ".\docs-output" `
+  --state-dir ".\docs-state"
+```
+
+For TypeScript, install Node.js/npm and run `uv run docsync setup --engine typescript` first.
+
+### Portable path rule
+
+The built-in default output/state roots are project-specific Linux paths. For commands that should work unchanged on Fedora, Windows, CI, or another machine, explicitly pass `--output-dir` and `--state-dir` as shown above.
 
 ## CLI
 
@@ -211,7 +192,7 @@ The legacy `docsync URL` form is still accepted and maps to `docsync sync URL`.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `url` | required | Documentation start URL; also scopes default output/state paths |
+| `url` | required | Documentation start URL and strict subtree boundary; also scopes default output/state paths |
 | `--source` | `web` | Input source: rendered web crawl or an available official-source adapter |
 | `--engine` | `python` | Crawlee runtime used only by `--source web` |
 | `--language` | `en` | Page language used by web crawling |
@@ -220,7 +201,7 @@ The legacy `docsync URL` form is still accepted and maps to `docsync sync URL`.
 | `--install-runtime` | off | Prepare the selected web crawler runtime before syncing |
 | `--headful` | off | Run Chromium visibly for the web source |
 | `--max-requests` | unlimited | Optional safety limit for requests in one crawl |
-| `--crawl-strategy` | `same-origin` | Crawlee URL relation used for recursive discovery and sitemap filtering |
+| `--crawl-strategy` | `same-origin` | Crawlee relation strategy; DocsSync still enforces the stricter start-path boundary |
 | `--no-sitemap` | off | Disable automatic sitemap seeding |
 | `--restart` | off | Discard resumable web-crawl progress and start from the root URL |
 
@@ -242,9 +223,35 @@ The requested `--language` is compared with the rendered page's HTML language wh
 
 ## Crawl policy
 
-The start URL seeds the crawl. By default, recursive discovery uses Crawlee's `same-origin` strategy rather than treating the literal start path as a hard boundary, so a landing page such as `/docs/get-started` can still discover sibling documentation routes. Use `--crawl-strategy same-hostname` to allow HTTP/HTTPS changes on the same hostname, or `same-domain` when documentation legitimately spans subdomains.
+The start URL is a strict crawl boundary in both engines. DocsSync allows only the start URL itself and descendants of its path on the exact same origin. The same rule is applied to normal link discovery and sitemap URLs.
 
-DocsSync also seeds URLs from published sitemaps when available. Both engines check robots.txt sitemap declarations and common sitemap names using Crawlee's native sitemap APIs; Python feeds declared sitemap sources through `SitemapRequestLoader`, while discovered page URLs enter the crawler request manager normally. Pass `--no-sitemap` to rely only on link discovery.
+Examples:
+
+```text
+START: https://ai.google.dev/
+ALLOW: https://ai.google.dev/gemini-api/docs
+ALLOW: https://ai.google.dev/edge
+BLOCK: https://docs.ai.google.dev/
+BLOCK: https://developers.google.com/
+
+START: https://ai.google.dev/gemini-api/docs
+ALLOW: https://ai.google.dev/gemini-api/docs/models
+BLOCK: https://ai.google.dev/gemini-api
+BLOCK: https://ai.google.dev/edge
+
+START: https://github.com/espanso/espanso/wiki
+ALLOW: https://github.com/espanso/espanso/wiki/Getting-Started
+BLOCK: https://github.com/espanso/espanso/issues
+BLOCK: https://gist.github.com/...
+```
+
+`https://ai.google.dev` and `https://ai.google.dev/` are equivalent. A root path `/` therefore allows all paths on that exact origin, but it does not include subdomains.
+
+The comparison is segment-safe: `/docs` includes `/docs/api` but does not include `/docs-old` or `/documentation`.
+
+`--crawl-strategy` still controls Crawlee's relation strategy, but DocsSync always applies this stricter start-path boundary afterwards. Choosing `same-hostname` or `same-domain` does not override the DocsSync boundary.
+
+DocsSync also seeds URLs from published sitemaps when available. Both engines check robots.txt sitemap declarations and common sitemap names using Crawlee's native sitemap APIs. Pass `--no-sitemap` to rely only on link discovery.
 
 The crawl settings are intentionally conservative and equal in both engines:
 
