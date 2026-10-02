@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from docsync.cli import build_parser
-from docsync.policy import NORMALIZE_DOCUMENT
+from docsync.policy import NORMALIZE_DOCUMENT, canonicalize_url
 
 
 def test_web_crawl_defaults_are_unlimited_and_sitemap_enabled() -> None:
@@ -57,8 +57,11 @@ def test_python_sitemap_discovery_matches_expected_sources() -> None:
     assert "RobotsTxtFile.find(start_url, http_client)" in source
     assert "robots.get_sitemaps(enqueue_strategy=crawl_strategy)" in source
     assert "Sitemap.try_common_names(origin, http_client)" in source
-    assert "sitemap_urls.update(common_sitemap.urls)" in source
-    assert "sitemap_urls=sorted(sitemap_urls)" in source
+    assert "sitemap_sources.update(" in source
+    assert "sitemap_urls=sorted(sitemap_sources)" in source
+    assert "for url in common_sitemap.urls:" in source
+    assert "Request.from_url(" in source
+    assert "canonicalize_url(url)" in source
 
 
 def test_discovered_sitemap_requests_use_throttled_request_manager() -> None:
@@ -66,3 +69,35 @@ def test_discovered_sitemap_requests_use_throttled_request_manager() -> None:
 
     assert "await request_manager.add_request(request)" in source
     assert "await queue.add_request(request)" not in source
+
+
+def test_canonicalize_url_removes_fragment_and_tracking_parameters() -> None:
+    assert (
+        canonicalize_url(
+            "https://example.com/docs?page=2&utm_source=test&gclid=abc#section"
+        )
+        == "https://example.com/docs?page=2"
+    )
+
+
+def test_canonicalize_url_preserves_semantic_query_parameters() -> None:
+    assert (
+        canonicalize_url("https://example.com/docs?version=3&lang=en&page=2&filter=api")
+        == "https://example.com/docs?version=3&lang=en&page=2&filter=api"
+    )
+
+
+def test_canonicalize_url_removes_case_insensitive_tracking_parameters() -> None:
+    assert (
+        canonicalize_url(
+            "https://example.com/docs?UTM_Medium=email&FbClId=abc&topic=crawl"
+        )
+        == "https://example.com/docs?topic=crawl"
+    )
+
+
+def test_url_transform_is_used_for_links_and_sitemaps() -> None:
+    source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+
+    assert "transform_request_function=transform_request" in source
+    assert source.count("transform_request_function=transform_request") == 2

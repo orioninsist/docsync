@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from crawlee import ConcurrencySettings
+from crawlee import ConcurrencySettings, Request, RequestOptions
 from crawlee._service_locator import ServiceLocator
 from crawlee._utils.robots import RobotsTxtFile
 from crawlee._utils.sitemap import Sitemap
@@ -27,6 +27,7 @@ from html_to_markdown import convert
 
 from docsync.policy import (
     NORMALIZE_DOCUMENT,
+    canonicalize_url,
     default_output_dir,
     default_state_dir,
     hostname_for_url,
@@ -199,6 +200,10 @@ async def run_crawler(
         respect_robots_txt_file=True,
     )
 
+    def transform_request(options: RequestOptions) -> RequestOptions:
+        options["url"] = canonicalize_url(options["url"])
+        return options
+
     @crawler.router.default_handler
     async def handler(context: PlaywrightCrawlingContext) -> None:
         await context.page.locator("main, article, body").first.wait_for(
@@ -235,34 +240,44 @@ async def run_crawler(
                 }
                 _save_state(state_file, content_state)
 
-        await context.enqueue_links(strategy=crawl_strategy)
+        await context.enqueue_links(
+            strategy=crawl_strategy,
+            transform_request_function=transform_request,
+        )
 
     if discover_sitemap:
         parsed_start = urlsplit(start_url)
         origin = f"{parsed_start.scheme}://{parsed_start.netloc}"
-        sitemap_urls: set[str] = set()
 
         async with ImpitHttpClient() as http_client:
+            sitemap_sources: set[str] = set()
+
             with suppress(Exception):
                 robots = await RobotsTxtFile.find(start_url, http_client)
-                sitemap_urls.update(
+                sitemap_sources.update(
                     robots.get_sitemaps(enqueue_strategy=crawl_strategy)
                 )
 
-            with suppress(Exception):
-                common_sitemap = await Sitemap.try_common_names(origin, http_client)
-                sitemap_urls.update(common_sitemap.urls)
-
-            if sitemap_urls:
+            if sitemap_sources:
                 with suppress(Exception):
                     async with SitemapRequestLoader(
-                        sitemap_urls=sorted(sitemap_urls),
+                        sitemap_urls=sorted(sitemap_sources),
                         http_client=http_client,
                         enqueue_strategy=crawl_strategy,
+                        transform_request_function=transform_request,
                     ) as sitemap_loader:
                         while request := await sitemap_loader.fetch_next_request():
                             await request_manager.add_request(request)
                             await sitemap_loader.mark_request_as_handled(request)
+
+            with suppress(Exception):
+                common_sitemap = await Sitemap.try_common_names(origin, http_client)
+                for url in common_sitemap.urls:
+                    request = Request.from_url(
+                        canonicalize_url(url),
+                        enqueue_strategy=crawl_strategy,
+                    )
+                    await request_manager.add_request(request)
 
     statistics = await crawler.run([start_url], purge_request_queue=False)
 

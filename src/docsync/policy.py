@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 NORMALIZE_DOCUMENT = r"""
 () => {
@@ -39,6 +39,29 @@ NORMALIZE_DOCUMENT = r"""
   return root.innerHTML;
 }
 """
+
+
+TRACKING_QUERY_PARAMETERS = {
+    "dclid",
+    "fbclid",
+    "gclid",
+    "msclkid",
+}
+
+
+def canonicalize_url(url: str) -> str:
+    """Remove non-content URL noise without changing semantic query parameters."""
+    parsed = urlsplit(url)
+    query = urlencode(
+        [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_")
+            and key.lower() not in TRACKING_QUERY_PARAMETERS
+        ],
+        doseq=True,
+    )
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, ""))
 
 
 def normalize_language(value: str) -> str:
