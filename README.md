@@ -340,12 +340,13 @@ Writes are incremental. Each successful document is written immediately, and the
 
 ## Runtime behavior
 
-Crawlee owns crawling, queues, retries, throttling, robots.txt handling, concurrency, discovery, browser lifecycle, and native statistics. DocsSync does not add a second progress framework or custom crawler lifecycle. For the web source, Crawlee owns blocked-session retry behavior. DocsSync enables Crawlee blocked-request retries and still propagates a nonzero failure when requests remain failed after the configured retry limit.
+Crawlee owns crawling, queues, retries, throttling, robots.txt handling, concurrency, discovery, browser lifecycle, and native statistics. DocsSync does not add a second progress framework or custom crawler lifecycle. For the web source, Crawlee owns blocked-session retry behavior and request retry limits. Crawl completion is based on the Crawlee request manager/queue reaching a finished state; individual requests that exhaust their retries are reflected in Crawlee's own statistics and logs rather than redefining DocsSync's checkpoint lifecycle.
 
-At the end of a successful run, DocsSync prints one compact summary:
+At the end of a successful run, DocsSync prints one compact summary. The Python web engine and source adapters report processed/saved/unchanged counts; the TypeScript web engine also reports how many stale files were removed after a complete fresh crawl:
 
 ```text
 done processed=N saved=N unchanged=N output=/absolute/output/path state=/absolute/state/path
+done processed=N saved=N unchanged=N removed=N output=/absolute/output/path state=/absolute/state/path
 ```
 
 If a process is interrupted while a crawl is active, its checkpoint remains `running` and the next matching run resumes the persisted request queue. When the queue finishes successfully, the checkpoint becomes `complete`; a later normal sync starts a fresh crawl while reusing the shared content manifest to avoid rewriting unchanged Markdown. `--restart` forces that fresh-crawl behavior even when a `running` checkpoint exists.
@@ -362,7 +363,7 @@ uv run pytest
 cd typescript && npm run check
 ```
 
-The pytest suite includes a local HTTP integration test that runs both crawler engines against the same redirecting documentation fixture and verifies identical Markdown output and shared manifest state.
+The pytest suite includes crawl-policy regression coverage for native request routing, sitemap discovery, URL canonicalization, and optional sitemap error observability, plus a local HTTP integration test that runs both crawler engines against the same redirecting documentation fixture and verifies identical Markdown output and shared manifest state.
 
 Run the same checks through Docker:
 
@@ -388,19 +389,30 @@ docsync/
 │       ├── policy.py
 │       └── sources.py
 ├── tests/
+│   ├── test_crawl_policy.py
 │   ├── test_parity.py
 │   ├── test_policy.py
 │   └── test_sources.py
+├── markdownMerge/
+│   └── README.md
+├── tools/
+│   └── docpack/
+│       ├── Cargo.toml
+│       ├── Cargo.lock
+│       └── README.md
 ├── Dockerfile
 ├── compose.yaml
 └── typescript/
     ├── package.json
+    ├── package-lock.json
     ├── tsconfig.json
     └── src/
         └── index.ts
 ```
 
-Dependency lockfiles are generated from the current manifests by `uv lock` and `npm install --package-lock-only`. Runtime installs use `uv sync --locked` and `npm ci`.
+The repository also contains two Markdown-packaging utilities that are separate from the DocsSync crawler runtime: `markdownMerge/` (Python) and `tools/docpack/` (Rust). See their own READMEs for usage and scope.
+
+Dependency lockfiles are committed for reproducibility: `uv.lock`, `typescript/package-lock.json`, and `tools/docpack/Cargo.lock`. Runtime installs use `uv sync --locked` and `npm ci`; Rust builds use the committed Cargo lockfile.
 
 ## Design boundary
 
