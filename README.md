@@ -244,7 +244,7 @@ The requested `--language` is compared with the rendered page's HTML language wh
 
 The start URL seeds the crawl. By default, recursive discovery uses Crawlee's `same-origin` strategy rather than treating the literal start path as a hard boundary, so a landing page such as `/docs/get-started` can still discover sibling documentation routes. Use `--crawl-strategy same-hostname` to allow HTTP/HTTPS changes on the same hostname, or `same-domain` when documentation legitimately spans subdomains.
 
-DocsSync also seeds URLs from published sitemaps when available. TypeScript checks robots.txt sitemap declarations and common sitemap names; Python uses Crawlee's native `SitemapRequestLoader` for the conventional `/sitemap.xml`. Pass `--no-sitemap` to rely only on link discovery.
+DocsSync also seeds URLs from published sitemaps when available. Both engines check robots.txt sitemap declarations and common sitemap names using Crawlee's native sitemap APIs; Python feeds declared sitemap sources through `SitemapRequestLoader`, while discovered page URLs enter the crawler request manager normally. Pass `--no-sitemap` to rely only on link discovery.
 
 The crawl settings are intentionally conservative and equal in both engines:
 

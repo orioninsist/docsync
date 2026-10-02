@@ -33,24 +33,6 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function scopeRoot(startUrl: string): string {
-  return startUrl.replace(/\/+$/, '');
-}
-
-function scopeId(startUrl: string): string {
-  return sha256(scopeRoot(startUrl)).slice(0, 12);
-}
-
-function defaultOutputDir(startUrl: string): string {
-  const hostname = new URL(startUrl).hostname;
-  return path.join('docs', hostname, scopeId(startUrl));
-}
-
-function defaultStateDir(startUrl: string): string {
-  const hostname = new URL(startUrl).hostname;
-  return path.join('storage', 'docsync', hostname, scopeId(startUrl));
-}
-
 const TRACKING_QUERY_PARAMETERS = new Set([
   'dclid',
   'fbclid',
@@ -163,8 +145,8 @@ if (!['same-origin', 'same-hostname', 'same-domain'].includes(crawlStrategy)) {
   throw new Error('--crawl-strategy must be same-origin, same-hostname, or same-domain');
 }
 const discoverSitemap = !process.argv.includes('--no-sitemap');
-const outputDir = path.resolve(arg('--output-dir', defaultOutputDir(startUrl)));
-const stateDir = path.resolve(arg('--state-dir', defaultStateDir(startUrl)));
+const outputDir = path.resolve(arg('--output-dir'));
+const stateDir = path.resolve(arg('--state-dir'));
 const hostname = new URL(startUrl).hostname;
 const manifestFile = path.join(stateDir, `${hostname}.json`);
 

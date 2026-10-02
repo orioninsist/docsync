@@ -71,14 +71,6 @@ def normalize_language(value: str) -> str:
     return language
 
 
-def scope_root(start_url: str) -> str:
-    return start_url.rstrip("/")
-
-
-def scope_id(start_url: str) -> str:
-    return hashlib.sha256(scope_root(start_url).encode("utf-8")).hexdigest()[:12]
-
-
 def hostname_for_url(url: str) -> str:
     parsed = urlsplit(url)
     if not parsed.hostname or parsed.scheme not in {"http", "https"}:
