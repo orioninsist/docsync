@@ -103,7 +103,8 @@ def split_markdown_directory(
 ) -> list[tuple[Path, int]]:
     """Create exact-count merged Markdown parts without altering source files."""
     source_root = input_dir.expanduser().resolve()
-    target_root = output_dir.expanduser().resolve()
+    output_root = output_dir.expanduser().resolve()
+    target_root = output_root / source_root.name
 
     files = discover_markdown_files(source_root)
     groups = partition_files(files, parts)
