@@ -139,6 +139,26 @@ def _prepare_crawl_storage(
     return storage_dir, checkpoint_file, resume
 
 
+class StreamingThrottlingRequestManager(ThrottlingRequestManager):
+    """Keep Crawlee alive while native sitemap discovery is active."""
+
+    discovery_task: asyncio.Task[None] | None = None
+
+    async def is_finished(self) -> bool:
+        if self.discovery_task is not None:
+            if not self.discovery_task.done():
+                return False
+            self.discovery_task.result()
+        return await super().is_finished()
+
+    async def is_empty(self) -> bool:
+        if self.discovery_task is not None:
+            if not self.discovery_task.done():
+                return False
+            self.discovery_task.result()
+        return await super().is_empty()
+
+
 async def run_crawler(
     *,
     start_url: str,
@@ -192,7 +212,7 @@ async def run_crawler(
         configuration=configuration,
         storage_client=storage_client,
     )
-    request_manager = ThrottlingRequestManager(
+    request_manager = StreamingThrottlingRequestManager(
         queue,
         domains=[hostname],
         request_manager_opener=RequestQueue.open,
@@ -250,18 +270,32 @@ async def run_crawler(
                         transform_request_function=transform_request,
                     )
                 )
-                # Route discovered URLs through the throttled manager so
-                # robots.txt Crawl-delay applies to sitemap-seeded pages too.
-                while True:
-                    sitemap_request = await sitemap_loader.fetch_next_request()
-                    if sitemap_request is None:
+                async def feed_sitemap() -> None:
+                    emitted = 0
+                    while True:
+                        if max_requests is not None and emitted >= max_requests:
+                            return
+
                         if await sitemap_loader.is_finished():
-                            break
-                        raise RuntimeError(
-                            "Sitemap loader returned no request before completion"
+                            return
+
+                        sitemap_request = await sitemap_loader.fetch_next_request()
+
+                        if sitemap_request is None:
+                            if await sitemap_loader.is_finished():
+                                return
+                            await asyncio.sleep(0.1)
+                            continue
+
+                        await request_manager.add_request(sitemap_request)
+                        await sitemap_loader.mark_request_as_handled(
+                            sitemap_request
                         )
-                    await active_request_manager.add_request(sitemap_request)
-                    await sitemap_loader.mark_request_as_handled(sitemap_request)
+                        emitted += 1
+
+                request_manager.discovery_task = asyncio.create_task(
+                    feed_sitemap()
+                )
 
             if not sitemap_sources:
                 try:
@@ -350,10 +384,19 @@ async def run_crawler(
                 transform_request_function=transform_request,
             )
 
-        statistics = await crawler.run(
-            [canonicalize_url(start_url)],
-            purge_request_queue=False,
-        )
+        try:
+            statistics = await crawler.run(
+                [canonicalize_url(start_url)],
+                purge_request_queue=False,
+            )
+        finally:
+            discovery_task = request_manager.discovery_task
+            if discovery_task is not None:
+                if not discovery_task.done():
+                    discovery_task.cancel()
+                await asyncio.gather(
+                    discovery_task, return_exceptions=True
+                )
 
         stopped_at_request_limit = (
             max_requests is not None and statistics.requests_total >= max_requests

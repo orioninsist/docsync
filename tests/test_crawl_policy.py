@@ -70,7 +70,7 @@ def test_python_uses_native_sitemap_loader_and_domain_routing() -> None:
 
     assert "SitemapRequestLoader(" in source
     assert "ThrottlingRequestManager(" in source
-    assert "await active_request_manager.add_request(sitemap_request)" in source
+    assert "await request_manager.add_request(sitemap_request)" in source
     assert "await sitemap_loader.mark_request_as_handled(" in source
     assert "sitemap_loader.to_tandem(queue)" not in source
 
