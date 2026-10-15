@@ -39,7 +39,7 @@ def test_sitemap_requests_use_crawler_request_manager() -> None:
     source = (
         __import__("pathlib").Path("src/docsync/crawler.py").read_text(encoding="utf-8")
     )
-    assert "await request_manager.add_request(request)" in source
+    assert "await active_request_manager.add_request(request)" in source
     assert "await queue.add_request(request)" not in source
 
 
@@ -47,7 +47,7 @@ def test_crawl_completion_uses_crawler_request_manager() -> None:
     source = (
         __import__("pathlib").Path("src/docsync/crawler.py").read_text(encoding="utf-8")
     )
-    assert "await request_manager.is_finished()" in source
+    assert "await active_request_manager.is_finished()" in source
     assert "await queue.is_finished()" not in source
 
 
@@ -64,10 +64,20 @@ def test_python_sitemap_discovery_matches_expected_sources() -> None:
     assert "canonicalize_url(url)" in source
 
 
+def test_python_uses_native_sitemap_loader_and_tandem() -> None:
+    source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+
+    assert "SitemapRequestLoader(" in source
+    assert "sitemap_loader.to_tandem(queue)" in source
+    assert "request_manager=active_request_manager" in source
+    assert "transform_request_function=transform_request" in source
+    assert "await active_request_manager.is_finished()" in source
+
+
 def test_discovered_sitemap_requests_use_throttled_request_manager() -> None:
     source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
 
-    assert "await request_manager.add_request(request)" in source
+    assert "await active_request_manager.add_request(request)" in source
     assert "await queue.add_request(request)" not in source
 
 
@@ -109,12 +119,15 @@ def test_optional_sitemap_discovery_errors_are_observable() -> None:
 
     assert "suppress(Exception)" not in python_source
     assert "Unable to discover sitemaps from robots.txt" in python_source
-    assert "Unable to load declared sitemaps" in python_source
+    assert "SitemapRequestLoader(" in python_source
     assert "Unable to discover common sitemaps" in python_source
 
     assert "catch {}" not in typescript_source
     assert "Unable to discover sitemaps from robots.txt" in typescript_source
-    assert "Unable to discover common sitemaps" in typescript_source
+    assert "robots.getSitemaps(" in typescript_source
+    assert "SitemapRequestList.open(" in typescript_source
+    assert "sitemapUrls: [...sitemapSources]" in typescript_source
+    assert "parseUrlsFromSitemaps(" not in typescript_source
 
 
 def test_python_link_discovery_is_restricted_to_start_path_scope() -> None:
@@ -122,17 +135,16 @@ def test_python_link_discovery_is_restricted_to_start_path_scope() -> None:
 
     assert "url_is_within_start_scope(start_url, url)" in source
     assert 'return "skip"' in source
-    assert "url_is_within_start_scope(start_url, request.url)" in source
+    assert "transform_request_function=transform_request" in source
 
 
 def test_python_common_sitemap_is_restricted_to_start_path_scope() -> None:
     source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
 
     assert "canonical_url = canonicalize_url(url)" in source
-    assert (
-        "if not url_is_within_start_scope(start_url, canonical_url) "
-        "or not url_matches_language(canonical_url, language):"
-    ) in source
+    assert "url_is_within_start_scope(" in source
+    assert "start_url, canonical_url" in source
+    assert "url_matches_language(canonical_url, language)" in source
 
 
 def test_python_crawl_preserves_previous_markdown_files() -> None:
@@ -141,7 +153,7 @@ def test_python_crawl_preserves_previous_markdown_files() -> None:
 
     assert "stale_urls = set(content_state) - seen_urls" not in source
     assert ".unlink(missing_ok=True)" not in source
-    assert 'checkpoint_file,' in source
+    assert "checkpoint_file," in source
 
 
 def test_typescript_crawl_preserves_previous_markdown_files() -> None:

@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -19,7 +20,11 @@ from crawlee.configuration import Configuration
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.events import LocalEventManager
 from crawlee.http_clients import ImpitHttpClient
-from crawlee.request_loaders import SitemapRequestLoader, ThrottlingRequestManager
+from crawlee.request_loaders import (
+    RequestManager,
+    SitemapRequestLoader,
+    ThrottlingRequestManager,
+)
 from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
 from html_to_markdown import convert
@@ -169,12 +174,7 @@ async def run_crawler(
         configuration=configuration,
         storage_client=storage_client,
     )
-    request_manager = ThrottlingRequestManager(
-        queue,
-        domains=[hostname],
-        request_manager_opener=RequestQueue.open,
-        service_locator=crawl_services,
-    )
+    request_manager: RequestManager = queue
     concurrency = ConcurrencySettings(
         min_concurrency=1,
         desired_concurrency=max_concurrency,
@@ -186,74 +186,28 @@ async def run_crawler(
         if os.environ.get("DOCSYNC_NO_SANDBOX") == "1"
         else None
     )
-    crawler = PlaywrightCrawler(
-        configuration=configuration,
-        event_manager=event_manager,
-        storage_client=storage_client,
-        headless=not headful,
-        use_incognito_pages=headful,
-        browser_launch_options=browser_launch_options,
-        request_manager=request_manager,
-        concurrency_settings=concurrency,
-        max_requests_per_crawl=max_requests,
-        max_request_retries=2,
-        retry_on_blocked=True,
-        respect_robots_txt_file=True,
-    )
 
-    def transform_request(options: RequestOptions) -> RequestOptions | Literal['skip', 'unchanged']:
+    def transform_request(
+        options: RequestOptions,
+    ) -> RequestOptions | Literal["skip", "unchanged"]:
         url = canonicalize_url(options["url"])
-        if not url_is_within_start_scope(start_url, url) or not url_matches_language(url, language):
+        if not url_is_within_start_scope(start_url, url) or not url_matches_language(
+            url, language
+        ):
             return "skip"
         options["url"] = url
         return options
 
-    @crawler.router.default_handler
-    async def handler(context: PlaywrightCrawlingContext) -> None:
-        await context.page.locator("main, article, body").first.wait_for(
-            state="attached", timeout=5_000
-        )
-        page_language = await context.page.evaluate(
-            "() => document.documentElement.lang || ''"
-        )
-        should_process = (
-            not page_language or normalize_language(page_language) == language
-        )
-        html = (
-            await context.page.evaluate(NORMALIZE_DOCUMENT) if should_process else None
-        )
-        markdown = await asyncio.to_thread(_to_gfm, html) if html else ""
+    async with AsyncExitStack() as sitemap_stack:
+        active_request_manager: RequestManager = request_manager
 
-        if markdown:
-            url = canonicalize_url(context.page.url)
-            digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
-            target = output_path(output_dir, url)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            async with state_lock:
-                seen_urls.add(url)
-                previous = content_state.get(url, {})
-                counters["processed"] += 1
-                if previous.get("content_hash") == digest and target.exists():
-                    counters["unchanged"] += 1
-                else:
-                    target.write_text(markdown + "\n", encoding="utf-8")
-                    counters["saved"] += 1
-                content_state[url] = {
-                    "content_hash": digest,
-                    "filename": target.name,
-                }
-                _save_state(state_file, content_state)
+        if discover_sitemap:
+            parsed_start = urlsplit(start_url)
+            origin = f"{parsed_start.scheme}://{parsed_start.netloc}"
 
-        await context.enqueue_links(
-            strategy=crawl_strategy,
-            transform_request_function=transform_request,
-        )
-
-    if discover_sitemap:
-        parsed_start = urlsplit(start_url)
-        origin = f"{parsed_start.scheme}://{parsed_start.netloc}"
-
-        async with ImpitHttpClient() as http_client:
+            http_client = ImpitHttpClient()
+            await http_client.__aenter__()
+            sitemap_stack.push_async_callback(http_client.cleanup)
             sitemap_sources: set[str] = set()
 
             try:
@@ -262,52 +216,112 @@ async def run_crawler(
                     robots.get_sitemaps(enqueue_strategy=crawl_strategy)
                 )
             except Exception as exc:
-                crawler.log.warning(
-                    "Unable to discover sitemaps from robots.txt: %s", exc
-                )
+                print(f"Unable to discover sitemaps from robots.txt: {exc}")
 
             if sitemap_sources:
-                try:
-                    async with SitemapRequestLoader(
+                sitemap_loader = await sitemap_stack.enter_async_context(
+                    SitemapRequestLoader(
                         sitemap_urls=sorted(sitemap_sources),
                         http_client=http_client,
                         enqueue_strategy=crawl_strategy,
                         transform_request_function=transform_request,
-                    ) as sitemap_loader:
-                        while request := await sitemap_loader.fetch_next_request():
-                            if url_is_within_start_scope(start_url, request.url) and url_matches_language(request.url, language):
-                                await request_manager.add_request(request)
-                            await sitemap_loader.mark_request_as_handled(request)
-                except Exception as exc:
-                    crawler.log.warning("Unable to load declared sitemaps: %s", exc)
+                    )
+                )
+                active_request_manager = await sitemap_loader.to_tandem(queue)
 
             try:
                 common_sitemap = await Sitemap.try_common_names(origin, http_client)
                 for url in common_sitemap.urls:
                     canonical_url = canonicalize_url(url)
-                    if not url_is_within_start_scope(start_url, canonical_url) or not url_matches_language(canonical_url, language):
+                    if not url_is_within_start_scope(
+                        start_url, canonical_url
+                    ) or not url_matches_language(canonical_url, language):
                         continue
                     request = Request.from_url(
                         canonical_url,
                         enqueue_strategy=crawl_strategy,
                     )
-                    await request_manager.add_request(request)
+                    await active_request_manager.add_request(request)
             except Exception as exc:
-                crawler.log.warning("Unable to discover common sitemaps: %s", exc)
+                print(f"Unable to discover common sitemaps: {exc}")
 
-    statistics = await crawler.run(
-        [canonicalize_url(start_url)],
-        purge_request_queue=False,
-    )
+        active_request_manager = ThrottlingRequestManager(
+            active_request_manager,
+            domains=[hostname],
+            request_manager_opener=RequestQueue.open,
+            service_locator=crawl_services,
+        )
 
-    stopped_at_request_limit = (
-        max_requests is not None and statistics.requests_total >= max_requests
-    )
-    crawl_complete = (
-        not stopped_at_request_limit and await request_manager.is_finished()
-    )
+        crawler = PlaywrightCrawler(
+            configuration=configuration,
+            event_manager=event_manager,
+            storage_client=storage_client,
+            headless=not headful,
+            use_incognito_pages=headful,
+            browser_launch_options=browser_launch_options,
+            request_manager=active_request_manager,
+            concurrency_settings=concurrency,
+            max_requests_per_crawl=max_requests,
+            max_request_retries=2,
+            retry_on_blocked=True,
+            respect_robots_txt_file=True,
+        )
+
+        @crawler.router.default_handler
+        async def handler(context: PlaywrightCrawlingContext) -> None:
+            await context.page.locator("main, article, body").first.wait_for(
+                state="attached", timeout=5_000
+            )
+            page_language = await context.page.evaluate(
+                "() => document.documentElement.lang || ''"
+            )
+            should_process = (
+                not page_language or normalize_language(page_language) == language
+            )
+            html = (
+                await context.page.evaluate(NORMALIZE_DOCUMENT)
+                if should_process
+                else None
+            )
+            markdown = await asyncio.to_thread(_to_gfm, html) if html else ""
+
+            if markdown:
+                url = canonicalize_url(context.page.url)
+                digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+                target = output_path(output_dir, url)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                async with state_lock:
+                    seen_urls.add(url)
+                    previous = content_state.get(url, {})
+                    counters["processed"] += 1
+                    if previous.get("content_hash") == digest and target.exists():
+                        counters["unchanged"] += 1
+                    else:
+                        target.write_text(markdown + "\n", encoding="utf-8")
+                        counters["saved"] += 1
+                    content_state[url] = {
+                        "content_hash": digest,
+                        "filename": target.name,
+                    }
+                    _save_state(state_file, content_state)
+
+            await context.enqueue_links(
+                strategy=crawl_strategy,
+                transform_request_function=transform_request,
+            )
+
+        statistics = await crawler.run(
+            [canonicalize_url(start_url)],
+            purge_request_queue=False,
+        )
+
+        stopped_at_request_limit = (
+            max_requests is not None and statistics.requests_total >= max_requests
+        )
+        crawl_complete = (
+            not stopped_at_request_limit and await active_request_manager.is_finished()
+        )
     if crawl_complete:
-
         _save_checkpoint(
             checkpoint_file,
             {

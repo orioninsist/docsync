@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { PlaywrightCrawler, RequestQueueV1, RobotsTxtFile, Sitemap } from 'crawlee';
+import { PlaywrightCrawler, RequestQueueV1, RobotsTxtFile, SitemapRequestList } from 'crawlee';
 import { convert } from '@xberg-io/html-to-markdown';
 
 type Manifest = Record<string, { content_hash: string; filename: string }>;
@@ -206,8 +206,39 @@ let outputWrite = Promise.resolve();
 const queue = await RequestQueueV1.open('docsync');
 
 {
+  const sitemapSources = new Set<string>();
+
+  if (discoverSitemap) {
+    try {
+      const robots = await RobotsTxtFile.find(startUrl);
+      for (const url of robots.getSitemaps({ enqueueStrategy: crawlStrategy })) {
+        sitemapSources.add(url);
+      }
+    } catch (error) {
+      console.warn('Unable to discover sitemaps from robots.txt:', error);
+    }
+
+    sitemapSources.add(
+      new URL('/sitemap.xml', new URL(startUrl).origin).toString(),
+    );
+  }
+
+  const sitemapRequestList = discoverSitemap
+    ? await SitemapRequestList.open({
+        sitemapUrls: [...sitemapSources],
+        enqueueStrategy: crawlStrategy,
+        regexps: [
+          new RegExp(
+            `^${new URL(startUrl).origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${new URL(startUrl).pathname.replace(/\/+$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/|\\?|$)`,
+          ),
+        ],
+        persistStateKey: 'DOCSYNC_SITEMAP_REQUEST_LIST',
+      })
+    : undefined;
+
   const crawler = new PlaywrightCrawler({
     requestQueue: queue,
+    ...(sitemapRequestList ? { requestList: sitemapRequestList } : {}),
     headless: !headful,
     launchContext: {
       useIncognitoPages: headful,
@@ -223,6 +254,18 @@ const queue = await RequestQueueV1.open('docsync');
     },
 
     async requestHandler({ request, page, enqueueLinks }) {
+      const requestedUrl = canonicalizeUrl(request.loadedUrl ?? request.url);
+      const originalUrl = canonicalizeUrl(request.url);
+      const isStartRequest = originalUrl === canonicalizeUrl(startUrl);
+
+      if (
+        !isStartRequest &&
+        (!urlIsWithinStartScope(startUrl, requestedUrl) ||
+          !urlMatchesLanguage(requestedUrl, language))
+      ) {
+        return;
+      }
+
       await page.locator('main, article, body').first().waitFor({ state: 'attached', timeout: 5000 });
       const pageLanguage = await page.evaluate(
         () => document.documentElement.lang || '',
@@ -327,35 +370,17 @@ const queue = await RequestQueueV1.open('docsync');
     },
   });
 
-  if (discoverSitemap) {
-    const sitemapUrls = new Set<string>();
-    try {
-      const robots = await RobotsTxtFile.find(startUrl);
-      for (const url of await robots.parseUrlsFromSitemaps({ enqueueStrategy: crawlStrategy })) sitemapUrls.add(url);
-    } catch (error) {
-      console.warn('Unable to discover sitemaps from robots.txt:', error);
-    }
-    try {
-      const sitemap = await Sitemap.tryCommonNames(new URL(startUrl).origin);
-      for (const url of sitemap.urls) sitemapUrls.add(url);
-    } catch (error) {
-      console.warn('Unable to discover common sitemaps:', error);
-    }
-    if (sitemapUrls.size) {
-      await crawler.addRequests(
-        [...sitemapUrls]
-          .map(canonicalizeUrl)
-          .filter((url) => urlIsWithinStartScope(startUrl, url) && urlMatchesLanguage(url, language)),
-      );
-    }
-  }
-
   const statistics = await crawler.run([canonicalizeUrl(startUrl)]);
   await outputWrite;
 
   const stoppedAtRequestLimit =
     maxRequestsPerCrawl !== undefined && statistics.requestsTotal >= maxRequestsPerCrawl;
-  const crawlComplete = !stoppedAtRequestLimit && await queue.isFinished();
+  const crawlComplete =
+    !stoppedAtRequestLimit &&
+    await queue.isFinished() &&
+    (!sitemapRequestList ||
+      (sitemapRequestList.isSitemapFullyLoaded() &&
+        await sitemapRequestList.isFinished()));
   if (crawlComplete) {
 
     await saveCheckpoint(checkpointFile, {
