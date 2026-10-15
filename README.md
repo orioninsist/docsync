@@ -21,18 +21,20 @@ DocsSync synchronizes documentation to GitHub-Flavored Markdown through one CLI.
              │                                     │
      DOM normalization                      Markdown renderer
              │                                     │
-      html-to-markdown                            GFM
+       Pandoc → GFM                             GFM
              │                                     │
              └──────────── Markdown + state ───────┘
 ```
 
 `--source` selects where documentation comes from. `--engine` selects the Crawlee implementation only for `--source web`; it does not select or alter source adapters.
 
-The default web source uses the same document policy in both engines: the largest rendered `<main>`, semantic DOM cleanup, canonical code blocks, html-to-markdown 3.14.3, stable filenames, SHA-256 content fingerprints, and the same hostname manifest.
+The web source uses Crawlee and Playwright to discover pages and capture rendered HTML. Both engines extract `<main>` (falling back to `<article>` or `<body>`), remove script/style elements from a copy for conversion, convert HTML to GFM with Pandoc, and parse the Markdown with a shared Goldmark GFM validator before saving. Stable filenames, SHA-256 fingerprints, and a shared hostname manifest track content.
 
 The Phaser source adapter checks out the official Phaser repository and renders JSDoc from its `src/**/*.js` files. This output is source-derived documentation and is intentionally not presented as a byte-for-byte or page-for-page mirror of docs.phaser.io.
 
 ## Installation
+
+For the current development workflow, Fedora Linux is the tested target. Web crawling requires Pandoc and the `docsync-gfm-validator` executable in addition to the crawler runtime. Docker and Windows instructions below describe the older setup and have not been updated or verified for this pipeline.
 
 Docker is the recommended way to run DocsSync on a new Fedora or Windows 11 machine because it keeps Python, Node.js, Crawlee, Playwright, and Chromium in one reproducible environment.
 
@@ -82,7 +84,18 @@ The generated Markdown is written to `docs-output`; resumable crawler state is w
 
 ### Native Fedora / Linux
 
-Requirements: Python 3.10+, Git, `uv`, and Playwright Chromium. Node.js and npm are only required for the TypeScript engine.
+Requirements: Python 3.10+, Git, `uv`, Pandoc, Go (to build the Goldmark validator), and Playwright Chromium. Node.js and npm are only required for the TypeScript engine.
+
+Build and install the shared validator once on Fedora:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+(cd tools/gfm-validator && go build -o "$HOME/.local/bin/docsync-gfm-validator" .)
+command -v pandoc
+command -v docsync-gfm-validator
+```
+
+Ensure `~/.local/bin` is in `PATH`. Alternatively, set `DOCSYNC_GFM_VALIDATOR` to the validator's absolute path. Both web engines require the validator; failure to run it prevents Markdown saving. Goldmark parses Markdown with its GFM extensions and reports structure; it is not a strict GFM compliance checker or proof of content completeness.
 
 ```bash
 git clone https://github.com/orioninsist/docsync.git
@@ -213,11 +226,9 @@ Generated paths preserve the Phaser `src/` hierarchy while dropping the leading 
 
 ## Document pipeline
 
-Each rendered page is reduced to its largest `<main>` element. Presentation-only elements are removed while semantic `<aside>` content and interactive-role content are preserved; heading text is unwrapped from decorative spans, and `<pre>/<code>` blocks are rebuilt from their text content so syntax-highlighting markup and line-number UI cannot leak into Markdown.
+For the web source, each engine first archives the original browser-rendered HTML in content-addressed storage under the state directory. Conversion operates on a cloned `<main>` element, falling back to `<article>` and then `<body>`, and removes `script` and `style` elements from the clone. Semantic content such as code blocks, tables, links, images, and asides is retained for conversion.
 
-Language metadata from `data-language`, `syntax`, and existing `language-*` classes is retained as a canonical `language-*` code class before conversion. Both engines then convert the normalized HTML with html-to-markdown 3.14.3.
-
-The Python engine uses the `html-to-markdown` Python binding and the TypeScript engine uses `@xberg-io/html-to-markdown`. Both are pinned to 3.14.3 so equivalent normalized HTML follows the same Markdown serialization and content-hash standard.
+Both engines invoke Pandoc (`--from=html --to=gfm --wrap=none`) and then invoke the shared Go/Goldmark validator (`tools/gfm-validator`) before atomically saving Markdown. The validator rejects empty or whitespace-only input and reports parsed GFM structure, but a successful parse alone cannot prove complete fidelity or strict GFM conformance. The immutable HTML archive allows later comparison against the source.
 
 The requested `--language` is compared with the rendered page's HTML language when the page declares one. Pages without a declared HTML language are not discarded solely for lacking that metadata.
 
@@ -419,10 +430,10 @@ docsync/
 
 The repository also contains two Markdown-packaging utilities that are separate from the DocsSync crawler runtime: `markdownMerge/` (Python) and `tools/docpack/` (Rust). See their own READMEs for usage and scope.
 
-Dependency lockfiles are committed for reproducibility: `uv.lock`, `typescript/package-lock.json`, and `tools/docpack/Cargo.lock`. Runtime installs use `uv sync --locked` and `npm ci`; Rust builds use the committed Cargo lockfile.
+Dependency lockfiles are committed for reproducibility: `uv.lock`, `typescript/package-lock.json`, `tools/docpack/Cargo.lock`, and `tools/gfm-validator/go.sum` (Go module checksums). Runtime installs use `uv sync --locked` and `npm ci`; Rust builds use the committed Cargo lockfile.
 
 ## Design boundary
 
 DocsSync intentionally contains no custom browser controller, request frontier, retry engine, rate limiter, robots.txt parser, site-specific browser selector set, TUI, or Rich interface.
 
-The web path is a small policy layer over Crawlee, Playwright, the browser DOM, and html-to-markdown. Source adapters are a separate extension boundary for documentation that can be derived directly from an authoritative upstream source tree without adding site-specific behavior to the crawler.
+The web path is a small policy layer over Crawlee, Playwright, the browser DOM, Pandoc, and Goldmark. Source adapters are a separate extension boundary for documentation that can be derived directly from an authoritative upstream source tree without adding site-specific behavior to the crawler.
