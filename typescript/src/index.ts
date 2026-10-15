@@ -232,6 +232,12 @@ const queue = await RequestQueueV1.open('docsync');
             `^${new URL(startUrl).origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${new URL(startUrl).pathname.replace(/\/+$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/|\\?|$)`,
           ),
         ],
+        exclude: [
+          new RegExp(
+            `[?&]hl=(?!${language}(?:[-_][a-zA-Z]+)?(?:&|$))[^&#]*`,
+            'i',
+          ),
+        ],
         persistStateKey: 'DOCSYNC_SITEMAP_REQUEST_LIST',
       })
     : undefined;
