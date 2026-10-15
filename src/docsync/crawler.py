@@ -23,7 +23,6 @@ from crawlee.events import LocalEventManager
 from crawlee.http_clients import ImpitHttpClient
 from crawlee.request_loaders import (
     RequestManager,
-    RequestManagerTandem,
     SitemapRequestLoader,
     ThrottlingRequestManager,
 )
@@ -251,9 +250,18 @@ async def run_crawler(
                         transform_request_function=transform_request,
                     )
                 )
-                active_request_manager = RequestManagerTandem(
-                    sitemap_loader, request_manager
-                )
+                # Route discovered URLs through the throttled manager so
+                # robots.txt Crawl-delay applies to sitemap-seeded pages too.
+                while True:
+                    sitemap_request = await sitemap_loader.fetch_next_request()
+                    if sitemap_request is None:
+                        if await sitemap_loader.is_finished():
+                            break
+                        raise RuntimeError(
+                            "Sitemap loader returned no request before completion"
+                        )
+                    await active_request_manager.add_request(sitemap_request)
+                    await sitemap_loader.mark_request_as_handled(sitemap_request)
 
             if not sitemap_sources:
                 try:
