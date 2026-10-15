@@ -9,34 +9,20 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 NORMALIZE_DOCUMENT = r"""
 () => {
-  const candidates = [...document.querySelectorAll('main')];
-  if (!candidates.length) candidates.push(...document.querySelectorAll('article'));
-  if (!candidates.length && document.body) candidates.push(document.body);
-  if (!candidates.length) return null;
-  const documentRoot = candidates.reduce((best, current) =>
-    (current.textContent?.trim().length ?? 0) > (best.textContent?.trim().length ?? 0)
-      ? current : best
+  const root =
+    document.querySelector('main') ||
+    document.querySelector('article') ||
+    document.body;
+
+  if (!root) return null;
+
+  const content = root.cloneNode(true);
+
+  content.querySelectorAll('script,style').forEach(
+    element => element.remove()
   );
-  const root = documentRoot.cloneNode(true);
-  root.querySelectorAll('script,style,noscript,template,svg,button,nav').forEach((el) => el.remove());
-  root.querySelectorAll('.sr-only,[aria-hidden="true"],[role="status"]').forEach((el) => el.remove());
-  for (const pre of [...root.querySelectorAll('pre')]) {
-    const code = pre.querySelector('code');
-    const language =
-      code?.getAttribute('data-language')?.trim() ||
-      pre.getAttribute('data-language')?.trim() ||
-      pre.getAttribute('syntax')?.trim() ||
-      [...(code?.classList ?? [])].find((value) => value.startsWith('language-'))?.slice(9) ||
-      [...pre.classList].find((value) => value.startsWith('language-'))?.slice(9) || '';
-    const cleanPre = document.createElement('pre');
-    const cleanCode = document.createElement('code');
-    if (language) cleanCode.className = `language-${language.toLowerCase()}`;
-    cleanCode.textContent = code?.textContent ?? pre.textContent ?? '';
-    cleanPre.appendChild(cleanCode);
-    pre.replaceWith(cleanPre);
-  }
-  for (const span of [...root.querySelectorAll('span')]) span.replaceWith(...span.childNodes);
-  return root.innerHTML;
+
+  return content.innerHTML;
 }
 """
 

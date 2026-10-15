@@ -9,7 +9,6 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "crawlee[playwright]==1.10.1",
-    "html-to-markdown==3.14.3",
 ]
 
 [project.scripts]

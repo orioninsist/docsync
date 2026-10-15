@@ -153,7 +153,11 @@ def test_python_crawl_preserves_previous_markdown_files() -> None:
     source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
 
     assert "stale_urls = set(content_state) - seen_urls" not in source
-    assert ".unlink(missing_ok=True)" not in source
+    # Temporary files may be removed by atomic writes.
+    # Previously saved Markdown files must never be deleted.
+    assert "target.unlink(" not in source
+    assert "target.parent.unlink(" not in source
+    assert "stale_urls = set(content_state) - seen_urls" not in source
     assert "checkpoint_file," in source
 
 

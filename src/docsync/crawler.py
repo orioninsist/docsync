@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import tempfile
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Literal
@@ -27,8 +28,9 @@ from crawlee.request_loaders import (
 )
 from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
-from html_to_markdown import convert
 
+from docsync.html_archive import archive_html
+from docsync.pandoc_converter import html_to_gfm
 from docsync.policy import (
     NORMALIZE_DOCUMENT,
     canonicalize_url,
@@ -42,6 +44,29 @@ from docsync.policy import (
 )
 
 
+def _atomic_write(path: Path, content: str) -> None:
+    """Atomically replace a UTF-8 file after syncing its contents."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _load_state(path: Path) -> dict[str, dict[str, str]]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -51,18 +76,14 @@ def _load_state(path: Path) -> dict[str, dict[str, str]]:
 
 
 def _save_state(path: Path, state: dict[str, dict[str, str]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(
+    _atomic_write(
+        path,
         json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
-    temporary.replace(path)
 
 
 def _to_gfm(html: str) -> str:
-    result = convert(html)
-    return result.content.strip() if result.content else ""
+    return html_to_gfm(html)
 
 
 def _load_checkpoint(path: Path) -> dict[str, object]:
@@ -74,13 +95,10 @@ def _load_checkpoint(path: Path) -> dict[str, object]:
 
 
 def _save_checkpoint(path: Path, checkpoint: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(
+    _atomic_write(
+        path,
         json.dumps(checkpoint, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
-    temporary.replace(path)
 
 
 def _prepare_crawl_storage(
@@ -293,11 +311,17 @@ async def run_crawler(
             should_process = (
                 not page_language or normalize_language(page_language) == language
             )
-            html = (
-                await context.page.evaluate(NORMALIZE_DOCUMENT)
-                if should_process
-                else None
-            )
+            if should_process:
+                original_html = await context.page.content()
+                await asyncio.to_thread(
+                    archive_html,
+                    original_html,
+                    state_dir=state_dir,
+                )
+                html = await context.page.evaluate(NORMALIZE_DOCUMENT)
+            else:
+                html = None
+
             markdown = await asyncio.to_thread(_to_gfm, html) if html else ""
 
             if markdown:
@@ -312,7 +336,7 @@ async def run_crawler(
                     if previous.get("content_hash") == digest and target.exists():
                         counters["unchanged"] += 1
                     else:
-                        target.write_text(markdown + "\n", encoding="utf-8")
+                        _atomic_write(target, markdown + "\n")
                         counters["saved"] += 1
                     content_state[url] = {
                         "content_hash": digest,

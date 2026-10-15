@@ -1,8 +1,9 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, open, readFile, rename, rm, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { PlaywrightCrawler, RequestQueueV1, RobotsTxtFile, SitemapRequestList } from 'crawlee';
-import { convert } from '@xberg-io/html-to-markdown';
+import { execFileSync } from 'node:child_process';
+import { archiveHtml } from './html_archive.js';
 
 type Manifest = Record<string, { content_hash: string; filename: string }>;
 
@@ -100,6 +101,30 @@ function outputPath(outputDir: string, url: string): string {
   return path.join(outputDir, `${slug}-${sha256(url).slice(0, 12)}.md`);
 }
 
+
+async function atomicWrite(file: string, content: string): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  const temporary = path.join(
+    path.dirname(file),
+    `.${path.basename(file)}.${randomUUID()}.tmp`,
+  );
+
+  try {
+    const handle = await open(temporary, 'wx');
+    try {
+      await handle.writeFile(content, 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(temporary, file);
+  } finally {
+    await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
+}
+
 async function loadManifest(file: string): Promise<Manifest> {
   try {
     return JSON.parse(await readFile(file, 'utf8')) as Manifest;
@@ -109,10 +134,7 @@ async function loadManifest(file: string): Promise<Manifest> {
 }
 
 async function saveManifest(file: string, manifest: Manifest): Promise<void> {
-  await mkdir(path.dirname(file), { recursive: true });
-  const temporary = `${file}.tmp`;
-  await writeFile(temporary, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-  await rename(temporary, file);
+  await atomicWrite(file, JSON.stringify(manifest, null, 2) + '\n');
 }
 
 async function loadCheckpoint(file: string): Promise<Partial<Checkpoint>> {
@@ -124,10 +146,7 @@ async function loadCheckpoint(file: string): Promise<Partial<Checkpoint>> {
 }
 
 async function saveCheckpoint(file: string, checkpoint: Checkpoint): Promise<void> {
-  await mkdir(path.dirname(file), { recursive: true });
-  const temporary = `${file}.tmp`;
-  await writeFile(temporary, JSON.stringify(checkpoint, null, 2) + '\n', 'utf8');
-  await rename(temporary, file);
+  await atomicWrite(file, JSON.stringify(checkpoint, null, 2) + '\n');
 }
 
 async function prepareCrawlStorage(
@@ -165,7 +184,34 @@ async function prepareCrawlStorage(
 }
 
 function toGfm(html: string): string {
-  return convert(html).content?.trim() ?? '';
+  if (!html.trim()) {
+    throw new Error('Empty HTML input');
+  }
+
+  const markdown = execFileSync(
+    'pandoc',
+    ['--from=html', '--to=gfm-raw_html', '--wrap=none'],
+    {
+      input: html,
+      encoding: 'utf8',
+      timeout: 120_000,
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  ).trim();
+
+  if (!markdown) {
+    throw new Error('Pandoc produced empty Markdown');
+  }
+
+  const validator = process.env.DOCSYNC_GFM_VALIDATOR || 'docsync-gfm-validator';
+  execFileSync(validator, [], {
+    input: markdown,
+    encoding: 'utf8',
+    timeout: 120_000,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+
+  return markdown;
 }
 
 const startUrl = process.argv[2];
@@ -279,52 +325,26 @@ const queue = await RequestQueueV1.open('docsync');
       const shouldProcess =
         !pageLanguage || normalizeLanguage(pageLanguage) === language;
 
+      if (shouldProcess) {
+        const originalHtml = await page.content();
+        await archiveHtml(originalHtml, stateDir);
+      }
+
       const html = shouldProcess ? await page.evaluate(() => {
-        const candidates = [...document.querySelectorAll('main')];
-        if (!candidates.length) candidates.push(...document.querySelectorAll('article'));
-        if (!candidates.length && document.body) candidates.push(document.body);
-        if (!candidates.length) return null;
-        const documentRoot = candidates.reduce((best, current) =>
-          (current.textContent?.trim().length ?? 0) >
-          (best.textContent?.trim().length ?? 0)
-            ? current
-            : best,
+        const root =
+          document.querySelector('main') ||
+          document.querySelector('article') ||
+          document.body;
+
+        if (!root) return null;
+
+        const content = root.cloneNode(true) as HTMLElement;
+
+        content.querySelectorAll('script,style').forEach(
+          element => element.remove()
         );
-        const root = documentRoot.cloneNode(true) as HTMLElement;
-        root
-          .querySelectorAll('script,style,noscript,template,svg,button,nav')
-          .forEach((element) => element.remove());
-        root
-          .querySelectorAll(
-            '.sr-only,[aria-hidden="true"],[role="status"]',
-          )
-          .forEach((element) => element.remove());
 
-        for (const pre of [...root.querySelectorAll('pre')]) {
-          const code = pre.querySelector('code');
-          const language =
-            code?.getAttribute('data-language')?.trim() ||
-            pre.getAttribute('data-language')?.trim() ||
-            pre.getAttribute('syntax')?.trim() ||
-            [...(code?.classList ?? [])]
-              .find((value) => value.startsWith('language-'))
-              ?.slice(9) ||
-            [...pre.classList]
-              .find((value) => value.startsWith('language-'))
-              ?.slice(9) ||
-            '';
-          const cleanPre = document.createElement('pre');
-          const cleanCode = document.createElement('code');
-          if (language) cleanCode.className = `language-${language.toLowerCase()}`;
-          cleanCode.textContent = code?.textContent ?? pre.textContent ?? '';
-          cleanPre.appendChild(cleanCode);
-          pre.replaceWith(cleanPre);
-        }
-
-        for (const span of [...root.querySelectorAll('span')]) {
-          span.replaceWith(...span.childNodes);
-        }
-        return root.innerHTML;
+        return content.innerHTML;
       }) : null;
 
       const markdown = html ? toGfm(html) : '';
@@ -348,7 +368,7 @@ const queue = await RequestQueueV1.open('docsync');
           counters.unchanged += 1;
         } else {
           await mkdir(path.dirname(target), { recursive: true });
-          await writeFile(target, markdown + '\n', 'utf8');
+          await atomicWrite(target, markdown + '\n');
           counters.saved += 1;
         }
 
