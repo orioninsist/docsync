@@ -339,15 +339,7 @@ const queue = await RequestQueueV1.open('docsync');
     maxRequestsPerCrawl !== undefined && statistics.requestsTotal >= maxRequestsPerCrawl;
   const crawlComplete = !stoppedAtRequestLimit && await queue.isFinished();
   if (crawlComplete) {
-    if (!resume) {
-      for (const [url, entry] of Object.entries(manifest)) {
-        if (seenUrls.has(url)) continue;
-        await rm(path.join(outputDir, entry.filename), { force: true });
-        delete manifest[url];
-        counters.removed += 1;
-      }
-      await saveManifest(manifestFile, manifest);
-    }
+
     await saveCheckpoint(checkpointFile, {
       version: 1,
       status: 'complete',

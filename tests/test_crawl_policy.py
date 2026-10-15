@@ -130,3 +130,21 @@ def test_python_common_sitemap_is_restricted_to_start_path_scope() -> None:
 
     assert "canonical_url = canonicalize_url(url)" in source
     assert "if not url_is_within_start_scope(start_url, canonical_url):" in source
+
+
+def test_python_crawl_preserves_previous_markdown_files() -> None:
+    """A completed crawl must not delete previously saved Markdown."""
+    source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+
+    assert "stale_urls = set(content_state) - seen_urls" not in source
+    assert ".unlink(missing_ok=True)" not in source
+    assert 'checkpoint_file,' in source
+
+
+def test_typescript_crawl_preserves_previous_markdown_files() -> None:
+    """A completed crawl must not delete previously saved Markdown."""
+    source = Path("typescript/src/index.ts").read_text(encoding="utf-8")
+
+    assert "if (seenUrls.has(url)) continue;" not in source
+    assert "delete manifest[url]" not in source
+    assert "await saveCheckpoint(checkpointFile" in source

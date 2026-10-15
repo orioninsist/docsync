@@ -306,15 +306,6 @@ async def run_crawler(
         not stopped_at_request_limit and await request_manager.is_finished()
     )
     if crawl_complete:
-        if not resume:
-            stale_urls = set(content_state) - seen_urls
-            for stale_url in stale_urls:
-                stale = content_state.pop(stale_url)
-                filename = stale.get("filename")
-                if filename:
-                    (output_dir / filename).unlink(missing_ok=True)
-            if stale_urls:
-                _save_state(state_file, content_state)
 
         _save_checkpoint(
             checkpoint_file,
