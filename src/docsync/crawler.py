@@ -320,7 +320,16 @@ async def run_crawler(
             if crawl_delay is not None:
                 request_manager.set_crawl_delay(start_url, crawl_delay)
 
+        # Keep Crawlee's persisted RequestQueue, but start each CLI run
+        # with fresh native crawl statistics. The request limit is per run.
+        from crawlee.statistics import Statistics
+
+        run_statistics = Statistics.with_default_state(
+            persistence_enabled=False,
+        )
+
         crawler = PlaywrightCrawler(
+            statistics=run_statistics,
             configuration=configuration,
             event_manager=event_manager,
             storage_client=storage_client,
