@@ -64,15 +64,15 @@ def test_python_sitemap_discovery_matches_expected_sources() -> None:
     assert "canonicalize_url(url)" in source
 
 
-def test_python_uses_native_sitemap_loader_and_tandem() -> None:
+def test_python_uses_native_sitemap_loader_and_domain_routing() -> None:
+    """Sitemap requests must enter Crawlee's throttled domain queue."""
     source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
 
     assert "SitemapRequestLoader(" in source
-    assert "sitemap_loader.to_tandem(queue)" in source
-    assert "request_manager=active_request_manager" in source
-    assert "transform_request_function=transform_request" in source
-    assert "await active_request_manager.is_finished()" in source
-
+    assert "ThrottlingRequestManager(" in source
+    assert "await active_request_manager.add_request(sitemap_request)" in source
+    assert "await sitemap_loader.mark_request_as_handled(" in source
+    assert "sitemap_loader.to_tandem(queue)" not in source
 
 def test_discovered_sitemap_requests_use_throttled_request_manager() -> None:
     source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")

@@ -174,7 +174,12 @@ async def run_crawler(
         configuration=configuration,
         storage_client=storage_client,
     )
-    request_manager: RequestManager = queue
+    request_manager: RequestManager = ThrottlingRequestManager(
+        queue,
+        domains=[hostname],
+        request_manager_opener=RequestQueue.open,
+        service_locator=crawl_services,
+    )
     concurrency = ConcurrencySettings(
         min_concurrency=1,
         desired_concurrency=max_concurrency,
@@ -227,7 +232,20 @@ async def run_crawler(
                         transform_request_function=transform_request,
                     )
                 )
-                active_request_manager = await sitemap_loader.to_tandem(queue)
+                # Route sitemap requests through the native domain queue.
+                while True:
+                    sitemap_request = await sitemap_loader.fetch_next_request()
+                    if sitemap_request is None:
+                        if await sitemap_loader.is_finished():
+                            break
+                        raise RuntimeError(
+                            "Sitemap loader returned no request before completion"
+                        )
+
+                    await active_request_manager.add_request(sitemap_request)
+                    await sitemap_loader.mark_request_as_handled(
+                        sitemap_request
+                    )
 
             try:
                 common_sitemap = await Sitemap.try_common_names(origin, http_client)
@@ -245,12 +263,11 @@ async def run_crawler(
             except Exception as exc:
                 print(f"Unable to discover common sitemaps: {exc}")
 
-        active_request_manager = ThrottlingRequestManager(
-            active_request_manager,
-            domains=[hostname],
-            request_manager_opener=RequestQueue.open,
-            service_locator=crawl_services,
-        )
+        if discover_sitemap:
+            robots_policy = await RobotsTxtFile.find(start_url, http_client)
+            crawl_delay = robots_policy.get_crawl_delay(user_agent="*")
+            if crawl_delay is not None:
+                request_manager.set_crawl_delay(start_url, crawl_delay)
 
         crawler = PlaywrightCrawler(
             configuration=configuration,
