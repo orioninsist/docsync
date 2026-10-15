@@ -129,7 +129,10 @@ def test_python_common_sitemap_is_restricted_to_start_path_scope() -> None:
     source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
 
     assert "canonical_url = canonicalize_url(url)" in source
-    assert "if not url_is_within_start_scope(start_url, canonical_url):" in source
+    assert (
+        "if not url_is_within_start_scope(start_url, canonical_url) "
+        "or not url_matches_language(canonical_url, language):"
+    ) in source
 
 
 def test_python_crawl_preserves_previous_markdown_files() -> None:

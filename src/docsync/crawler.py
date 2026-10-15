@@ -33,6 +33,7 @@ from docsync.policy import (
     normalize_language,
     output_path,
     url_is_within_start_scope,
+    url_matches_language,
 )
 
 
@@ -202,7 +203,7 @@ async def run_crawler(
 
     def transform_request(options: RequestOptions) -> RequestOptions | Literal['skip', 'unchanged']:
         url = canonicalize_url(options["url"])
-        if not url_is_within_start_scope(start_url, url):
+        if not url_is_within_start_scope(start_url, url) or not url_matches_language(url, language):
             return "skip"
         options["url"] = url
         return options
@@ -274,7 +275,7 @@ async def run_crawler(
                         transform_request_function=transform_request,
                     ) as sitemap_loader:
                         while request := await sitemap_loader.fetch_next_request():
-                            if url_is_within_start_scope(start_url, request.url):
+                            if url_is_within_start_scope(start_url, request.url) and url_matches_language(request.url, language):
                                 await request_manager.add_request(request)
                             await sitemap_loader.mark_request_as_handled(request)
                 except Exception as exc:
@@ -284,7 +285,7 @@ async def run_crawler(
                 common_sitemap = await Sitemap.try_common_names(origin, http_client)
                 for url in common_sitemap.urls:
                     canonical_url = canonicalize_url(url)
-                    if not url_is_within_start_scope(start_url, canonical_url):
+                    if not url_is_within_start_scope(start_url, canonical_url) or not url_matches_language(canonical_url, language):
                         continue
                     request = Request.from_url(
                         canonical_url,

@@ -71,6 +71,23 @@ def normalize_language(value: str) -> str:
     return language
 
 
+
+def url_matches_language(url: str, language: str) -> bool:
+    """Reject explicitly different Google-style hl language variants."""
+    selected = normalize_language(language)
+    query = parse_qsl(urlsplit(url).query, keep_blank_values=True)
+    values = [value for key, value in query if key.lower() == "hl"]
+    for value in values:
+        if not value.strip():
+            return False
+        try:
+            if normalize_language(value) != selected:
+                return False
+        except ValueError:
+            return False
+    return True
+
+
 def hostname_for_url(url: str) -> str:
     parsed = urlsplit(url)
     if not parsed.hostname or parsed.scheme not in {"http", "https"}:

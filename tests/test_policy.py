@@ -116,3 +116,29 @@ def test_url_scope_does_not_confuse_similar_prefixes() -> None:
     assert url_is_within_start_scope(root, "https://example.com/docs/api")
     assert not url_is_within_start_scope(root, "https://example.com/docs-old")
     assert not url_is_within_start_scope(root, "https://example.com/documentation")
+
+
+def test_url_matches_language_variants() -> None:
+    from docsync.policy import url_matches_language
+
+    root = "https://developers.google.com/search/docs"
+    assert url_matches_language(root, "en")
+    assert url_matches_language(root + "?hl=en", "en")
+    assert url_matches_language(root + "?hl=en-US", "en")
+    assert url_matches_language(root + "?version=3", "en")
+    assert not url_matches_language(root + "?hl=tr", "en")
+    assert not url_matches_language(root + "?hl=zh-tw", "en")
+    assert not url_matches_language(root + "?hl=", "en")
+    assert not url_matches_language(root + "?hl=en&hl=fr", "en")
+    assert url_matches_language(root + "?hl=tr", "tr")
+
+
+def test_url_matches_language_rejects_invalid_values() -> None:
+    from docsync.policy import url_matches_language
+
+    root = "https://developers.google.com/search/docs"
+    assert not url_matches_language(root + "?hl=invalid", "en")
+    assert not url_matches_language(root + "?hl=123", "en")
+    assert not url_matches_language(root + "?hl=%20", "en")
+    assert not url_matches_language(root + "?HL=fr", "en")
+    assert url_matches_language(root + "?HL=EN", "en")

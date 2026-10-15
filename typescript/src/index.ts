@@ -75,6 +75,24 @@ function urlIsWithinStartScope(startUrl: string, candidateUrl: string): boolean 
 }
 
 
+
+function urlMatchesLanguage(rawUrl: string, language: string): boolean {
+  const selected = normalizeLanguage(language);
+  const values = [...new URL(rawUrl).searchParams.entries()]
+    .filter(([key]) => key.toLowerCase() === 'hl')
+    .map(([, value]) => value);
+
+  return values.every((value) => {
+    if (!value.trim()) return false;
+    try {
+      return normalizeLanguage(value) === selected;
+    } catch {
+      return false;
+    }
+  });
+}
+
+
 function outputPath(outputDir: string, url: string): string {
   const parsed = new URL(url);
   const raw = parsed.pathname.replace(/^\/+|\/+$/g, '') || 'index';
@@ -299,7 +317,7 @@ const queue = await RequestQueueV1.open('docsync');
         waitForAllRequestsToBeAdded: true,
         transformRequestFunction: (request) => {
           const url = canonicalizeUrl(request.url);
-          if (!urlIsWithinStartScope(startUrl, url)) {
+          if (!urlIsWithinStartScope(startUrl, url) || !urlMatchesLanguage(url, language)) {
             return false;
           }
           request.url = url;
@@ -327,7 +345,7 @@ const queue = await RequestQueueV1.open('docsync');
       await crawler.addRequests(
         [...sitemapUrls]
           .map(canonicalizeUrl)
-          .filter((url) => urlIsWithinStartScope(startUrl, url)),
+          .filter((url) => urlIsWithinStartScope(startUrl, url) && urlMatchesLanguage(url, language)),
       );
     }
   }

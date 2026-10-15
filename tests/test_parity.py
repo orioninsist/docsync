@@ -317,6 +317,12 @@ def test_typescript_crawl_is_restricted_to_start_path_scope() -> None:
     assert "candidate.host !== start.host" in source
     assert "candidatePath === rootPath" in source
     assert "candidatePath.startsWith(`${rootPath}/`)" in source
-    assert "if (!urlIsWithinStartScope(startUrl, url))" in source
+    assert (
+        "if (!urlIsWithinStartScope(startUrl, url) "
+        "|| !urlMatchesLanguage(url, language))"
+    ) in source
     assert "return false;" in source
-    assert ".filter((url) => urlIsWithinStartScope(startUrl, url))" in source
+    assert (
+        ".filter((url) => urlIsWithinStartScope(startUrl, url) "
+        "&& urlMatchesLanguage(url, language))"
+    ) in source
