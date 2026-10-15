@@ -200,7 +200,7 @@ async def run_crawler(
         respect_robots_txt_file=True,
     )
 
-    def transform_request(options: RequestOptions) -> RequestOptions | str:
+    def transform_request(options: RequestOptions) -> RequestOptions | Literal['skip', 'unchanged']:
         url = canonicalize_url(options["url"])
         if not url_is_within_start_scope(start_url, url):
             return "skip"
