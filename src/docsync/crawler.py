@@ -159,7 +159,7 @@ class StreamingThrottlingRequestManager(ThrottlingRequestManager):
         return await super().is_empty()
 
 
-async def run_crawler(
+async def _run_crawler_native(
     *,
     start_url: str,
     output_dir: Path | None,
@@ -207,6 +207,15 @@ async def run_crawler(
         event_manager=event_manager,
         storage_client=storage_client,
     )
+
+    # SitemapRequestLoader uses Crawlee's global service locator
+    # for native state persistence. Each crawl runs in its own
+    # worker process, so these services are isolated per crawl.
+    from crawlee import service_locator
+
+    service_locator.set_configuration(configuration)
+    service_locator.set_storage_client(storage_client)
+    service_locator.set_event_manager(event_manager)
 
     queue = await RequestQueue.open(
         configuration=configuration,
@@ -268,6 +277,7 @@ async def run_crawler(
                         http_client=http_client,
                         enqueue_strategy=crawl_strategy,
                         transform_request_function=transform_request,
+                        persist_state_key="docsync-sitemap-loader-v1",
                     )
                 )
                 async def feed_sitemap() -> None:
@@ -318,7 +328,14 @@ async def run_crawler(
             robots_policy = await RobotsTxtFile.find(start_url, http_client)
             crawl_delay = robots_policy.get_crawl_delay(user_agent="*")
             if crawl_delay is not None:
-                request_manager.set_crawl_delay(start_url, crawl_delay)
+                # Crawlee throttles request dispatch, while robots.txt
+                # regression tests observe arrival times at the server.
+                # Allow for Playwright's variable navigation latency.
+                safety_margin = 0.25 if crawl_delay > 0 else 0
+                request_manager.set_crawl_delay(
+                    start_url,
+                    crawl_delay + safety_margin,
+                )
 
         # Keep Crawlee's persisted RequestQueue, but start each CLI run
         # with fresh native crawl statistics. The request limit is per run.
@@ -426,3 +443,98 @@ async def run_crawler(
         )
 
     return counters
+
+
+async def run_crawler(
+    *,
+    start_url: str,
+    output_dir: Path | None,
+    state_dir: Path | None,
+    language: str = "en",
+    max_concurrency: int = 2,
+    max_requests: int | None = None,
+    requests_per_minute: int = 20,
+    crawl_strategy: Literal[
+        "all", "same-domain", "same-hostname", "same-origin"
+    ] = "same-origin",
+    discover_sitemap: bool = True,
+    headful: bool = False,
+    restart: bool = False,
+) -> dict[str, int]:
+    """Run each native Crawlee crawl in an isolated Python process."""
+    import signal
+    import sys
+
+    arguments = {
+        "start_url": start_url,
+        "output_dir": str(output_dir) if output_dir is not None else None,
+        "state_dir": str(state_dir) if state_dir is not None else None,
+        "language": language,
+        "max_concurrency": max_concurrency,
+        "max_requests": max_requests,
+        "requests_per_minute": requests_per_minute,
+        "crawl_strategy": crawl_strategy,
+        "discover_sitemap": discover_sitemap,
+        "headful": headful,
+        "restart": restart,
+    }
+
+    with tempfile.TemporaryDirectory(prefix="docsync-worker-") as temporary:
+        result_path = Path(temporary) / "result.json"
+
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-m",
+            "docsync._crawl_worker",
+            str(result_path),
+            stdin=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+
+        try:
+            await process.communicate(
+                json.dumps(arguments).encode("utf-8")
+            )
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            if process.returncode is None:
+                try:
+                    os.killpg(process.pid, signal.SIGINT)
+                except ProcessLookupError:
+                    pass
+
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(process.wait()),
+                        timeout=60,
+                    )
+                except asyncio.TimeoutError:
+                    if process.returncode is None:
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(process.wait()),
+                            timeout=10,
+                        )
+                    except asyncio.TimeoutError:
+                        if process.returncode is None:
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                        await process.wait()
+            raise
+
+        if process.returncode != 0:
+            raise RuntimeError(
+                f"DocsSync native crawler failed "
+                f"(exit code {process.returncode})"
+            )
+
+        if not result_path.is_file():
+            raise RuntimeError("DocsSync worker returned no result.")
+
+        return json.loads(result_path.read_text(encoding="utf-8"))
