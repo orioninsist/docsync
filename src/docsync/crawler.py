@@ -23,6 +23,7 @@ from crawlee.events import LocalEventManager
 from crawlee.http_clients import ImpitHttpClient
 from crawlee.request_loaders import (
     RequestManager,
+    RequestManagerTandem,
     SitemapRequestLoader,
     ThrottlingRequestManager,
 )
@@ -250,34 +251,26 @@ async def run_crawler(
                         transform_request_function=transform_request,
                     )
                 )
-                # Route sitemap requests through the native domain queue.
-                while True:
-                    sitemap_request = await sitemap_loader.fetch_next_request()
-                    if sitemap_request is None:
-                        if await sitemap_loader.is_finished():
-                            break
-                        raise RuntimeError(
-                            "Sitemap loader returned no request before completion"
+                active_request_manager = RequestManagerTandem(
+                    sitemap_loader, request_manager
+                )
+
+            if not sitemap_sources:
+                try:
+                    common_sitemap = await Sitemap.try_common_names(origin, http_client)
+                    for url in common_sitemap.urls:
+                        canonical_url = canonicalize_url(url)
+                        if not url_is_within_start_scope(
+                            start_url, canonical_url
+                        ) or not url_matches_language(canonical_url, language):
+                            continue
+                        request = Request.from_url(
+                            canonical_url,
+                            enqueue_strategy=crawl_strategy,
                         )
-
-                    await active_request_manager.add_request(sitemap_request)
-                    await sitemap_loader.mark_request_as_handled(sitemap_request)
-
-            try:
-                common_sitemap = await Sitemap.try_common_names(origin, http_client)
-                for url in common_sitemap.urls:
-                    canonical_url = canonicalize_url(url)
-                    if not url_is_within_start_scope(
-                        start_url, canonical_url
-                    ) or not url_matches_language(canonical_url, language):
-                        continue
-                    request = Request.from_url(
-                        canonical_url,
-                        enqueue_strategy=crawl_strategy,
-                    )
-                    await active_request_manager.add_request(request)
-            except Exception as exc:
-                print(f"Unable to discover common sitemaps: {exc}")
+                        await active_request_manager.add_request(request)
+                except Exception as exc:
+                    print(f"Unable to discover common sitemaps: {exc}")
 
         if discover_sitemap:
             robots_policy = await RobotsTxtFile.find(start_url, http_client)
