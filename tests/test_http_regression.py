@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from itertools import pairwise
 from pathlib import Path
 
 from docsync.crawler import run_crawler
@@ -18,17 +19,12 @@ class SitemapRegressionHandler(BaseHTTPRequestHandler):
         origin = f"http://127.0.0.1:{self.server.server_port}"
 
         if self.path == "/robots.txt":
-            body = (
-                "User-agent: *\n"
-                "Allow: /\n"
-                f"Sitemap: {origin}/sitemap.xml\n"
-            )
+            body = f"User-agent: *\nAllow: /\nSitemap: {origin}/sitemap.xml\n"
             content_type = "text/plain"
 
         elif self.path == "/sitemap.xml":
             entries = "".join(
-                f"<url><loc>{origin}/docs/page-{i}</loc></url>"
-                for i in range(1, 11)
+                f"<url><loc>{origin}/docs/page-{i}</loc></url>" for i in range(1, 11)
             )
             body = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
@@ -95,10 +91,7 @@ def test_python_crawls_every_sitemap_document(tmp_path: Path) -> None:
         with server.request_lock:
             requested = set(server.request_paths)
 
-        expected = {
-            f"/docs/page-{i}"
-            for i in range(1, 11)
-        }
+        expected = {f"/docs/page-{i}" for i in range(1, 11)}
 
         missing = expected - requested
 
@@ -108,13 +101,9 @@ def test_python_crawls_every_sitemap_document(tmp_path: Path) -> None:
         print("Missing:", sorted(missing))
         print("Crawler result:", result)
 
-        assert not missing, (
-            f"Sitemap documents were not crawled: {sorted(missing)}"
-        )
+        assert not missing, f"Sitemap documents were not crawled: {sorted(missing)}"
 
-        markdown_files = list(
-            (tmp_path / "output").rglob("*.md")
-        )
+        markdown_files = list((tmp_path / "output").rglob("*.md"))
 
         assert len(markdown_files) >= 11, (
             "Expected the start page and all 10 sitemap documents "
@@ -133,26 +122,18 @@ def test_first_crawl_delay_interval(tmp_path: Path) -> None:
 
     class DelayHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            origin = f"http://127.0.0.1:{self.server.server_port}"
 
             if self.path.startswith("/docs"):
                 with self.server.request_lock:
-                    self.server.page_times.append(
-                        (self.path, time.monotonic())
-                    )
+                    self.server.page_times.append((self.path, time.monotonic()))
 
             if self.path == "/robots.txt":
-                body = (
-                    "User-agent: *\n"
-                    "Allow: /\n"
-                    "Crawl-delay: 2\n"
-                )
+                body = "User-agent: *\nAllow: /\nCrawl-delay: 2\n"
                 content_type = "text/plain"
 
             elif self.path in {"/docs", "/docs/one", "/docs/two"}:
                 links = (
-                    '<a href="/docs/one">One</a>'
-                    '<a href="/docs/two">Two</a>'
+                    '<a href="/docs/one">One</a><a href="/docs/two">Two</a>'
                     if self.path == "/docs"
                     else ""
                 )
@@ -213,20 +194,14 @@ def test_first_crawl_delay_interval(tmp_path: Path) -> None:
         print("\nCRAWL-DELAY REGRESSION")
         print("Page visits:", [path for path, _ in visits])
 
-        assert len(visits) >= 3, (
-            f"Expected at least 3 page requests, got {visits}"
-        )
+        assert len(visits) >= 3, f"Expected at least 3 page requests, got {visits}"
 
-        intervals = [
-            later[1] - earlier[1]
-            for earlier, later in zip(visits, visits[1:])
-        ]
+        intervals = [later[1] - earlier[1] for earlier, later in pairwise(visits)]
 
         print("Intervals:", [round(x, 3) for x in intervals])
 
         assert intervals[0] >= 1.9, (
-            "First Crawl-delay interval was not respected: "
-            f"{intervals[0]:.3f}s"
+            f"First Crawl-delay interval was not respected: {intervals[0]:.3f}s"
         )
 
         assert all(interval >= 1.9 for interval in intervals), (
@@ -264,12 +239,12 @@ def test_http_429_retry_after(tmp_path: Path) -> None:
             elif self.path == "/docs":
                 status = 200
                 body = (
-                    '<html lang="en"><main>'
-                    '<h1>Rate limit test</h1>'
-                    '<a href="/docs/one">One</a>'
-                    '<a href="/docs/two">Two</a>'
-                    '</main></html>'
-                ).encode()
+                    b'<html lang="en"><main>'
+                    b"<h1>Rate limit test</h1>"
+                    b'<a href="/docs/one">One</a>'
+                    b'<a href="/docs/two">Two</a>'
+                    b"</main></html>"
+                )
                 content_type = "text/html"
 
             elif self.path == "/docs/one" and first_attempt:
@@ -281,7 +256,7 @@ def test_http_429_retry_after(tmp_path: Path) -> None:
                 status = 200
                 body = (
                     f'<html lang="en"><main><h1>{self.path}</h1>'
-                    '<p>Rate limit fixture.</p></main></html>'
+                    "<p>Rate limit fixture.</p></main></html>"
                 ).encode()
                 content_type = "text/html"
 
@@ -336,23 +311,16 @@ def test_http_429_retry_after(tmp_path: Path) -> None:
             log = list(server.request_log)
 
         pages = [
-            (path, timestamp)
-            for path, timestamp in log
-            if path.startswith("/docs")
+            (path, timestamp) for path, timestamp in log if path.startswith("/docs")
         ]
 
         print("\nHTTP 429 REGRESSION")
         print("Page request sequence:", [p for p, _ in pages])
 
-        first_429 = next(
-            timestamp for path, timestamp in pages
-            if path == "/docs/one"
-        )
+        first_429 = next(timestamp for path, timestamp in pages if path == "/docs/one")
 
         following = [
-            (path, timestamp)
-            for path, timestamp in pages
-            if timestamp > first_429
+            (path, timestamp) for path, timestamp in pages if timestamp > first_429
         ]
 
         assert following, "No subsequent page request after HTTP 429"
@@ -362,9 +330,7 @@ def test_http_429_retry_after(tmp_path: Path) -> None:
         print("Delay after first 429:", round(delay, 3), "seconds")
         print("Next request:", following[0][0])
 
-        assert delay >= 2.9, (
-            f"Retry-After: 3 was not respected: {delay:.3f}s"
-        )
+        assert delay >= 2.9, f"Retry-After: 3 was not respected: {delay:.3f}s"
 
     finally:
         server.shutdown()
@@ -382,9 +348,7 @@ def test_sitemap_requests_respect_crawl_delay(tmp_path: Path) -> None:
 
             if self.path.startswith("/docs"):
                 with self.server.request_lock:
-                    self.server.page_times.append(
-                        (self.path, time.monotonic())
-                    )
+                    self.server.page_times.append((self.path, time.monotonic()))
 
             if self.path == "/robots.txt":
                 body = (
@@ -397,8 +361,7 @@ def test_sitemap_requests_respect_crawl_delay(tmp_path: Path) -> None:
 
             elif self.path == "/sitemap.xml":
                 entries = "".join(
-                    f"<url><loc>{origin}/docs/page-{i}</loc></url>"
-                    for i in range(1, 6)
+                    f"<url><loc>{origin}/docs/page-{i}</loc></url>" for i in range(1, 6)
                 )
                 body = (
                     '<?xml version="1.0" encoding="UTF-8"?>'
@@ -467,19 +430,12 @@ def test_sitemap_requests_respect_crawl_delay(tmp_path: Path) -> None:
         print("Page visits:", [path for path, _ in visits])
         print("Crawler result:", result)
 
-        expected = {
-            f"/docs/page-{i}" for i in range(1, 6)
-        }
+        expected = {f"/docs/page-{i}" for i in range(1, 6)}
         actual = {path for path, _ in visits}
 
-        assert expected <= actual, (
-            f"Missing sitemap pages: {sorted(expected - actual)}"
-        )
+        assert expected <= actual, f"Missing sitemap pages: {sorted(expected - actual)}"
 
-        intervals = [
-            later[1] - earlier[1]
-            for earlier, later in zip(visits, visits[1:])
-        ]
+        intervals = [later[1] - earlier[1] for earlier, later in pairwise(visits)]
 
         print(
             "Intervals:",

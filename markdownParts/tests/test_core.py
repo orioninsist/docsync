@@ -3,11 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from markdown_parts.core import (
+    discover_markdown_files,
+    partition_files,
+    split_markdown_directory,
+)
 
-from markdown_parts.core import discover_markdown_files, partition_files, split_markdown_directory
 
-
-def test_discovers_only_lowercase_md_recursively_in_relative_path_order(tmp_path: Path) -> None:
+def test_discovers_only_lowercase_md_recursively_in_relative_path_order(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "docs"
     (root / "z").mkdir(parents=True)
     (root / "a").mkdir()

@@ -74,6 +74,7 @@ def test_python_uses_native_sitemap_loader_and_domain_routing() -> None:
     assert "await sitemap_loader.mark_request_as_handled(" in source
     assert "sitemap_loader.to_tandem(queue)" not in source
 
+
 def test_discovered_sitemap_requests_use_throttled_request_manager() -> None:
     source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
 

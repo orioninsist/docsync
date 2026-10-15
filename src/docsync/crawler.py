@@ -174,7 +174,7 @@ async def run_crawler(
         configuration=configuration,
         storage_client=storage_client,
     )
-    request_manager: RequestManager = ThrottlingRequestManager(
+    request_manager = ThrottlingRequestManager(
         queue,
         domains=[hostname],
         request_manager_opener=RequestQueue.open,
@@ -243,9 +243,7 @@ async def run_crawler(
                         )
 
                     await active_request_manager.add_request(sitemap_request)
-                    await sitemap_loader.mark_request_as_handled(
-                        sitemap_request
-                    )
+                    await sitemap_loader.mark_request_as_handled(sitemap_request)
 
             try:
                 common_sitemap = await Sitemap.try_common_names(origin, http_client)

@@ -71,7 +71,6 @@ def normalize_language(value: str) -> str:
     return language
 
 
-
 def url_matches_language(url: str, language: str) -> bool:
     """Reject explicitly different Google-style hl language variants."""
     selected = normalize_language(language)
@@ -100,10 +99,7 @@ def url_is_within_start_scope(start_url: str, candidate_url: str) -> bool:
     start = urlsplit(canonicalize_url(start_url))
     candidate = urlsplit(canonicalize_url(candidate_url))
 
-    if (
-        candidate.scheme != start.scheme
-        or candidate.netloc != start.netloc
-    ):
+    if candidate.scheme != start.scheme or candidate.netloc != start.netloc:
         return False
 
     root_path = start.path.rstrip("/")
@@ -112,10 +108,7 @@ def url_is_within_start_scope(start_url: str, candidate_url: str) -> bool:
     if not root_path:
         return True
 
-    return (
-        candidate_path == root_path
-        or candidate_path.startswith(root_path + "/")
-    )
+    return candidate_path == root_path or candidate_path.startswith(root_path + "/")
 
 
 DOCUMENTATION_BASE_DIR = Path("/home/murat/Media/5-Documentation")

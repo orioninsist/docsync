@@ -24,8 +24,8 @@ class SitemapFixture(BaseHTTPRequestHandler):
             body = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
                 '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-                f'<sitemap><loc>{origin}/nested.xml</loc></sitemap>'
-                '</sitemapindex>'
+                f"<sitemap><loc>{origin}/nested.xml</loc></sitemap>"
+                "</sitemapindex>"
             )
             content_type = "application/xml"
         elif self.path == "/nested.xml":
@@ -35,9 +35,7 @@ class SitemapFixture(BaseHTTPRequestHandler):
                 "/docs/foreign?hl=fr",
                 "/outside/three",
             ]
-            entries = "".join(
-                f"<url><loc>{origin}{url}</loc></url>" for url in urls
-            )
+            entries = "".join(f"<url><loc>{origin}{url}</loc></url>" for url in urls)
             body = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
                 '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
@@ -117,8 +115,7 @@ def test_native_sitemap_discovery_parity(tmp_path: Path) -> None:
 
         def documents(folder: Path) -> list[str]:
             return sorted(
-                path.read_text(encoding="utf-8")
-                for path in folder.glob("*.md")
+                path.read_text(encoding="utf-8") for path in folder.glob("*.md")
             )
 
         python_docs = documents(python_output)

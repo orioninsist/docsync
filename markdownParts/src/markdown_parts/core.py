@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 DEFAULT_OUTPUT_DIR = Path("/home/murat/Media/8-Document/markdownPart")
 _COPY_BUFFER_SIZE = 1024 * 1024
@@ -104,13 +104,11 @@ def split_markdown_directory(
     """Create exact-count merged Markdown parts without altering source files."""
     source_root = input_dir.expanduser().resolve()
     output_root = output_dir.expanduser().resolve()
-    target_root = output_root / source_root.name
-
     files = discover_markdown_files(source_root)
     groups = partition_files(files, parts)
 
-    target_root.mkdir(parents=True, exist_ok=True)
-    destinations = _output_paths(source_root.name, parts, target_root)
+    output_root.mkdir(parents=True, exist_ok=True)
+    destinations = _output_paths(source_root.name, parts, output_root)
 
     existing = [path for path in destinations if path.exists()]
     if existing:
@@ -127,4 +125,6 @@ def split_markdown_directory(
             path.unlink(missing_ok=True)
         raise
 
-    return [(path, len(group)) for path, group in zip(destinations, groups, strict=True)]
+    return [
+        (path, len(group)) for path, group in zip(destinations, groups, strict=True)
+    ]

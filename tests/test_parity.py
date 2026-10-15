@@ -308,7 +308,6 @@ def test_python_resumes_persisted_request_queue(tmp_path: Path) -> None:
         thread.join()
 
 
-
 def test_typescript_crawl_is_restricted_to_start_path_scope() -> None:
     source = Path("typescript/src/index.ts").read_text(encoding="utf-8")
 
