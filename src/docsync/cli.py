@@ -234,21 +234,28 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.install_runtime:
         _ensure_python_browser()
-    result = asyncio.run(
-        run_crawler(
-            start_url=args.url,
-            output_dir=effective_output_dir,
-            state_dir=effective_state_dir,
-            language=args.language,
-            max_concurrency=2,
-            max_requests=args.max_requests,
-            requests_per_minute=20,
-            crawl_strategy=args.crawl_strategy,
-            discover_sitemap=not args.no_sitemap,
-            headful=args.headful,
-            restart=args.restart,
+    try:
+        result = asyncio.run(
+            run_crawler(
+                start_url=args.url,
+                output_dir=effective_output_dir,
+                state_dir=effective_state_dir,
+                language=args.language,
+                max_concurrency=2,
+                max_requests=args.max_requests,
+                requests_per_minute=20,
+                crawl_strategy=args.crawl_strategy,
+                discover_sitemap=not args.no_sitemap,
+                headful=args.headful,
+                restart=args.restart,
+            )
         )
-    )
+    except KeyboardInterrupt:
+        print(
+            "docsync: interrupted; crawl state retained for resume.",
+            file=sys.stderr,
+        )
+        return 130
 
     print(
         "done "

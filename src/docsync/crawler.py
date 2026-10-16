@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import os
 import shutil
 import tempfile
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -280,6 +281,7 @@ async def _run_crawler_native(
                         persist_state_key="docsync-sitemap-loader-v1",
                     )
                 )
+
                 async def feed_sitemap() -> None:
                     emitted = 0
                     while True:
@@ -298,14 +300,10 @@ async def _run_crawler_native(
                             continue
 
                         await request_manager.add_request(sitemap_request)
-                        await sitemap_loader.mark_request_as_handled(
-                            sitemap_request
-                        )
+                        await sitemap_loader.mark_request_as_handled(sitemap_request)
                         emitted += 1
 
-                request_manager.discovery_task = asyncio.create_task(
-                    feed_sitemap()
-                )
+                request_manager.discovery_task = asyncio.create_task(feed_sitemap())
 
             if not sitemap_sources:
                 try:
@@ -334,7 +332,7 @@ async def _run_crawler_native(
                 safety_margin = 0.25 if crawl_delay > 0 else 0
                 request_manager.set_crawl_delay(
                     start_url,
-                    crawl_delay + safety_margin,
+                    math.ceil(crawl_delay + safety_margin),
                 )
 
         # Keep Crawlee's persisted RequestQueue, but start each CLI run
@@ -420,9 +418,7 @@ async def _run_crawler_native(
             if discovery_task is not None:
                 if not discovery_task.done():
                     discovery_task.cancel()
-                await asyncio.gather(
-                    discovery_task, return_exceptions=True
-                )
+                await asyncio.gather(discovery_task, return_exceptions=True)
 
         stopped_at_request_limit = (
             max_requests is not None and statistics.requests_total >= max_requests
@@ -492,49 +488,46 @@ async def run_crawler(
         )
 
         try:
-            await process.communicate(
-                json.dumps(arguments).encode("utf-8")
-            )
+            await process.communicate(json.dumps(arguments).encode("utf-8"))
         except (asyncio.CancelledError, KeyboardInterrupt):
             if process.returncode is None:
-                try:
-                    os.killpg(process.pid, signal.SIGINT)
-                except ProcessLookupError:
-                    pass
+                with suppress(ProcessLookupError):
+                    process.send_signal(signal.SIGINT)
 
                 try:
                     await asyncio.wait_for(
                         asyncio.shield(process.wait()),
                         timeout=60,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     if process.returncode is None:
-                        try:
+                        with suppress(ProcessLookupError):
                             os.killpg(process.pid, signal.SIGTERM)
-                        except ProcessLookupError:
-                            pass
 
                     try:
                         await asyncio.wait_for(
                             asyncio.shield(process.wait()),
                             timeout=10,
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         if process.returncode is None:
-                            try:
+                            with suppress(ProcessLookupError):
                                 os.killpg(process.pid, signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
                         await process.wait()
             raise
 
         if process.returncode != 0:
             raise RuntimeError(
-                f"DocsSync native crawler failed "
-                f"(exit code {process.returncode})"
+                f"DocsSync native crawler failed (exit code {process.returncode})"
             )
 
         if not result_path.is_file():
             raise RuntimeError("DocsSync worker returned no result.")
 
-        return json.loads(result_path.read_text(encoding="utf-8"))
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        if not isinstance(result, dict) or any(
+            key not in result or type(result[key]) is not int
+            for key in ("processed", "saved", "unchanged")
+        ):
+            raise RuntimeError("DocsSync worker returned invalid statistics.")
+        return {key: result[key] for key in ("processed", "saved", "unchanged")}
