@@ -8,7 +8,7 @@ from .summary import create_summary
 from .validator import CHATGPT_MAX_BYTES, validate_output
 from .writer import write_parts
 
-MARKDOWN_MERGE_BASE_DIR = Path("/home/murat/Media/8-Document/markdownMerge")
+MARKDOWN_MERGE_BASE_DIR = Path("/home/murat/Library/Documents/markdownMerge")
 DEFAULT_TOKEN_LIMIT = 1_800_000
 DEFAULT_RESERVE_TOKENS = 50_000
 

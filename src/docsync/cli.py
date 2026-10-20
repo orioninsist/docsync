@@ -125,12 +125,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument(
         "--output-dir",
         type=Path,
-        help="Markdown output directory (default: /home/murat/Media/5-Documentation/<site-name>)",
+        help="Markdown output directory (default: /home/murat/Library/Documents/Documentation/<site-name>)",
     )
     sync.add_argument(
         "--state-dir",
         type=Path,
-        help="State directory (default: /home/murat/Media/8-Document/docsync/<site-name>)",
+        help="State directory (default: /home/murat/Library/Data/<site-name>)",
     )
     sync.add_argument(
         "--install-runtime",

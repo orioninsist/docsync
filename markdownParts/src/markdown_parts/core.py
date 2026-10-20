@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-DEFAULT_OUTPUT_DIR = Path("/home/murat/Media/8-Document/markdownPart")
+DEFAULT_OUTPUT_DIR = Path("/home/murat/Library/Documents/markdownPart")
 _COPY_BUFFER_SIZE = 1024 * 1024
 
 

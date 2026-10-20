@@ -97,8 +97,8 @@ def url_is_within_start_scope(start_url: str, candidate_url: str) -> bool:
     return candidate_path == root_path or candidate_path.startswith(root_path + "/")
 
 
-DOCUMENTATION_BASE_DIR = Path("/home/murat/Media/5-Documentation")
-DOCSYNC_STATE_BASE_DIR = Path("/home/murat/Media/8-Document/docsync")
+DOCUMENTATION_BASE_DIR = Path("/home/murat/Library/Documents/Documentation")
+DOCSYNC_STATE_BASE_DIR = Path("/home/murat/Library/Data/docsync")
 
 
 def site_dirname(start_url: str) -> str:
