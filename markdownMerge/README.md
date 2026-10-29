@@ -27,7 +27,7 @@ uv run mdmerge /path/to/site-markdown
 Example:
 
 ```bash
-cd /home/murat/Media/6-Project/docsync/markdownMerge && \
+cd /home/murat/Project/docsync/markdownMerge && \
 uv run mdmerge /home/murat/Media/5-Documentation/developers.openai.com
 ```
 
@@ -114,7 +114,7 @@ uv run mdmerge ./docs \
 ## Development
 
 ```bash
-cd /home/murat/Media/6-Project/docsync/markdownMerge
+cd /home/murat/Project/docsync/markdownMerge
 uv sync --group dev
 ./quality.sh
 ```
