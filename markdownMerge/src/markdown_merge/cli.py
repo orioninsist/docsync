@@ -8,7 +8,6 @@ from .summary import create_summary
 from .validator import CHATGPT_MAX_BYTES, validate_output
 from .writer import write_parts
 
-MARKDOWN_MERGE_BASE_DIR = Path("/home/murat/Library/Documents/markdownMerge")
 DEFAULT_TOKEN_LIMIT = 1_800_000
 DEFAULT_RESERVE_TOKENS = 50_000
 
@@ -33,6 +32,12 @@ def main() -> None:
     )
 
     parser.add_argument("input_directory")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Output directory (default: current working directory).",
+    )
     parser.add_argument(
         "--name",
         help=(
@@ -73,7 +78,7 @@ def main() -> None:
 
     input_path = Path(args.input_directory).resolve()
     name = args.name.strip() if args.name is not None else input_path.name
-    output_path = MARKDOWN_MERGE_BASE_DIR / input_path.name
+    output_path = (args.output if args.output is not None else Path.cwd()).resolve()
 
     if not name:
         parser.error("Could not derive an output name from INPUT_DIRECTORY.")
