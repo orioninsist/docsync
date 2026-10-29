@@ -18,40 +18,50 @@ OpenAI currently documents a 2,000,000-token cap for text/document uploads and a
 
 ## Daily usage
 
-After installing once with `uv sync`, the normal command is simply:
+### Install once for use from any directory
 
 ```bash
+uv tool install --editable /home/murat/Project/docsync/markdownMerge
+```
+
+Make sure the uv tool executable directory is on your PATH (`uv tool update-shell` can configure it), then use `mdmerge` directly from anywhere. `uv run mdmerge` is for running within a project environment that contains the command.
+
+### Default: automatically create an output folder
+
+```bash
+mdmerge /home/murat/Library/Documents/Notes/Murat/Google/Documentation/ai.google
+```
+
+The output is written into a directory named after the input folder inside the current working directory (`pwd`). The directory is created automatically when missing:
+
+```text
+<pwd>/ai.google/
+├── ai.google-1.md
+├── manifest.json
+├── summary.txt
+└── validation.txt
+```
+
+### Custom output: use the exact specified directory
+
+```bash
+mdmerge /home/murat/Library/Documents/Notes/Murat/Google/Documentation/ai.google \
+  --output /path/to/custom-output
+```
+
+The specified directory and any missing parent directories are created automatically. No input-directory-name subfolder is added when `--output` is supplied.
+
+### Run without global installation
+
+```bash
+cd /home/murat/Project/docsync/markdownMerge
+uv sync
 uv run mdmerge /path/to/site-markdown
 ```
 
-Example:
+This default output directory is `/home/murat/Project/docsync/markdownMerge/<input-directory-name>/` because that is the working directory in this example. To place output elsewhere, use `--output`.
 
-```bash
-cd /home/murat/Project/docsync/markdownMerge && \
-uv run mdmerge /home/murat/Media/5-Documentation/developers.openai.com
-```
-
-By default, output is written into an automatically created folder named after the input directory inside the **current working directory** (`pwd`): `./<input-directory-name>/`.
-To choose a different directory, pass `--output`:
-
-```bash
-uv run mdmerge /path/to/site-markdown --output /path/to/output-directory
-```
-
-When `--output` is provided, that exact directory is used (and created if missing); the input directory name is **not** appended.
-
-Generated files:
-
-```text
-<input-name>-1.md
-<input-name>-2.md
-...
-manifest.json
-summary.txt
-validation.txt
-```
-
-If the entire corpus fits safely in one output, only `<input-name>-1.md` is produced.
+Generated files are numbered `<input-name>-1.md`, `<input-name>-2.md`, and so on as needed, alongside `manifest.json`, `summary.txt`, and `validation.txt`. If all sources fit in one part, only `<input-name>-1.md` is generated.
 
 ## Packing behavior
 
