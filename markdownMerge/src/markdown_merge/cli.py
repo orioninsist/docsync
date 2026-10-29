@@ -36,7 +36,7 @@ def main() -> None:
         "--output",
         type=Path,
         default=None,
-        help="Output directory (default: current working directory).",
+        help="Output directory (default: ./<input-directory-name>).",
     )
     parser.add_argument(
         "--name",
@@ -78,7 +78,9 @@ def main() -> None:
 
     input_path = Path(args.input_directory).resolve()
     name = args.name.strip() if args.name is not None else input_path.name
-    output_path = (args.output if args.output is not None else Path.cwd()).resolve()
+    output_path = (
+        args.output if args.output is not None else Path.cwd() / input_path.name
+    ).resolve()
 
     if not name:
         parser.error("Could not derive an output name from INPUT_DIRECTORY.")
