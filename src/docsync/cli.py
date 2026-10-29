@@ -123,9 +123,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--language", default="en", help="Page language for web crawling (default: en)"
     )
     sync.add_argument(
-        "--output-dir",
+        "-o", "--output", "--output-dir",
+        dest="output_dir",
         type=Path,
-        help="Markdown output directory (default: /home/murat/Library/Documents/Documentation/<site-name>)",
+        required=True,
+        help="Required destination directory for downloaded Markdown files",
     )
     sync.add_argument(
         "--state-dir",
@@ -193,7 +195,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     effective_output_dir = (
-        (args.output_dir or default_output_dir(args.url)).expanduser().resolve()
+        args.output_dir.expanduser().resolve()
     )
     effective_state_dir = (
         (args.state_dir or default_state_dir(args.url)).expanduser().resolve()
