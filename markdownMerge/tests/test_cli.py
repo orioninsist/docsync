@@ -33,7 +33,7 @@ def test_cli_derives_name_from_input_directory(
 
     cli.main()
 
-    output_dir = output_root
+    output_dir = output_root / "developers.openai.com"
     assert (output_dir / "developers.openai.com-1.md").exists()
 
 
@@ -67,7 +67,7 @@ def test_cli_explicit_name_still_overrides_directory_name(
 
     cli.main()
 
-    output_dir = output_root
+    output_dir = output_root / "developers.openai.com"
     assert (output_dir / "developers-1.md").exists()
 
 
