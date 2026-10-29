@@ -31,11 +31,14 @@ cd /home/murat/Media/6-Project/docsync/markdownMerge && \
 uv run mdmerge /home/murat/Media/5-Documentation/developers.openai.com
 ```
 
-Output is written automatically to:
+Output is written directly to the **current working directory** (`pwd`) by default.
+To choose a different directory, pass `--output`:
 
-```text
-/home/murat/Media/8-Document/markdownMerge/<input-directory-name>/
+```bash
+uv run mdmerge /path/to/site-markdown --output /path/to/output-directory
 ```
+
+The output directory is used as provided; the input directory name is **not** appended.
 
 Generated files:
 
@@ -75,6 +78,7 @@ The default command needs only an input directory. Advanced overrides remain ava
 ```bash
 uv run mdmerge INPUT_DIRECTORY \
   [--name NAME] \
+  [--output OUTPUT_DIRECTORY] \
   [--token-limit TOKEN_LIMIT] \
   [--reserve-tokens RESERVE_TOKENS] \
   [--model MODEL | --encoding ENCODING_NAME]
