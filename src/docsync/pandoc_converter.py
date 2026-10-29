@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import shutil
 import subprocess
 
@@ -43,8 +44,14 @@ def html_to_gfm(html: str) -> str:
     if not markdown:
         raise PandocConversionError("Pandoc produced empty Markdown")
 
-    validator = os.environ.get("DOCSYNC_GFM_VALIDATOR") or shutil.which(
-        "docsync-gfm-validator"
+    project_validator = (
+        Path(__file__).resolve().parents[2]
+        / "tools/gfm-validator/docsync-gfm-validator"
+    )
+    validator = (
+        os.environ.get("DOCSYNC_GFM_VALIDATOR")
+        or (str(project_validator) if project_validator.is_file() else None)
+        or shutil.which("docsync-gfm-validator")
     )
     if not validator:
         raise PandocConversionError(
