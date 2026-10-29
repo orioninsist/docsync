@@ -44,8 +44,9 @@ def test_cli_explicit_name_still_overrides_directory_name(
     input_dir = tmp_path / "developers.openai.com"
     input_dir.mkdir()
     (input_dir / "index.md").write_text("# Hello", encoding="utf-8")
-    output_root = tmp_path / "markdownMerge"
-    monkeypatch.setattr(cli, "MARKDOWN_MERGE_BASE_DIR", output_root)
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    monkeypatch.chdir(output_root)
 
     monkeypatch.setattr(
         sys,
@@ -66,7 +67,7 @@ def test_cli_explicit_name_still_overrides_directory_name(
 
     cli.main()
 
-    output_dir = output_root / "developers.openai.com"
+    output_dir = output_root
     assert (output_dir / "developers-1.md").exists()
 
 
