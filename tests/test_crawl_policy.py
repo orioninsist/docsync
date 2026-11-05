@@ -7,7 +7,9 @@ from docsync.policy import NORMALIZE_DOCUMENT, canonicalize_url
 
 
 def test_web_crawl_defaults_are_unlimited_and_sitemap_enabled() -> None:
-    args = build_parser().parse_args(["sync", "https://example.com/docs"])
+    args = build_parser().parse_args(
+        ["sync", "https://example.com/docs", "--output-dir", "/tmp/docsync-test"]
+    )
     assert args.max_requests is None
     assert args.crawl_strategy == "same-origin"
     assert args.no_sitemap is False
@@ -18,6 +20,8 @@ def test_web_crawl_can_set_explicit_limit_scope_and_disable_sitemap() -> None:
         [
             "sync",
             "https://example.com/docs",
+            "--output-dir",
+            "/tmp/docsync-test",
             "--max-requests",
             "250",
             "--crawl-strategy",

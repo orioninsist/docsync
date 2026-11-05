@@ -38,7 +38,7 @@ def test_default_directories_use_documentation_base_and_site_name() -> None:
 
     assert site_dirname(start_url) == "example.com-docs"
     assert default_output_dir(start_url) == Path(
-        "/home/murat/Library/Documents/Documentation/example.com-docs"
+        str(Path.home() / "Documents" / "Documentation" / "example.com-docs")
     )
     assert default_state_dir(start_url) == Path(
         "/home/murat/Library/Data/docsync/example.com-docs"

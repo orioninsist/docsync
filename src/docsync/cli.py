@@ -123,7 +123,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--language", default="en", help="Page language for web crawling (default: en)"
     )
     sync.add_argument(
-        "-o", "--output", "--output-dir",
+        "-o",
+        "--output",
+        "--output-dir",
         dest="output_dir",
         type=Path,
         required=True,
@@ -194,9 +196,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 2
 
-    effective_output_dir = (
-        args.output_dir.expanduser().resolve()
-    )
+    effective_output_dir = args.output_dir.expanduser().resolve()
     effective_state_dir = (
         (args.state_dir or default_state_dir(args.url)).expanduser().resolve()
     )

@@ -11,7 +11,7 @@ fn runs_full_merge_pipeline() {
         .args([
             "merge",
             "--input",
-            "tests/fixtures/docs",
+            "tests/integration_docs",
             "--output",
             output.to_str().unwrap(),
         ])
@@ -23,8 +23,9 @@ fn runs_full_merge_pipeline() {
 
     let content = fs::read_to_string(&output).unwrap();
 
-    assert!(content.contains("First Document"));
-    assert!(content.contains("Second Document"));
+    assert!(content.contains("Project README"));
+    assert!(content.contains("API Reference"));
+    assert!(content.contains("Setup Guide"));
 
     let _ = fs::remove_file(&output);
 }
