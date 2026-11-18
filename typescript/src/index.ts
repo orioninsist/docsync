@@ -349,7 +349,18 @@ const queue = await RequestQueueV1.open('docsync');
           // Documentation themes put tiny link/copy icons next to headings. Pandoc
           // otherwise serializes these as enormous data:image/svg+xml Markdown images.
           // Keep large/semantic SVG diagrams and all ordinary documentation images.
-          content.querySelectorAll('svg').forEach(svg => {
+          content.querySelectorAll('button,[role="button"]').forEach(element => {
+    const labels = [
+      element.getAttribute('aria-label'),
+      element.getAttribute('title'),
+      element.textContent,
+    ].filter(Boolean);
+    if (labels.some(value => /^(?:copy(?: page| code| link| url)?|copied!?|share page)$/i.test(value.trim()))) {
+      element.remove();
+    }
+  });
+
+  content.querySelectorAll('svg').forEach(svg => {
             const width = (svg.getAttribute('width') || '').trim();
             const height = (svg.getAttribute('height') || '').trim();
             const hidden = svg.getAttribute('aria-hidden') === 'true';
