@@ -28,7 +28,7 @@ def html_to_gfm(html: str) -> str:
             [
                 executable,
                 "--from=html",
-                "--to=gfm-raw_html",
+                "--to=gfm",
                 "--wrap=none",
             ],
             input=html,
