@@ -18,7 +18,7 @@ from crawlee._service_locator import ServiceLocator
 from crawlee._utils.robots import RobotsTxtFile
 from crawlee._utils.sitemap import Sitemap
 from crawlee.configuration import Configuration
-from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
+from crawlee.crawlers import BasicCrawlingContext, PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.events import LocalEventManager
 from crawlee.http_clients import ImpitHttpClient
 from crawlee.request_loaders import (
@@ -228,7 +228,12 @@ async def _run_crawler_native(
         storage_client=storage_client,
     )
     checkpoint = _load_checkpoint(checkpoint_file)
-    failed_keys = set(checkpoint.get("failed_keys", []))
+    raw_failed_keys = checkpoint.get("failed_keys", [])
+    failed_keys: set[str] = (
+        {key for key in raw_failed_keys if isinstance(key, str)}
+        if isinstance(raw_failed_keys, list)
+        else set()
+    )
     if resume:
         domain_queue = await RequestQueue.open(
             alias=f"throttled-{hostname}",
@@ -369,7 +374,7 @@ async def _run_crawler_native(
 
         @crawler.failed_request_handler
         async def on_failed_request(
-            context: PlaywrightCrawlingContext, error: Exception
+            context: PlaywrightCrawlingContext | BasicCrawlingContext, error: Exception
         ) -> None:
             async with state_lock:
                 failed_keys.add(context.request.unique_key)
