@@ -16,11 +16,77 @@ NORMALIZE_DOCUMENT = r"""
 
   if (!root) return null;
 
+  // Work on a detached copy: the original rendered HTML is archived unchanged.
   const content = root.cloneNode(true);
 
-  content.querySelectorAll('script,style').forEach(
+  content.querySelectorAll('script,style,template,noscript').forEach(
     element => element.remove()
   );
+
+  // Documentation themes put tiny link/copy icons next to headings. Pandoc
+  // otherwise serializes these as enormous data:image/svg+xml Markdown images.
+  // Keep large/semantic SVG diagrams and all ordinary documentation images.
+  content.querySelectorAll('svg').forEach(svg => {
+    const width = (svg.getAttribute('width') || '').trim();
+    const height = (svg.getAttribute('height') || '').trim();
+    const hidden = svg.getAttribute('aria-hidden') === 'true';
+    const iconSized = /^(?:1(?:\.\d+)?em|(?:[1-9]|1\d|2[0-4])px)$/.test(width)
+      && /^(?:1(?:\.\d+)?em|(?:[1-9]|1\d|2[0-4])px)$/.test(height);
+    if (hidden || iconSized) svg.remove();
+  });
+
+  // URLs relative to the website root are broken once the .md file is saved
+  // outside the original website. Resolve them before asking Pandoc to write.
+  for (const [selector, attribute] of [['a[href]', 'href'], ['img[src]', 'src']]) {
+    content.querySelectorAll(selector).forEach(element => {
+      const value = element.getAttribute(attribute);
+      if (!value || /^(?:data:|javascript:)/i.test(value)) return;
+      try {
+        const resolved = new URL(value, document.baseURI);
+        if (['http:', 'https:'].includes(resolved.protocol)) {
+          element.setAttribute(attribute, resolved.href);
+        }
+      } catch (_) {
+        // Leave malformed links untouched instead of destroying their labels.
+      }
+    });
+  }
+
+  content.querySelectorAll('pre').forEach(pre => {
+    // Some syntax highlighters add copy controls *inside* code containers.
+    pre.querySelectorAll('button,[data-copy-button]').forEach(
+      element => element.remove()
+    );
+    const originalCode = pre.querySelector('code');
+    const source = originalCode || pre;
+    const codeText = source.textContent || '';
+    const classes = [
+      ...(pre.classList || []),
+      ...(originalCode ? originalCode.classList : []),
+    ];
+    const languageClass = classes.find(value =>
+      /^language-[a-z0-9_+.#-]+$/i.test(value)
+    );
+    let language = languageClass
+      ? languageClass.slice('language-'.length).toLowerCase()
+      : '';
+    if (!language || language === 'astro-code') {
+      const trimmed = codeText.trim();
+      if (/^[\[{]/.test(trimmed)) {
+        try { JSON.parse(trimmed); language = 'json'; } catch (_) {}
+      }
+      if (!language && /^(?:\$\s*)?(?:curl|wget|npm|npx|pnpm|yarn|pip|uv|git|docker|python\s+-m)\b/m.test(trimmed)) {
+        language = 'bash';
+      }
+    }
+    const code = document.createElement('code');
+    if (language && language !== 'astro-code') {
+      code.className = 'language-' + language;
+    }
+    code.textContent = codeText;
+    pre.replaceChildren(code);
+    pre.removeAttribute('class');
+  });
 
   return content.innerHTML;
 }
