@@ -19,6 +19,15 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: typescript/package-lock.json
+      - name: Install Pandoc
+        run: sudo apt-get update && sudo apt-get install -y pandoc
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/gfm-validator/go.mod
+          cache-dependency-path: tools/gfm-validator/go.sum
+      - name: Build Goldmark GFM validator
+        run: go build -o docsync-gfm-validator .
+        working-directory: tools/gfm-validator
       - run: uv sync --locked --all-groups
       - run: npm ci
         working-directory: typescript
