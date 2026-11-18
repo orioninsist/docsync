@@ -29,6 +29,7 @@ from crawlee.request_loaders import (
 )
 from crawlee.storage_clients import FileSystemStorageClient
 from crawlee.storages import RequestQueue
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from docsync.html_archive import archive_html
 from docsync.pandoc_converter import html_to_gfm
@@ -372,15 +373,17 @@ async def _run_crawler_native(
                         if (!root) return false;
                         const text = (root.innerText || '').trim();
                         return text.length >= 80 ||
-                            (!!root.querySelector('h1, h2, h3, [role="heading"]') && text.length >= 20) ||
+                            (!!root.querySelector('h1, h2, h3, [role="heading"]') && text.length > 0) ||
                             (root.querySelectorAll('a[href]').length >= 3 && text.length >= 20);
                     }""",
                     timeout=15_000,
                 )
-            except TimeoutError:
+            except PlaywrightTimeoutError:
                 # A sparse or slow page may still contain legitimate content.
                 # Archive what is present; don't retry it solely for lacking a heading.
-                print(f"Document readiness timed out; inspecting current DOM: {context.page.url}")
+                print(
+                    f"Document readiness timed out; inspecting current DOM: {context.page.url}"
+                )
 
             page_language = await context.page.evaluate(
                 "() => document.documentElement.lang || ''"
