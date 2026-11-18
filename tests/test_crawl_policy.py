@@ -172,3 +172,13 @@ def test_typescript_crawl_preserves_previous_markdown_files() -> None:
     assert "if (seenUrls.has(url)) continue;" not in source
     assert "delete manifest[url]" not in source
     assert "await saveCheckpoint(checkpointFile" in source
+
+
+def test_python_readiness_accepts_headingless_and_dynamic_pages() -> None:
+    """Crawling must not depend on h1 or whole-body DOM quiescence."""
+    source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+    assert "root.querySelector('h1, h2, h3, [role=\"heading\"]')" in source
+    assert "root.querySelectorAll('a[href]').length >= 3" in source
+    assert "Document readiness timed out; inspecting current DOM" in source
+    assert "Document DOM did not stabilize within 30 seconds" not in source
+    assert "heading.innerText.trim().length > 0" not in source
