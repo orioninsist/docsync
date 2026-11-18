@@ -361,37 +361,27 @@ async def _run_crawler_native(
 
         @crawler.router.default_handler
         async def handler(context: PlaywrightCrawlingContext) -> None:
-            await context.page.locator("main, article, body").first.wait_for(
-                state="attached", timeout=5_000
-            )
+            # Wait for usable document content rather than a mandatory <h1>.
+            # Some documentation roots use h2, ARIA headings, or linked cards.
+            # Dynamic widgets can update forever, so whole-body DOM stability
+            # is not a reliable signal that the document is ready.
+            try:
+                await context.page.wait_for_function(
+                    """() => {
+                        const root = document.querySelector('main, article, [role="main"]') || document.body;
+                        if (!root) return false;
+                        const text = (root.innerText || '').trim();
+                        return text.length >= 80 ||
+                            (!!root.querySelector('h1, h2, h3, [role="heading"]') && text.length >= 20) ||
+                            (root.querySelectorAll('a[href]').length >= 3 && text.length >= 20);
+                    }""",
+                    timeout=15_000,
+                )
+            except TimeoutError:
+                # A sparse or slow page may still contain legitimate content.
+                # Archive what is present; don't retry it solely for lacking a heading.
+                print(f"Document readiness timed out; inspecting current DOM: {context.page.url}")
 
-            # Wait for client-rendered documentation to stabilize before archiving.
-            # Do not silently save an incomplete app shell.
-            await context.page.wait_for_function(
-                """() => {
-                    const heading = document.querySelector('h1');
-                    return heading && heading.innerText.trim().length > 0;
-                }""",
-                timeout=30_000,
-            )
-
-            await context.page.evaluate("""async () => {
-                const deadline = Date.now() + 30000;
-                let previous = '';
-                let stableSince = Date.now();
-
-                while (Date.now() < deadline) {
-                    const snapshot = document.body.innerHTML;
-                    if (snapshot !== previous) {
-                        previous = snapshot;
-                        stableSince = Date.now();
-                    } else if (Date.now() - stableSince >= 3000) {
-                        return;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
-                throw new Error('Document DOM did not stabilize within 30 seconds');
-            }""")
             page_language = await context.page.evaluate(
                 "() => document.documentElement.lang || ''"
             )
@@ -432,6 +422,8 @@ async def _run_crawler_native(
                     }
                     _save_state(state_file, content_state)
 
+            # Link discovery must still run when a document has no usable
+            # Markdown or has a different declared language.
             await context.enqueue_links(
                 strategy=crawl_strategy,
                 transform_request_function=transform_request,
