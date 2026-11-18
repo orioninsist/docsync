@@ -354,7 +354,7 @@ const queue = await RequestQueueV1.open('docsync');
       element.getAttribute('aria-label'),
       element.getAttribute('title'),
       element.textContent,
-    ].filter((value): value is string => value !== null);
+    ].filter((value) => value !== null);
     if (labels.some(value => /^(?:copy(?: page| code| link| url)?|copied!?|share page)$/i.test(value.trim()))) {
       element.remove();
     }
