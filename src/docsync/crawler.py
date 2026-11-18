@@ -18,7 +18,11 @@ from crawlee._service_locator import ServiceLocator
 from crawlee._utils.robots import RobotsTxtFile
 from crawlee._utils.sitemap import Sitemap
 from crawlee.configuration import Configuration
-from crawlee.crawlers import BasicCrawlingContext, PlaywrightCrawler, PlaywrightCrawlingContext
+from crawlee.crawlers import (
+    BasicCrawlingContext,
+    PlaywrightCrawler,
+    PlaywrightCrawlingContext,
+)
 from crawlee.events import LocalEventManager
 from crawlee.http_clients import ImpitHttpClient
 from crawlee.request_loaders import (
