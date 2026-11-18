@@ -136,7 +136,20 @@ NORMALIZE_DOCUMENT = r"""
     );
     const originalCode = pre.querySelector('code');
     const source = originalCode || pre;
-    const codeText = source.textContent || '';
+    // Remove presentation-only gutters before extracting code text.
+    // Work on a clone so the archived page remains unchanged.
+    const cleanSource = source.cloneNode(true);
+    cleanSource.querySelectorAll(
+      '[aria-hidden="true"], ' +
+      '.syntax-highlighter-line-numbers, ' +
+      '.syntax-highlighter-line-number, ' +
+      '.line-numbers-rows, ' +
+      '.linenumber, ' +
+      '.line-number, ' +
+      '.line-numbers, ' +
+      '[data-line-number]'
+    ).forEach(element => element.remove());
+    const codeText = cleanSource.textContent || '';
     const classes = [
       ...(pre.classList || []),
       ...(originalCode ? originalCode.classList : []),
@@ -144,9 +157,18 @@ NORMALIZE_DOCUMENT = r"""
     const languageClass = classes.find(value =>
       /^language-[a-z0-9_+.#-]+$/i.test(value)
     );
-    let language = languageClass
-      ? languageClass.slice('language-'.length).toLowerCase()
-      : '';
+    const declaredLanguage = [
+      originalCode?.getAttribute('data-language'),
+      originalCode?.getAttribute('data-lang'),
+      pre.getAttribute('data-language'),
+      pre.getAttribute('data-lang'),
+    ].find(value => value && /^[a-z0-9_+.#-]+$/i.test(value.trim()));
+
+    let language = declaredLanguage
+      ? declaredLanguage.trim().toLowerCase()
+      : languageClass
+        ? languageClass.slice('language-'.length).toLowerCase()
+        : '';
     if (!language || language === 'astro-code') {
       const trimmed = codeText.trim();
       if (/^[\[{]/.test(trimmed)) {
