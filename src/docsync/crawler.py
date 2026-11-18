@@ -323,19 +323,6 @@ async def _run_crawler_native(
                 except Exception as exc:
                     print(f"Unable to discover common sitemaps: {exc}")
 
-        if discover_sitemap:
-            robots_policy = await RobotsTxtFile.find(start_url, http_client)
-            crawl_delay = robots_policy.get_crawl_delay(user_agent="*")
-            if crawl_delay is not None:
-                # Crawlee throttles request dispatch, while robots.txt
-                # regression tests observe arrival times at the server.
-                # Allow for Playwright's variable navigation latency.
-                safety_margin = 0.25 if crawl_delay > 0 else 0
-                request_manager.set_crawl_delay(
-                    start_url,
-                    math.ceil(crawl_delay + safety_margin),
-                )
-
         # Keep Crawlee's persisted RequestQueue, but start each CLI run
         # with fresh native crawl statistics. The request limit is per run.
         from crawlee.statistics import Statistics
@@ -356,7 +343,8 @@ async def _run_crawler_native(
             concurrency_settings=concurrency,
             max_requests_per_crawl=max_requests,
             max_request_retries=2,
-            retry_on_blocked=True,
+            retry_on_blocked=False,
+            max_session_rotations=0,
             respect_robots_txt_file=True,
         )
 
@@ -448,7 +436,9 @@ async def _run_crawler_native(
             max_requests is not None and statistics.requests_total >= max_requests
         )
         crawl_complete = (
-            not stopped_at_request_limit and await active_request_manager.is_finished()
+            not stopped_at_request_limit
+            and statistics.requests_failed == 0
+            and await active_request_manager.is_finished()
         )
     if crawl_complete:
         _save_checkpoint(
