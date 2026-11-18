@@ -9,7 +9,6 @@ from playwright.async_api import async_playwright
 from docsync.pandoc_converter import html_to_gfm
 from docsync.policy import NORMALIZE_DOCUMENT
 
-
 HTML = """<!doctype html>
 <html lang="en">
 <head><base href="https://aistudio.google.com/"></head>
