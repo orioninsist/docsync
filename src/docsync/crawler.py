@@ -364,6 +364,34 @@ async def _run_crawler_native(
             await context.page.locator("main, article, body").first.wait_for(
                 state="attached", timeout=5_000
             )
+
+            # Wait for client-rendered documentation to stabilize before archiving.
+            # Do not silently save an incomplete app shell.
+            await context.page.wait_for_function(
+                """() => {
+                    const heading = document.querySelector('h1');
+                    return heading && heading.innerText.trim().length > 0;
+                }""",
+                timeout=30_000,
+            )
+
+            await context.page.evaluate("""async () => {
+                const deadline = Date.now() + 30000;
+                let previous = '';
+                let stableSince = Date.now();
+
+                while (Date.now() < deadline) {
+                    const snapshot = document.body.innerHTML;
+                    if (snapshot !== previous) {
+                        previous = snapshot;
+                        stableSince = Date.now();
+                    } else if (Date.now() - stableSince >= 3000) {
+                        return;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                throw new Error('Document DOM did not stabilize within 30 seconds');
+            }""")
             page_language = await context.page.evaluate(
                 "() => document.documentElement.lang || ''"
             )
@@ -385,6 +413,7 @@ async def _run_crawler_native(
 
             if markdown:
                 url = canonicalize_url(context.page.url)
+                markdown = f"> Source: {url}\n\n{markdown}"
                 digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
                 target = output_path(output_dir, url)
                 target.parent.mkdir(parents=True, exist_ok=True)

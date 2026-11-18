@@ -56,6 +56,21 @@ NORMALIZE_DOCUMENT = r"""
     }
   });
 
+  // Remove recognized documentation UI outside the article content.
+  // Keep ordinary footers unless they match the documentation feedback UI.
+  content.querySelectorAll('ms-table-of-contents').forEach(
+    element => element.remove()
+  );
+
+  content.querySelectorAll('footer').forEach(element => {
+    if (
+      element.querySelector('.feedback-container') &&
+      element.querySelector('.two-column-footer')
+    ) {
+      element.remove();
+    }
+  });
+
   // Decorative icon-font ligatures are UI artifacts, not document prose.
   content.querySelectorAll(
     '.material-icons, .material-symbols-outlined, ' +
@@ -87,6 +102,32 @@ NORMALIZE_DOCUMENT = r"""
       }
     });
   }
+
+  // Keep link destinations and labels, but remove browser/UI metadata.
+  // Pandoc can then serialize ordinary links as GFM instead of raw HTML.
+  content.querySelectorAll('a[href]').forEach(element => {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.name !== 'href') {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  });
+
+  // Preserve Google AI Studio code blocks without Angular UI wrappers.
+  content.querySelectorAll('ms-code-block').forEach(widget => {
+    const pre = widget.querySelector('pre');
+    if (!pre) return;
+
+    const language = (widget.getAttribute('data-test-language') || '')
+      .trim().toLowerCase();
+
+    if (/^[a-z0-9_+.#-]+$/.test(language)) {
+      const code = pre.querySelector('code');
+      if (code) code.className = 'language-' + language;
+    }
+
+    widget.replaceWith(pre);
+  });
 
   content.querySelectorAll('pre').forEach(pre => {
     // Some syntax highlighters add copy controls *inside* code containers.
@@ -121,7 +162,80 @@ NORMALIZE_DOCUMENT = r"""
     }
     code.textContent = codeText;
     pre.replaceChildren(code);
-    pre.removeAttribute('class');
+    // Remove UI-only attributes that prevent Pandoc from recognizing code language.
+    for (const attribute of Array.from(pre.attributes)) {
+      pre.removeAttribute(attribute.name);
+    }
+    if (language && language !== 'astro-code') {
+      pre.className = language;
+    }
+  });
+
+
+  // Remove a recognized documentation toolbar without touching page content.
+  content.querySelectorAll('.docs-header-actions').forEach(element => {
+    const label = (element.textContent || '').trim();
+    if (/^(?:copy page|copied!?|share page)$/i.test(label)) {
+      element.remove();
+    }
+  });
+
+  // Remove framework/presentation attributes without removing content.
+  for (const element of [content, ...content.querySelectorAll('*')]) {
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name;
+      if (name === 'class') {
+        // Preserve syntax-highlighting language metadata on code elements.
+        const language = element.tagName.toLowerCase() === 'code'
+          ? Array.from(element.classList).find(value =>
+              /^language-[a-z0-9_+.#-]+$/i.test(value)
+            )
+          : null;
+        if (language) {
+          element.setAttribute('class', language);
+        } else {
+          element.removeAttribute('class');
+        }
+      } else if (
+        name === 'style' ||
+        name.startsWith('_ngcontent-') ||
+        name.startsWith('_nghost-')
+      ) {
+        element.removeAttribute(name);
+      }
+    }
+  }
+
+  // Unwrap presentation containers without losing their content.
+  // Preserve semantic containers and interactive widgets for later handling.
+  content.querySelectorAll('div,span').forEach(element => {
+    if (!element.parentNode) return;
+
+    const semanticAttributes = [
+      'role', 'aria-label', 'aria-labelledby',
+      'aria-describedby', 'aria-expanded',
+      'contenteditable'
+    ];
+
+    const hasSemanticAttributes = semanticAttributes.some(
+      name => element.hasAttribute(name)
+    );
+
+    if (hasSemanticAttributes) return;
+
+    // tabindex alone is browser focus metadata, not document content.
+    // callout-content-text is presentation metadata; retain its children.
+    const allowedAttributes = new Set([
+      'tabindex', 'callout-content-text'
+    ]);
+
+    const safeToUnwrap = Array.from(element.attributes).every(
+      attribute => allowedAttributes.has(attribute.name)
+    );
+
+    if (!safeToUnwrap) return;
+
+    element.replaceWith(...Array.from(element.childNodes));
   });
 
   return content.innerHTML;

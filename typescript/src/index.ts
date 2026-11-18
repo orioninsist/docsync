@@ -319,6 +319,35 @@ const queue = await RequestQueueV1.open('docsync');
       }
 
       await page.locator('main, article, body').first().waitFor({ state: 'attached', timeout: 5000 });
+
+      // Wait for client-rendered documentation before archiving.
+      await page.waitForFunction(
+        () => {
+          const heading = document.querySelector('h1');
+          return heading && heading.innerText.trim().length > 0;
+        },
+        { timeout: 30000 },
+      );
+
+      await page.evaluate(async () => {
+        const deadline = Date.now() + 30000;
+        let previous = '';
+        let stableSince = Date.now();
+
+        while (Date.now() < deadline) {
+          const snapshot = document.body.innerHTML;
+          if (snapshot !== previous) {
+            previous = snapshot;
+            stableSince = Date.now();
+          } else if (Date.now() - stableSince >= 3000) {
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        throw new Error('Document DOM did not stabilize within 30 seconds');
+      });
+
       const pageLanguage = await page.evaluate(
         () => document.documentElement.lang || '',
       );
@@ -331,21 +360,21 @@ const queue = await RequestQueueV1.open('docsync');
       }
 
       const html = shouldProcess ? await page.evaluate(() => {
-        
+
           const root =
             document.querySelector('main') ||
             document.querySelector('article') ||
             document.body;
-        
+
           if (!root) return null;
-        
+
           // Work on a detached copy: the original rendered HTML is archived unchanged.
           const content = root.cloneNode(true) as HTMLElement;
-        
+
           content.querySelectorAll('script,style,template,noscript').forEach(
             element => element.remove()
           );
-        
+
           // Documentation themes put tiny link/copy icons next to headings. Pandoc
           // otherwise serializes these as enormous data:image/svg+xml Markdown images.
           // Keep large/semantic SVG diagrams and all ordinary documentation images.
@@ -379,6 +408,20 @@ const queue = await RequestQueueV1.open('docsync');
     }
   });
 
+  // Remove recognized documentation UI before stripping CSS classes.
+  content.querySelectorAll('ms-table-of-contents').forEach(
+    element => element.remove()
+  );
+
+  content.querySelectorAll('footer').forEach(element => {
+    if (
+      element.querySelector('.feedback-container') &&
+      element.querySelector('.two-column-footer')
+    ) {
+      element.remove();
+    }
+  });
+
   // Decorative icon-font ligatures are UI artifacts, not document prose.
   content.querySelectorAll(
     '.material-icons, .material-symbols-outlined, ' +
@@ -393,7 +436,7 @@ const queue = await RequestQueueV1.open('docsync');
               && /^(?:1(?:\.\d+)?em|(?:[1-9]|1\d|2[0-4])px)$/.test(height);
             if (hidden || iconSized) svg.remove();
           });
-        
+
           // URLs relative to the website root are broken once the .md file is saved
           // outside the original website. Resolve them before asking Pandoc to write.
           for (const [selector, attribute] of [['a[href]', 'href'], ['img[src]', 'src']]) {
@@ -410,8 +453,33 @@ const queue = await RequestQueueV1.open('docsync');
               }
             });
           }
-        
-          content.querySelectorAll('pre').forEach(pre => {
+
+          // Keep link destinations while removing UI metadata.
+          content.querySelectorAll('a[href]').forEach(element => {
+            for (const attribute of Array.from(element.attributes)) {
+              if (attribute.name !== 'href') {
+                element.removeAttribute(attribute.name);
+              }
+            }
+          });
+
+          // Preserve Google AI Studio code blocks without Angular UI wrappers.
+  content.querySelectorAll('ms-code-block').forEach(widget => {
+    const pre = widget.querySelector('pre');
+    if (!pre) return;
+
+    const language = (widget.getAttribute('data-test-language') || '')
+      .trim().toLowerCase();
+
+    if (/^[a-z0-9_+.#-]+$/.test(language)) {
+      const code = pre.querySelector('code');
+      if (code) code.className = 'language-' + language;
+    }
+
+    widget.replaceWith(pre);
+  });
+
+  content.querySelectorAll('pre').forEach(pre => {
             // Some syntax highlighters add copy controls *inside* code containers.
             pre.querySelectorAll('button,[data-copy-button]').forEach(
               element => element.remove()
@@ -444,10 +512,73 @@ const queue = await RequestQueueV1.open('docsync');
             }
             code.textContent = codeText;
             pre.replaceChildren(code);
-            pre.removeAttribute('class');
+            // Remove UI-only attributes that prevent Pandoc from recognizing code language.
+    for (const attribute of Array.from(pre.attributes)) {
+      pre.removeAttribute(attribute.name);
+    }
+    if (language && language !== 'astro-code') {
+      pre.className = language;
+    }
           });
-        
-          return content.innerHTML;
+
+
+  // Remove a recognized documentation toolbar without touching page content.
+  content.querySelectorAll('.docs-header-actions').forEach(element => {
+    const label = (element.textContent || '').trim();
+    if (/^(?:copy page|copied!?|share page)$/i.test(label)) {
+      element.remove();
+    }
+  });
+
+  // Remove framework/presentation attributes without removing content.
+  for (const element of [content, ...content.querySelectorAll('*')]) {
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name;
+      if (name === 'class') {
+        // Preserve syntax-highlighting language metadata on code elements.
+        const language = element.tagName.toLowerCase() === 'code'
+          ? Array.from(element.classList).find(value =>
+              /^language-[a-z0-9_+.#-]+$/i.test(value)
+            )
+          : null;
+        if (language) {
+          element.setAttribute('class', language);
+        } else {
+          element.removeAttribute('class');
+        }
+      } else if (
+        name === 'style' ||
+        name.startsWith('_ngcontent-') ||
+        name.startsWith('_nghost-')
+      ) {
+        element.removeAttribute(name);
+      }
+    }
+  }
+
+  // Unwrap presentation containers without losing their content.
+  // Preserve semantic containers and interactive widgets.
+  content.querySelectorAll('div,span').forEach(element => {
+    if (!element.parentNode) return;
+
+    const semanticAttributes = [
+      'role', 'aria-label', 'aria-labelledby',
+      'aria-describedby', 'aria-expanded',
+      'contenteditable'
+    ];
+
+    if (semanticAttributes.some(name => element.hasAttribute(name))) return;
+
+    const allowedAttributes = new Set(['tabindex', 'callout-content-text']);
+    const safeToUnwrap = Array.from(element.attributes).every(
+      attribute => allowedAttributes.has(attribute.name)
+    );
+
+    if (!safeToUnwrap) return;
+    element.replaceWith(...Array.from(element.childNodes));
+  });
+
+  return content.innerHTML;
       }) : null;
 
       const markdown = html ? toGfm(html) : '';
@@ -456,7 +587,8 @@ const queue = await RequestQueueV1.open('docsync');
         const url = canonicalizeUrl(request.loadedUrl ?? request.url);
         outputWrite = outputWrite.then(async () => {
         seenUrls.add(url);
-        const digest = sha256(markdown);
+        const markdownWithSource = `> Source: ${url}\n\n${markdown}`;
+        const digest = sha256(markdownWithSource);
         const target = outputPath(outputDir, url);
         const previous = manifest[url];
         let exists = true;
@@ -471,7 +603,7 @@ const queue = await RequestQueueV1.open('docsync');
           counters.unchanged += 1;
         } else {
           await mkdir(path.dirname(target), { recursive: true });
-          await atomicWrite(target, markdown + '\n');
+          await atomicWrite(target, markdownWithSource + '\n');
           counters.saved += 1;
         }
 
