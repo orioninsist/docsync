@@ -84,3 +84,37 @@ def test_conversion_uses_real_code_languages_and_keeps_content(
         capture_output=True,
         check=True,
     )
+
+
+def test_dom_removes_ui_noise_but_preserves_content() -> None:
+    async def run() -> str:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch()
+            try:
+                page = await browser.new_page()
+                await page.set_content("""
+                <main>
+                  <h1>API Reference</h1>
+                  <nav><a href="/menu">Menu</a></nav>
+                  <div role="tablist"><button>Python</button></div>
+                  <span class="material-symbols-outlined">content_copy</span>
+                  <button aria-label="Copy page">content_copy</button>
+                  <button title="Expand">expand_more</button>
+                  <p>The word link is meaningful content.</p>
+                  <p>Use the check command to validate results.</p>
+                  <pre><code>print("hello")</code></pre>
+                </main>
+                """)
+                return await page.evaluate(NORMALIZE_DOCUMENT)
+            finally:
+                await browser.close()
+
+    html = asyncio.run(run())
+    assert "API Reference" in html
+    assert "content_copy" not in html
+    assert "expand_more" not in html
+    assert "Menu" not in html
+    assert "Python</button>" not in html
+    assert "word link is meaningful" in html
+    assert "check command" in html
+    assert 'print("hello")' in html
