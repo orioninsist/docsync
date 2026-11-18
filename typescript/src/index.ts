@@ -360,6 +360,31 @@ const queue = await RequestQueueV1.open('docsync');
     }
   });
 
+  // Remove documentation UI chrome without deleting meaningful content.
+  content.querySelectorAll(
+    'nav, [role="navigation"], [role="tablist"], ' +
+    'button[aria-label], button[title], [data-copy-button]'
+  ).forEach(element => {
+    const label = (
+      element.getAttribute('aria-label') ||
+      element.getAttribute('title') ||
+      element.textContent ||
+      ''
+    ).trim();
+    if (
+      element.matches('nav, [role="navigation"], [role="tablist"]') ||
+      /^(?:copy(?: page| code| link| url)?|copied!?|share page|expand|collapse)$/i.test(label)
+    ) {
+      element.remove();
+    }
+  });
+
+  // Decorative icon-font ligatures are UI artifacts, not document prose.
+  content.querySelectorAll(
+    '.material-icons, .material-symbols-outlined, ' +
+    '.material-symbols-rounded, .material-symbols-sharp'
+  ).forEach(element => element.remove());
+
   content.querySelectorAll('svg').forEach(svg => {
             const width = (svg.getAttribute('width') || '').trim();
             const height = (svg.getAttribute('height') || '').trim();
