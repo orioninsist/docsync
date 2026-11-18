@@ -26,7 +26,9 @@ jobs:
           go-version-file: tools/gfm-validator/go.mod
           cache-dependency-path: tools/gfm-validator/go.sum
       - name: Build Goldmark GFM validator
-        run: go build -o docsync-gfm-validator .
+        run: |
+          go build -o "$RUNNER_TEMP/docsync-gfm-validator" .
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
         working-directory: tools/gfm-validator
       - run: uv sync --locked --all-groups
       - run: npm ci
