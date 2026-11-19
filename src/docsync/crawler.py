@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from contextlib import AsyncExitStack, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -23,6 +24,7 @@ from crawlee.crawlers import (
     BasicCrawlingContext,
     PlaywrightCrawler,
     PlaywrightCrawlingContext,
+    PlaywrightPreNavCrawlingContext,
 )
 from crawlee.errors import HttpClientStatusCodeError
 from crawlee.events import LocalEventManager
@@ -214,10 +216,45 @@ def _prepare_crawl_storage(
     return storage_dir, checkpoint_file, resume
 
 
+class NavigationDelayGuard:
+    """Enforce robots crawl-delay between navigation starts for each origin."""
+
+    def __init__(self) -> None:
+        self._delays: dict[str, float] = {}
+        self._next_allowed: dict[str, float] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def set_delay(self, url: str, seconds: float) -> None:
+        parsed = urlsplit(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if seconds > 0:
+            self._delays.setdefault(origin, seconds)
+
+    async def wait(self, url: str) -> None:
+        parsed = urlsplit(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        delay = self._delays.get(origin)
+        if delay is None:
+            return
+
+        lock = self._locks.setdefault(origin, asyncio.Lock())
+        async with lock:
+            remaining = self._next_allowed.get(origin, 0.0) - time.monotonic()
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            self._next_allowed[origin] = time.monotonic() + delay
+
+
 class StreamingThrottlingRequestManager(ThrottlingRequestManager):
     """Keep Crawlee alive while native sitemap discovery is active."""
 
     discovery_task: asyncio.Task[None] | None = None
+    navigation_delay_guard: NavigationDelayGuard | None = None
+
+    def set_crawl_delay(self, url: str, delay_seconds: float) -> None:
+        super().set_crawl_delay(url, delay_seconds)
+        if self.navigation_delay_guard is not None:
+            self.navigation_delay_guard.set_delay(url, delay_seconds)
 
     async def is_finished(self) -> bool:
         if self.discovery_task is not None:
@@ -232,6 +269,45 @@ class StreamingThrottlingRequestManager(ThrottlingRequestManager):
                 return False
             self.discovery_task.result()
         return await super().is_empty()
+
+
+async def _restore_failed_requests(
+    domain_queue: RequestQueue,
+    checkpoint: dict[str, object],
+) -> None:
+    """Restore failed requests without reopening pending queue entries."""
+    raw_keys = checkpoint.get("failed_keys", [])
+    failed_keys = (
+        {key for key in raw_keys if isinstance(key, str)}
+        if isinstance(raw_keys, list)
+        else set()
+    )
+    cooldowns = checkpoint.get("failed_cooldowns", {})
+
+    for unique_key in sorted(failed_keys):
+        retry_at = cooldowns.get(unique_key) if isinstance(cooldowns, dict) else None
+        if isinstance(retry_at, str):
+            try:
+                deadline = datetime.fromisoformat(retry_at)
+                if deadline.tzinfo is not None and deadline > datetime.now(UTC):
+                    continue
+            except ValueError:
+                pass
+
+        request = await domain_queue.get_request(unique_key)
+        if request is None:
+            raise RuntimeError(
+                f"Failed request is missing from persistent queue: {unique_key}"
+            )
+        if request.handled_at is None:
+            # Already pending: Crawlee can process it without reopening.
+            continue
+
+        result = await domain_queue.reopen_request(unique_key)
+        if result is None:
+            raise RuntimeError(
+                f"Cannot reopen handled request from persistent queue: {unique_key}"
+            )
 
 
 async def _run_crawler_native(
@@ -309,23 +385,7 @@ async def _run_crawler_native(
             configuration=configuration,
             storage_client=storage_client,
         )
-        for unique_key in sorted(failed_keys):
-            cooldowns = checkpoint.get("failed_cooldowns", {})
-            retry_at = (
-                cooldowns.get(unique_key) if isinstance(cooldowns, dict) else None
-            )
-            if isinstance(retry_at, str):
-                try:
-                    deadline = datetime.fromisoformat(retry_at)
-                    if deadline.tzinfo is not None and deadline > datetime.now(UTC):
-                        continue
-                except ValueError:
-                    pass
-            result = await domain_queue.reopen_request(unique_key)
-            if result is None:
-                raise RuntimeError(
-                    f"Cannot reopen failed request from persistent queue: {unique_key}"
-                )
+        await _restore_failed_requests(domain_queue, checkpoint)
 
     request_manager = StreamingThrottlingRequestManager(
         queue,
@@ -333,6 +393,9 @@ async def _run_crawler_native(
         request_manager_opener=RequestQueue.open,
         service_locator=crawl_services,
     )
+    navigation_delay_guard = NavigationDelayGuard()
+    request_manager.navigation_delay_guard = navigation_delay_guard
+
     concurrency = ConcurrencySettings(
         min_concurrency=1,
         desired_concurrency=max_concurrency,
@@ -451,6 +514,12 @@ async def _run_crawler_native(
             max_session_rotations=0,
             respect_robots_txt_file=True,
         )
+
+        @crawler.pre_navigation_hook
+        async def respect_navigation_delay(
+            context: PlaywrightPreNavCrawlingContext,
+        ) -> None:
+            await navigation_delay_guard.wait(context.request.url)
 
         @crawler.failed_request_handler
         async def on_failed_request(
