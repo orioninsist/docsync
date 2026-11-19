@@ -9,6 +9,7 @@ import os
 import shutil
 import tempfile
 from contextlib import AsyncExitStack, suppress
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -23,6 +24,7 @@ from crawlee.crawlers import (
     PlaywrightCrawler,
     PlaywrightCrawlingContext,
 )
+from crawlee.errors import HttpClientStatusCodeError
 from crawlee.events import LocalEventManager
 from crawlee.http_clients import ImpitHttpClient
 from crawlee.request_loaders import (
@@ -106,6 +108,60 @@ def _save_checkpoint(path: Path, checkpoint: dict[str, object]) -> None:
     )
 
 
+def _write_failed_report(checkpoint_file: Path) -> None:
+    """Write an atomic, machine-readable report of unresolved requests."""
+    checkpoint = _load_checkpoint(checkpoint_file)
+    raw_keys = checkpoint.get("failed_keys", [])
+    raw_details = checkpoint.get("failed_details", {})
+    raw_cooldowns = checkpoint.get("failed_cooldowns", {})
+
+    keys = (
+        sorted(key for key in raw_keys if isinstance(key, str))
+        if isinstance(raw_keys, list)
+        else []
+    )
+    details = raw_details if isinstance(raw_details, dict) else {}
+    cooldowns = raw_cooldowns if isinstance(raw_cooldowns, dict) else {}
+
+    entries = []
+    for key in keys:
+        detail = details.get(key, {})
+        if not isinstance(detail, dict):
+            detail = {}
+
+        url = detail.get("url", key)
+        status_code = detail.get("status_code")
+        failed_at = detail.get("failed_at")
+        retry_at = cooldowns.get(key)
+
+        entries.append(
+            {
+                "unique_key": key,
+                "url": url if isinstance(url, str) else key,
+                "status_code": (
+                    status_code
+                    if isinstance(status_code, int)
+                    and not isinstance(status_code, bool)
+                    else None
+                ),
+                "failed_at": (failed_at if isinstance(failed_at, str) else None),
+                "retry_at": (retry_at if isinstance(retry_at, str) else None),
+            }
+        )
+
+    report = {
+        "version": 1,
+        "start_url": checkpoint.get("start_url"),
+        "language": checkpoint.get("language"),
+        "failed_count": len(entries),
+        "failed_urls": entries,
+    }
+    _atomic_write(
+        checkpoint_file.with_name("failed-urls.json"),
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+    )
+
+
 def _prepare_crawl_storage(
     state_dir: Path,
     *,
@@ -131,6 +187,12 @@ def _prepare_crawl_storage(
         shutil.rmtree(storage_dir, ignore_errors=True)
 
     failed_keys = checkpoint.get("failed_keys", []) if resume else []
+    failed_cooldowns = checkpoint.get("failed_cooldowns", {}) if resume else {}
+    failed_details = checkpoint.get("failed_details", {}) if resume else {}
+    if not isinstance(failed_details, dict):
+        failed_details = {}
+    if not isinstance(failed_cooldowns, dict):
+        failed_cooldowns = {}
     if not isinstance(failed_keys, list):
         failed_keys = []
 
@@ -144,8 +206,11 @@ def _prepare_crawl_storage(
             "start_url": start_url,
             "language": language,
             "failed_keys": failed_keys,
+            "failed_cooldowns": failed_cooldowns,
+            "failed_details": failed_details,
         },
     )
+    _write_failed_report(checkpoint_file)
     return storage_dir, checkpoint_file, resume
 
 
@@ -175,9 +240,9 @@ async def _run_crawler_native(
     output_dir: Path | None,
     state_dir: Path | None,
     language: str = "en",
-    max_concurrency: int = 2,
+    max_concurrency: int = 1,
     max_requests: int | None = None,
-    requests_per_minute: int = 20,
+    requests_per_minute: int = 6,
     crawl_strategy: Literal[
         "all", "same-domain", "same-hostname", "same-origin"
     ] = "same-origin",
@@ -245,6 +310,17 @@ async def _run_crawler_native(
             storage_client=storage_client,
         )
         for unique_key in sorted(failed_keys):
+            cooldowns = checkpoint.get("failed_cooldowns", {})
+            retry_at = (
+                cooldowns.get(unique_key) if isinstance(cooldowns, dict) else None
+            )
+            if isinstance(retry_at, str):
+                try:
+                    deadline = datetime.fromisoformat(retry_at)
+                    if deadline.tzinfo is not None and deadline > datetime.now(UTC):
+                        continue
+                except ValueError:
+                    pass
             result = await domain_queue.reopen_request(unique_key)
             if result is None:
                 raise RuntimeError(
@@ -370,7 +446,7 @@ async def _run_crawler_native(
             request_manager=active_request_manager,
             concurrency_settings=concurrency,
             max_requests_per_crawl=max_requests,
-            max_request_retries=2,
+            max_request_retries=1,
             retry_on_blocked=False,
             max_session_rotations=0,
             respect_robots_txt_file=True,
@@ -384,7 +460,32 @@ async def _run_crawler_native(
                 failed_keys.add(context.request.unique_key)
                 checkpoint = _load_checkpoint(checkpoint_file)
                 checkpoint["failed_keys"] = sorted(failed_keys)
+                cooldowns = checkpoint.get("failed_cooldowns", {})
+                if not isinstance(cooldowns, dict):
+                    cooldowns = {}
+                if isinstance(
+                    error, HttpClientStatusCodeError
+                ) and error.status_code in (401, 403):
+                    cooldowns[context.request.unique_key] = (
+                        datetime.now(UTC) + timedelta(hours=24)
+                    ).isoformat()
+                checkpoint["failed_cooldowns"] = cooldowns
+                details = checkpoint.get("failed_details", {})
+                if not isinstance(details, dict):
+                    details = {}
+                status_code = (
+                    error.status_code
+                    if isinstance(error, HttpClientStatusCodeError)
+                    else None
+                )
+                details[context.request.unique_key] = {
+                    "url": context.request.url,
+                    "status_code": status_code,
+                    "failed_at": datetime.now(UTC).isoformat(),
+                }
+                checkpoint["failed_details"] = details
                 _save_checkpoint(checkpoint_file, checkpoint)
+                _write_failed_report(checkpoint_file)
 
         @crawler.router.default_handler
         async def handler(context: PlaywrightCrawlingContext) -> None:
@@ -463,7 +564,16 @@ async def _run_crawler_native(
                     failed_keys.discard(context.request.unique_key)
                     checkpoint = _load_checkpoint(checkpoint_file)
                     checkpoint["failed_keys"] = sorted(failed_keys)
+                    cooldowns = checkpoint.get("failed_cooldowns", {})
+                    if isinstance(cooldowns, dict):
+                        cooldowns.pop(context.request.unique_key, None)
+                        checkpoint["failed_cooldowns"] = cooldowns
+                    details = checkpoint.get("failed_details", {})
+                    if isinstance(details, dict):
+                        details.pop(context.request.unique_key, None)
+                        checkpoint["failed_details"] = details
                     _save_checkpoint(checkpoint_file, checkpoint)
+                    _write_failed_report(checkpoint_file)
 
         try:
             statistics = await crawler.run(
@@ -498,6 +608,7 @@ async def _run_crawler_native(
             },
         )
 
+    _write_failed_report(checkpoint_file)
     return counters
 
 
@@ -507,9 +618,9 @@ async def run_crawler(
     output_dir: Path | None,
     state_dir: Path | None,
     language: str = "en",
-    max_concurrency: int = 2,
+    max_concurrency: int = 1,
     max_requests: int | None = None,
-    requests_per_minute: int = 20,
+    requests_per_minute: int = 6,
     crawl_strategy: Literal[
         "all", "same-domain", "same-hostname", "same-origin"
     ] = "same-origin",

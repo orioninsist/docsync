@@ -536,6 +536,111 @@ def test_http_403_does_not_mark_crawl_complete(tmp_path: Path) -> None:
         thread.join(timeout=5)
 
 
+def test_http_403_cooldown_prevents_immediate_resume(
+    tmp_path: Path,
+) -> None:
+    """A blocked URL must not be retried before its cooldown expires."""
+    import json
+
+    class BlockedHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            with self.server.request_lock:
+                self.server.request_paths.append(self.path)
+
+            if self.path == "/robots.txt":
+                status = 200
+                body = b"User-agent: *\\nAllow: /\\n"
+                content_type = "text/plain"
+            elif self.path == "/docs":
+                status = 200
+                body = (
+                    b'<html lang="en"><main><h1>Docs</h1>'
+                    b'<a href="/docs/blocked">Blocked</a>'
+                    b"</main></html>"
+                )
+                content_type = "text/html"
+            elif self.path == "/docs/blocked":
+                status = 403
+                body = b"Forbidden"
+                content_type = "text/plain"
+            else:
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), BlockedHandler)
+    server.request_lock = threading.Lock()
+    server.request_paths = []
+
+    thread = threading.Thread(
+        target=server.serve_forever,
+        daemon=True,
+    )
+    thread.start()
+
+    try:
+        origin = f"http://127.0.0.1:{server.server_port}"
+        state_dir = tmp_path / "state"
+
+        options = {
+            "start_url": f"{origin}/docs",
+            "output_dir": tmp_path / "output",
+            "state_dir": state_dir,
+            "language": "en",
+            "max_concurrency": 1,
+            "requests_per_minute": 600,
+            "discover_sitemap": False,
+        }
+
+        asyncio.run(run_crawler(**options))
+
+        checkpoint_file = state_dir / "crawl" / "python" / "checkpoint.json"
+        checkpoint = json.loads(checkpoint_file.read_text(encoding="utf-8"))
+
+        assert checkpoint["status"] == "running"
+        assert checkpoint["failed_keys"]
+        assert checkpoint["failed_cooldowns"]
+
+        report_file = checkpoint_file.with_name("failed-urls.json")
+        report = json.loads(report_file.read_text(encoding="utf-8"))
+        assert report["failed_count"] == 1
+        entry = report["failed_urls"][0]
+        assert entry["url"] == f"{origin}/docs/blocked"
+        assert entry["status_code"] == 403
+        assert entry["failed_at"]
+        assert entry["retry_at"]
+
+        with server.request_lock:
+            first_count = server.request_paths.count("/docs/blocked")
+
+        assert first_count == 1
+
+        asyncio.run(run_crawler(**options))
+
+        with server.request_lock:
+            second_count = server.request_paths.count("/docs/blocked")
+
+        assert second_count == first_count, (
+            "403 URL was requested again before cooldown expired"
+        )
+        resumed_report = json.loads(report_file.read_text(encoding="utf-8"))
+        assert resumed_report["failed_count"] == 1
+        assert resumed_report["failed_urls"][0]["status_code"] == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_http_403_recovers_on_resume(tmp_path: Path) -> None:
     """A previously blocked page must be recoverable on the next run."""
     import json
@@ -611,8 +716,18 @@ def test_http_403_recovers_on_resume(tmp_path: Path) -> None:
         first_checkpoint = json.loads(checkpoint_file.read_text(encoding="utf-8"))
         assert first_checkpoint["status"] == "running"
 
+        report_file = checkpoint_file.with_name("failed-urls.json")
+        failed_report = json.loads(report_file.read_text(encoding="utf-8"))
+        assert failed_report["failed_count"] == 1
+        assert len(failed_report["failed_urls"]) == 1
+        assert failed_report["failed_urls"][0]["status_code"] == 403
+
         with server.request_lock:
             server.blocked = False
+
+        # Simulate cooldown expiry without waiting 24 hours.
+        first_checkpoint["failed_cooldowns"] = {}
+        checkpoint_file.write_text(json.dumps(first_checkpoint), encoding="utf-8")
 
         asyncio.run(run_crawler(**options))
 
@@ -630,6 +745,12 @@ def test_http_403_recovers_on_resume(tmp_path: Path) -> None:
         )
         assert "Recovered documentation content" in markdown
         assert second_checkpoint["status"] == "complete"
+
+        recovered_report = json.loads(report_file.read_text(encoding="utf-8"))
+        assert recovered_report["failed_count"] == 0
+        assert recovered_report["failed_urls"] == []
+        assert second_checkpoint.get("failed_keys", []) == []
+        assert second_checkpoint.get("failed_details", {}) == {}
     finally:
         server.shutdown()
         server.server_close()
