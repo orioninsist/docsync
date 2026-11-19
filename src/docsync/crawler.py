@@ -504,7 +504,7 @@ async def _run_crawler_native(
             event_manager=event_manager,
             storage_client=storage_client,
             headless=not headful,
-            use_incognito_pages=headful,
+            use_incognito_pages=False,
             browser_launch_options=browser_launch_options,
             request_manager=active_request_manager,
             concurrency_settings=concurrency,
