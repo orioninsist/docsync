@@ -37,8 +37,11 @@ def test_first_fetch_then_304_skips_existing_index(tmp_path: Path) -> None:
         )
     )
     checker = DocsSyncFreshnessChecker(
-        client, store, output_dir=tmp_path, content_state=state,
-        start_url="https://example.com/docs"
+        client,
+        store,
+        output_dir=tmp_path,
+        content_state=state,
+        start_url="https://example.com/docs",
     )
 
     first = run(checker.check(url))
@@ -70,8 +73,11 @@ def test_changed_etag_requires_successful_commit(tmp_path: Path) -> None:
         )
     )
     checker = DocsSyncFreshnessChecker(
-        client, store, output_dir=tmp_path, content_state=state,
-        start_url="https://example.com/docs"
+        client,
+        store,
+        output_dir=tmp_path,
+        content_state=state,
+        start_url="https://example.com/docs",
     )
     changed = run(checker.check(url))
     assert changed.changed and changed.etag == '"v2"'
@@ -79,9 +85,7 @@ def test_changed_etag_requires_successful_commit(tmp_path: Path) -> None:
     run(checker.mark_processed(url, changed))
     stored = store.set_value.await_args.args[1]
     assert stored["etag"] == '"v2"'
-    assert client.send_request.await_args.kwargs["headers"] == {
-        "If-None-Match": '"v1"'
-    }
+    assert client.send_request.await_args.kwargs["headers"] == {"If-None-Match": '"v1"'}
 
 
 def test_missing_output_forces_unconditional_fetch(tmp_path: Path) -> None:
@@ -92,9 +96,7 @@ def test_missing_output_forces_unconditional_fetch(tmp_path: Path) -> None:
     )
     client = SimpleNamespace(
         send_request=AsyncMock(
-            return_value=SimpleNamespace(
-                status_code=200, headers={"ETag": '"new"'}
-            )
+            return_value=SimpleNamespace(status_code=200, headers={"ETag": '"new"'})
         )
     )
     checker = DocsSyncFreshnessChecker(
@@ -190,7 +192,6 @@ def test_last_modified_used_when_etag_absent(tmp_path: Path) -> None:
     }
 
 
-
 def test_root_revisits_for_link_discovery_even_with_etag(tmp_path: Path) -> None:
     url = "https://example.com/docs"
     output_path(tmp_path, url).write_text("# Root\\n", encoding="utf-8")
@@ -224,7 +225,6 @@ def test_sitemap_and_browser_freshness_are_connected() -> None:
     assert "http_freshness_checker" in signature(PlaywrightCrawler).parameters
 
 
-
 def test_manifest_seeds_known_deep_documents_before_sitemap_discovery() -> None:
     source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
     assert "for previous_url in sorted(content_state):" in source
@@ -235,5 +235,3 @@ def test_manifest_seeds_known_deep_documents_before_sitemap_discovery() -> None:
         "if discover_sitemap:"
     )
     assert "Request.from_url(\n                canonicalize_url(start_url)" in source
-
-

@@ -256,9 +256,7 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
                     response.headers.get("retry-after")
                 )
                 if retry_after is not None:
-                    self._navigation_delay_guard.defer(
-                        url, retry_after.total_seconds()
-                    )
+                    self._navigation_delay_guard.defer(url, retry_after.total_seconds())
             if not 200 <= status < 300:
                 message = f"HTTP freshness check failed for {url}: {status}"
                 if status in (401, 403):
@@ -554,9 +552,7 @@ async def _run_crawler_native(
                 or not url_matches_language(canonical_url, language)
             ):
                 continue
-            request = Request.from_url(
-                canonical_url, enqueue_strategy=crawl_strategy
-            )
+            request = Request.from_url(canonical_url, enqueue_strategy=crawl_strategy)
             await active_request_manager.add_request(request)
 
         if discover_sitemap:
