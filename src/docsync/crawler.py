@@ -17,8 +17,8 @@ from urllib.parse import urlsplit
 
 from crawlee import ConcurrencySettings, Request, RequestOptions
 from crawlee._service_locator import ServiceLocator
-from crawlee._utils.http_freshness import FreshnessResult, HttpFreshnessChecker
 from crawlee._utils.http import parse_retry_after_header
+from crawlee._utils.http_freshness import FreshnessResult, HttpFreshnessChecker
 from crawlee._utils.robots import RobotsTxtFile
 from crawlee._utils.sitemap import Sitemap
 from crawlee.configuration import Configuration

@@ -9,9 +9,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from crawlee.crawlers import PlaywrightCrawler
 from crawlee.request_loaders import SitemapRequestLoader
+
 from docsync.crawler import DocsSyncFreshnessChecker
 from docsync.policy import output_path
 
