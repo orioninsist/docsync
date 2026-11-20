@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from inspect import signature
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -144,7 +144,8 @@ def test_failed_indexing_does_not_commit_new_etag(tmp_path: Path) -> None:
         )
     )
     checker = DocsSyncFreshnessChecker(
-        client, store,
+        client,
+        store,
         output_dir=tmp_path,
         content_state={url: {"content_hash": "previous"}},
     )
