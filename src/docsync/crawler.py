@@ -236,9 +236,8 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
     async def check(self, url: str) -> FreshnessResult:
         canonical_url = canonicalize_url(url)
         record = self._content_state.get(canonical_url, {})
-        if not record.get("content_hash") or not output_path(
-            self._output_dir, canonical_url
-        ).is_file():
+        target = output_path(self._output_dir, canonical_url)
+        if not record.get("content_hash") or not target.is_file():
             # No valid document: bypass cached validators and fetch unconditionally.
             response = await self._http_client.send_request(url, method="GET")
             status = response.status_code
