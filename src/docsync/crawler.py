@@ -437,7 +437,8 @@ async def _run_crawler_native(
 
     # HTTP validators must survive fresh crawl queues and process restarts.
     freshness_configuration = Configuration(
-        storage_dir=str(state_dir / "freshness-storage"), purge_on_start=False
+        storage_dir=str(state_dir / "freshness-storage"),
+        purge_on_start=False,
     )
     freshness_store = await KeyValueStore.open(
         alias="docsync-http-freshness-v1",
