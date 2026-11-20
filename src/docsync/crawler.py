@@ -218,7 +218,7 @@ def _prepare_crawl_storage(
 
 
 class DocsSyncFreshnessChecker(HttpFreshnessChecker):
-    """Trust 304 only while the successfully indexed Markdown still exists."""
+    """Avoid trusting an HTTP 304 when the local Markdown is unavailable."""
 
     def __init__(
         self,
@@ -233,12 +233,12 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
         self._content_state = content_state
 
     async def check(self, url: str):
-        # A missing document must be re-rendered, even if the origin returns 304.
+        # A missing output cannot be skipped, even when an old ETag is valid.
         canonical_url = canonicalize_url(url)
         record = self._content_state.get(canonical_url, {})
-        target = output_path(self._output_dir, canonical_url)
-        if not record.get("content_hash") or not target.is_file():
-            # An unconditional HTTP GET avoids replaying an obsolete ETag.
+        if not record.get("content_hash") or not output_path(
+            self._output_dir, canonical_url
+        ).is_file():
             from crawlee._utils.http_freshness import FreshnessResult
 
             response = await self._http_client.send_request(url, method="GET")
