@@ -37,7 +37,8 @@ def test_first_fetch_then_304_skips_existing_index(tmp_path: Path) -> None:
         )
     )
     checker = DocsSyncFreshnessChecker(
-        client, store, output_dir=tmp_path, content_state=state
+        client, store, output_dir=tmp_path, content_state=state,
+        start_url="https://example.com/docs"
     )
 
     first = run(checker.check(url))
@@ -69,7 +70,8 @@ def test_changed_etag_requires_successful_commit(tmp_path: Path) -> None:
         )
     )
     checker = DocsSyncFreshnessChecker(
-        client, store, output_dir=tmp_path, content_state=state
+        client, store, output_dir=tmp_path, content_state=state,
+        start_url="https://example.com/docs"
     )
     changed = run(checker.check(url))
     assert changed.changed and changed.etag == '"v2"'
@@ -100,6 +102,7 @@ def test_missing_output_forces_unconditional_fetch(tmp_path: Path) -> None:
         store,
         output_dir=tmp_path,
         content_state={url: {"content_hash": "previous"}},
+        start_url="https://example.com/docs",
     )
     result = run(checker.check(url))
     assert result.changed and result.etag == '"new"'
@@ -125,6 +128,7 @@ def test_failed_http_does_not_overwrite_etag(tmp_path: Path, status: int) -> Non
         store,
         output_dir=tmp_path,
         content_state={url: {"content_hash": "previous"}},
+        start_url="https://example.com/docs",
     )
     with pytest.raises(ValueError, match="HTTP freshness check failed"):
         run(checker.check(url))
@@ -148,6 +152,7 @@ def test_failed_indexing_does_not_commit_new_etag(tmp_path: Path) -> None:
         store,
         output_dir=tmp_path,
         content_state={url: {"content_hash": "previous"}},
+        start_url="https://example.com/docs",
     )
     candidate = run(checker.check(url))
     assert candidate.etag == '"new"'
@@ -177,11 +182,37 @@ def test_last_modified_used_when_etag_absent(tmp_path: Path) -> None:
         store,
         output_dir=tmp_path,
         content_state={url: {"content_hash": "previous"}},
+        start_url="https://example.com/docs",
     )
     assert not run(checker.check(url)).changed
     assert client.send_request.await_args.kwargs["headers"] == {
         "If-Modified-Since": "Tue, 01 Jan 2030 12:00:00 GMT"
     }
+
+
+
+def test_root_revisits_for_link_discovery_even_with_etag(tmp_path: Path) -> None:
+    url = "https://example.com/docs"
+    output_path(tmp_path, url).write_text("# Root\\n", encoding="utf-8")
+    store = SimpleNamespace(
+        get_value=AsyncMock(return_value={"etag": '"old"'}),
+        set_value=AsyncMock(),
+    )
+    client = SimpleNamespace(
+        send_request=AsyncMock(
+            return_value=SimpleNamespace(status_code=200, headers={"etag": '"new"'})
+        )
+    )
+    checker = DocsSyncFreshnessChecker(
+        client,
+        store,
+        output_dir=tmp_path,
+        content_state={url: {"content_hash": "old"}},
+        start_url=url,
+    )
+    assert run(checker.check(url)).changed
+    client.send_request.assert_awaited_once_with(url, method="GET")
+    store.get_value.assert_not_awaited()
 
 
 def test_sitemap_and_browser_freshness_are_connected() -> None:
