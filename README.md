@@ -224,6 +224,26 @@ The Phaser adapter is the first non-web `SourceAdapter`. It fetches the configur
 
 Generated paths preserve the Phaser `src/` hierarchy while dropping the leading `src/` and replacing `.js` with `.md`. Re-running against unchanged source and renderer output leaves existing Markdown untouched and reports it as `unchanged`.
 
+## Incremental HTTP freshness (Python engine)
+
+The Python Crawlee engine uses conditional HTTP GET with persisted `ETag` and
+`Last-Modified` validators. DocsSync receives URLs from Crawlee's native
+sitemap discovery and also rechecks URLs already recorded in its document
+manifest. This prevents unchanged intermediate pages from hiding previously
+indexed nested pages when no sitemap is available.
+
+On an HTTP `304 Not Modified`, an existing indexed Markdown document is
+skipped without browser navigation or conversion. A changed document is
+rendered and converted again; validators are committed only after the
+document is successfully indexed. HTTP errors, failed conversion, and failed
+writes leave the previous validator untouched. Missing local Markdown files
+force an unconditional fetch instead of trusting a cached `304`.
+
+The crawl root is fetched on every run so link discovery remains active.
+Validators live in the state directory's `freshness-storage` and are not
+removed when the crawl request queue is reset. The TypeScript engine retains
+its existing behavior.
+
 ## Document pipeline
 
 For the web source, each engine first archives the original browser-rendered HTML in content-addressed storage under the state directory. Conversion operates on a cloned `<main>` element, falling back to `<article>` and then `<body>`, and removes `script` and `style` elements from the clone. Semantic content such as code blocks, tables, links, images, and asides is retained for conversion.
