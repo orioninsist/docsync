@@ -140,7 +140,7 @@ wheels = [
 [[package]]
 name = "crawlee"
 version = "1.11.3"
-source = { git = "https://github.com/orioninsist/crawlee-python.git?rev=85636fe5c0163271b5635ef02c665a789663f2fb#85636fe5c0163271b5635ef02c665a789663f2fb" }
+source = { git = "https://github.com/orioninsist/crawlee-python.git?rev=5bf2817c42f70451ce932a7122d17e5aa0a91262#5bf2817c42f70451ce932a7122d17e5aa0a91262" }
 dependencies = [
     { name = "async-timeout" },
     { name = "cachetools" },
@@ -179,7 +179,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "crawlee", extras = ["playwright"], git = "https://github.com/orioninsist/crawlee-python.git?rev=85636fe5c0163271b5635ef02c665a789663f2fb" }]
+requires-dist = [{ name = "crawlee", extras = ["playwright"], git = "https://github.com/orioninsist/crawlee-python.git?rev=5bf2817c42f70451ce932a7122d17e5aa0a91262" }]
 
 [package.metadata.requires-dev]
 dev = [
