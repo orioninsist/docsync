@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 from crawlee import ConcurrencySettings, Request, RequestOptions
 from crawlee._service_locator import ServiceLocator
-from crawlee._utils.http_freshness import HttpFreshnessChecker
+from crawlee._utils.http_freshness import FreshnessResult, HttpFreshnessChecker
 from crawlee._utils.robots import RobotsTxtFile
 from crawlee._utils.sitemap import Sitemap
 from crawlee.configuration import Configuration
@@ -218,7 +218,7 @@ def _prepare_crawl_storage(
 
 
 class DocsSyncFreshnessChecker(HttpFreshnessChecker):
-    """Avoid trusting an HTTP 304 when the local Markdown is unavailable."""
+    """Avoid trusting HTTP 304 if the successfully indexed output is missing."""
 
     def __init__(
         self,
@@ -232,15 +232,13 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
         self._output_dir = output_dir
         self._content_state = content_state
 
-    async def check(self, url: str):
-        # A missing output cannot be skipped, even when an old ETag is valid.
+    async def check(self, url: str) -> FreshnessResult:
         canonical_url = canonicalize_url(url)
         record = self._content_state.get(canonical_url, {})
         if not record.get("content_hash") or not output_path(
             self._output_dir, canonical_url
         ).is_file():
-            from crawlee._utils.http_freshness import FreshnessResult
-
+            # No valid document: bypass cached validators and fetch unconditionally.
             response = await self._http_client.send_request(url, method="GET")
             status = response.status_code
             if not 200 <= status < 300:
