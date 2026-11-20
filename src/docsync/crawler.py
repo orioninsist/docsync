@@ -227,18 +227,24 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
         *,
         output_dir: Path,
         content_state: dict[str, dict[str, str]],
+        start_url: str,
     ) -> None:
         super().__init__(http_client, store)
         self._output_dir = output_dir
         self._content_state = content_state
+        self._start_url = canonicalize_url(start_url)
         self.unchanged_count = 0
 
     async def check(self, url: str) -> FreshnessResult:
         canonical_url = canonicalize_url(url)
         record = self._content_state.get(canonical_url, {})
         target = output_path(self._output_dir, canonical_url)
-        if not record.get("content_hash") or not target.is_file():
-            # No valid document: bypass cached validators and fetch unconditionally.
+        if (
+            canonical_url == self._start_url
+            or not record.get("content_hash")
+            or not target.is_file()
+        ):
+            # Always re-visit the root for link discovery; restore missing output.
             response = await self._http_client.send_request(url, method="GET")
             status = response.status_code
             if not 200 <= status < 300:
@@ -478,6 +484,7 @@ async def _run_crawler_native(
             freshness_store,
             output_dir=output_dir,
             content_state=content_state,
+            start_url=start_url,
         )
         active_request_manager: RequestManager = request_manager
 
