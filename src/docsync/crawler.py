@@ -231,6 +231,7 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
         super().__init__(http_client, store)
         self._output_dir = output_dir
         self._content_state = content_state
+        self.unchanged_count = 0
 
     async def check(self, url: str) -> FreshnessResult:
         canonical_url = canonicalize_url(url)
@@ -250,7 +251,10 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
                 etag=headers.get("etag"),
                 last_modified=headers.get("last-modified"),
             )
-        return await super().check(url)
+        result = await super().check(url)
+        if not result.changed:
+            self.unchanged_count += 1
+        return result
 
 
 class NavigationDelayGuard:
@@ -714,6 +718,10 @@ async def _run_crawler_native(
                 if not discovery_task.done():
                     discovery_task.cancel()
                 await asyncio.gather(discovery_task, return_exceptions=True)
+
+        # 304-skipped requests never enter the browser handler.
+        counters["processed"] += freshness_checker.unchanged_count
+        counters["unchanged"] += freshness_checker.unchanged_count
 
         stopped_at_request_limit = (
             max_requests is not None and statistics.requests_total >= max_requests
