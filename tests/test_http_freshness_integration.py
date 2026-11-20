@@ -25,7 +25,9 @@ def test_first_fetch_then_304_skips_existing_index(tmp_path: Path) -> None:
     output = output_path(tmp_path, url)
     output.write_text("# Existing Markdown\n", encoding="utf-8")
     state = {url: {"content_hash": "old-hash", "filename": output.name}}
-    store = SimpleNamespace(get_value=AsyncMock(return_value=None), set_value=AsyncMock())
+    store = SimpleNamespace(
+        get_value=AsyncMock(return_value=None), set_value=AsyncMock()
+    )
     client = SimpleNamespace(
         send_request=AsyncMock(
             side_effect=[
@@ -119,7 +121,8 @@ def test_failed_http_does_not_overwrite_etag(tmp_path: Path, status: int) -> Non
         )
     )
     checker = DocsSyncFreshnessChecker(
-        client, store,
+        client,
+        store,
         output_dir=tmp_path,
         content_state={url: {"content_hash": "previous"}},
     )
@@ -156,7 +159,10 @@ def test_last_modified_used_when_etag_absent(tmp_path: Path) -> None:
     output_path(tmp_path, url).write_text("# Old\n", encoding="utf-8")
     store = SimpleNamespace(
         get_value=AsyncMock(
-            return_value={"etag": None, "last_modified": "Tue, 01 Jan 2030 12:00:00 GMT"}
+            return_value={
+                "etag": None,
+                "last_modified": "Tue, 01 Jan 2030 12:00:00 GMT",
+            }
         ),
         set_value=AsyncMock(),
     )
@@ -166,7 +172,9 @@ def test_last_modified_used_when_etag_absent(tmp_path: Path) -> None:
         )
     )
     checker = DocsSyncFreshnessChecker(
-        client, store, output_dir=tmp_path,
+        client,
+        store,
+        output_dir=tmp_path,
         content_state={url: {"content_hash": "previous"}},
     )
     assert not run(checker.check(url)).changed
