@@ -435,7 +435,7 @@ async def _run_crawler_native(
     navigation_delay_guard = NavigationDelayGuard()
     request_manager.navigation_delay_guard = navigation_delay_guard
 
-    # Keep HTTP validators separate from the resettable request-queue storage.
+    # HTTP validators must survive fresh crawl queues and process restarts.
     freshness_configuration = Configuration(
         storage_dir=str(state_dir / "freshness-storage"), purge_on_start=False
     )
