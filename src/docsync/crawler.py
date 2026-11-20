@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 from crawlee import ConcurrencySettings, Request, RequestOptions
 from crawlee._service_locator import ServiceLocator
 from crawlee._utils.http_freshness import FreshnessResult, HttpFreshnessChecker
+from crawlee._utils.http import parse_retry_after_header
 from crawlee._utils.robots import RobotsTxtFile
 from crawlee._utils.sitemap import Sitemap
 from crawlee.configuration import Configuration
@@ -228,14 +229,17 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
         output_dir: Path,
         content_state: dict[str, dict[str, str]],
         start_url: str,
+        navigation_delay_guard: NavigationDelayGuard | None = None,
     ) -> None:
         super().__init__(http_client, store)
+        self._navigation_delay_guard = navigation_delay_guard or NavigationDelayGuard()
         self._output_dir = output_dir
         self._content_state = content_state
         self._start_url = canonicalize_url(start_url)
         self.unchanged_count = 0
 
     async def check(self, url: str) -> FreshnessResult:
+        await self._navigation_delay_guard.wait(url)
         canonical_url = canonicalize_url(url)
         record = self._content_state.get(canonical_url, {})
         target = output_path(self._output_dir, canonical_url)
@@ -247,8 +251,22 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
             # Always re-visit the root for link discovery; restore missing output.
             response = await self._http_client.send_request(url, method="GET")
             status = response.status_code
+            if status == 429:
+                retry_after = parse_retry_after_header(
+                    response.headers.get("retry-after")
+                )
+                if retry_after is not None:
+                    self._navigation_delay_guard.defer(
+                        url, retry_after.total_seconds()
+                    )
             if not 200 <= status < 300:
-                raise ValueError(f"HTTP freshness check failed for {url}: {status}")
+                message = f"HTTP freshness check failed for {url}: {status}"
+                if status in (401, 403):
+                    raise HttpClientStatusCodeError(
+                        message=message,
+                        status_code=status,
+                    )
+                raise ValueError(message)
             headers = {str(k).lower(): str(v) for k, v in response.headers.items()}
             return FreshnessResult(
                 changed=True,
@@ -256,7 +274,23 @@ class DocsSyncFreshnessChecker(HttpFreshnessChecker):
                 etag=headers.get("etag"),
                 last_modified=headers.get("last-modified"),
             )
-        result = await super().check(url)
+        try:
+            result = await super().check(url)
+        except ValueError as exc:
+            # Preserve the status for DocsSync's existing blocked-request
+            # checkpoint and cooldown handling.
+            import re
+
+            match = re.search(r"HTTP freshness check failed for .*: (\d+)$", str(exc))
+            if match:
+                status = int(match.group(1))
+                if status in (401, 403):
+                    raise HttpClientStatusCodeError(
+                        status_code=status,
+                        message=str(exc),
+                    ) from exc
+            raise
+
         if not result.changed:
             self.unchanged_count += 1
         return result
@@ -268,6 +302,7 @@ class NavigationDelayGuard:
     def __init__(self) -> None:
         self._delays: dict[str, float] = {}
         self._next_allowed: dict[str, float] = {}
+        self._retry_until: dict[str, float] = {}
         self._locks: dict[str, asyncio.Lock] = {}
 
     def set_delay(self, url: str, seconds: float) -> None:
@@ -276,16 +311,27 @@ class NavigationDelayGuard:
         if seconds > 0:
             self._delays.setdefault(origin, seconds)
 
+    def defer(self, url: str, seconds: float) -> None:
+        parsed = urlsplit(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if seconds > 0:
+            self._retry_until[origin] = max(
+                self._retry_until.get(origin, 0.0),
+                time.monotonic() + seconds,
+            )
+
     async def wait(self, url: str) -> None:
         parsed = urlsplit(url)
         origin = f"{parsed.scheme}://{parsed.netloc}"
-        delay = self._delays.get(origin)
-        if delay is None:
-            return
+        delay = self._delays.get(origin, 0.0)
 
         lock = self._locks.setdefault(origin, asyncio.Lock())
         async with lock:
-            remaining = self._next_allowed.get(origin, 0.0) - time.monotonic()
+            deadline = max(
+                self._next_allowed.get(origin, 0.0),
+                self._retry_until.get(origin, 0.0),
+            )
+            remaining = deadline - time.monotonic()
             if remaining > 0:
                 await asyncio.sleep(remaining)
             self._next_allowed[origin] = time.monotonic() + delay
@@ -485,6 +531,7 @@ async def _run_crawler_native(
             output_dir=output_dir,
             content_state=content_state,
             start_url=start_url,
+            navigation_delay_guard=navigation_delay_guard,
         )
         active_request_manager: RequestManager = request_manager
 
@@ -592,7 +639,7 @@ async def _run_crawler_native(
             event_manager=event_manager,
             storage_client=storage_client,
             headless=not headful,
-            use_incognito_pages=False,
+            use_incognito_pages=headful,
             browser_launch_options=browser_launch_options,
             request_manager=active_request_manager,
             concurrency_settings=concurrency,
