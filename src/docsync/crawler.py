@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 from crawlee import ConcurrencySettings, Request, RequestOptions
 from crawlee._service_locator import ServiceLocator
+from crawlee._utils.http_freshness import HttpFreshnessChecker
 from crawlee._utils.robots import RobotsTxtFile
 from crawlee._utils.sitemap import Sitemap
 from crawlee.configuration import Configuration
@@ -35,7 +36,7 @@ from crawlee.request_loaders import (
     ThrottlingRequestManager,
 )
 from crawlee.storage_clients import FileSystemStorageClient
-from crawlee.storages import RequestQueue
+from crawlee.storages import KeyValueStore, RequestQueue
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from docsync.html_archive import archive_html
@@ -216,6 +217,44 @@ def _prepare_crawl_storage(
     return storage_dir, checkpoint_file, resume
 
 
+class DocsSyncFreshnessChecker(HttpFreshnessChecker):
+    """Trust 304 only while the successfully indexed Markdown still exists."""
+
+    def __init__(
+        self,
+        http_client: ImpitHttpClient,
+        store: KeyValueStore,
+        *,
+        output_dir: Path,
+        content_state: dict[str, dict[str, str]],
+    ) -> None:
+        super().__init__(http_client, store)
+        self._output_dir = output_dir
+        self._content_state = content_state
+
+    async def check(self, url: str):
+        # A missing document must be re-rendered, even if the origin returns 304.
+        canonical_url = canonicalize_url(url)
+        record = self._content_state.get(canonical_url, {})
+        target = output_path(self._output_dir, canonical_url)
+        if not record.get("content_hash") or not target.is_file():
+            # An unconditional HTTP GET avoids replaying an obsolete ETag.
+            from crawlee._utils.http_freshness import FreshnessResult
+
+            response = await self._http_client.send_request(url, method="GET")
+            status = response.status_code
+            if not 200 <= status < 300:
+                raise ValueError(f"HTTP freshness check failed for {url}: {status}")
+            headers = {str(k).lower(): str(v) for k, v in response.headers.items()}
+            return FreshnessResult(
+                changed=True,
+                status_code=status,
+                etag=headers.get("etag"),
+                last_modified=headers.get("last-modified"),
+            )
+        return await super().check(url)
+
+
 class NavigationDelayGuard:
     """Enforce robots crawl-delay between navigation starts for each origin."""
 
@@ -338,7 +377,6 @@ async def _run_crawler_native(
     content_state = _load_state(state_file)
     state_lock = asyncio.Lock()
     counters = {"processed": 0, "saved": 0, "unchanged": 0}
-    seen_urls: set[str] = set()
 
     crawl_storage, checkpoint_file, resume = _prepare_crawl_storage(
         state_dir,
@@ -396,6 +434,16 @@ async def _run_crawler_native(
     navigation_delay_guard = NavigationDelayGuard()
     request_manager.navigation_delay_guard = navigation_delay_guard
 
+    # Keep HTTP validators separate from the resettable request-queue storage.
+    freshness_configuration = Configuration(
+        storage_dir=str(state_dir / "freshness-storage"), purge_on_start=False
+    )
+    freshness_store = await KeyValueStore.open(
+        alias="docsync-http-freshness-v1",
+        configuration=freshness_configuration,
+        storage_client=storage_client,
+    )
+
     concurrency = ConcurrencySettings(
         min_concurrency=1,
         desired_concurrency=max_concurrency,
@@ -420,15 +468,22 @@ async def _run_crawler_native(
         return options
 
     async with AsyncExitStack() as sitemap_stack:
+        freshness_http_client = ImpitHttpClient()
+        await freshness_http_client.__aenter__()
+        sitemap_stack.push_async_callback(freshness_http_client.cleanup)
+        freshness_checker = DocsSyncFreshnessChecker(
+            freshness_http_client,
+            freshness_store,
+            output_dir=output_dir,
+            content_state=content_state,
+        )
         active_request_manager: RequestManager = request_manager
 
         if discover_sitemap:
             parsed_start = urlsplit(start_url)
             origin = f"{parsed_start.scheme}://{parsed_start.netloc}"
 
-            http_client = ImpitHttpClient()
-            await http_client.__aenter__()
-            sitemap_stack.push_async_callback(http_client.cleanup)
+            http_client = freshness_http_client
             sitemap_sources: set[str] = set()
 
             try:
@@ -513,6 +568,7 @@ async def _run_crawler_native(
             retry_on_blocked=False,
             max_session_rotations=0,
             respect_robots_txt_file=True,
+            http_freshness_checker=freshness_checker,
         )
 
         @crawler.pre_navigation_hook
@@ -607,7 +663,6 @@ async def _run_crawler_native(
                 target = output_path(output_dir, url)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 async with state_lock:
-                    seen_urls.add(url)
                     previous = content_state.get(url, {})
                     counters["processed"] += 1
                     if previous.get("content_hash") == digest and target.exists():
@@ -620,6 +675,12 @@ async def _run_crawler_native(
                         "filename": target.name,
                     }
                     _save_state(state_file, content_state)
+
+            # A check is committed only if useful Markdown was indexed.
+            if not markdown or not should_process:
+                raise RuntimeError(
+                    f"Document was not successfully indexed: {context.request.url}"
+                )
 
             # Link discovery must still run when a document has no usable
             # Markdown or has a different declared language.
