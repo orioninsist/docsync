@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "crawlee[playwright] @ git+https://github.com/orioninsist/crawlee-python.git@85636fe5c0163271b5635ef02c665a789663f2fb",
+    "crawlee[playwright] @ git+https://github.com/orioninsist/crawlee-python.git@5bf2817c42f70451ce932a7122d17e5aa0a91262",
 ]
 
 [project.scripts]
