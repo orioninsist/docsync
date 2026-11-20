@@ -488,6 +488,14 @@ async def _run_crawler_native(
         )
         active_request_manager: RequestManager = request_manager
 
+        # Process the root first, including when --max-requests is small.
+        # crawler.run() will deduplicate its own start-URL enqueue below.
+        await active_request_manager.add_request(
+            Request.from_url(
+                canonicalize_url(start_url), enqueue_strategy=crawl_strategy
+            )
+        )
+
         # Recheck previously indexed URLs independently of their parent pages.
         # A 304 on an intermediate page otherwise hides deeper known documents
         # when a site publishes no sitemap.
