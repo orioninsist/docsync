@@ -63,6 +63,86 @@ This default output directory is `/home/murat/Project/docsync/markdownMerge/<inp
 
 Generated files are numbered `<input-name>-1.md`, `<input-name>-2.md`, and so on as needed, alongside `manifest.json`, `summary.txt`, and `validation.txt`. If all sources fit in one part, only `<input-name>-1.md` is generated.
 
+## ChatGPT usage recipes (2026)
+
+The following commands use the existing CLI; no new flags are required.
+
+### Quick start on any machine
+
+From the repository checkout:
+
+```bash
+cd markdownMerge
+uv sync
+uv run mdmerge --help
+uv run mdmerge ./docs --output ./chatgpt-upload
+```
+
+For a global command, install from your local checkout rather than copying a machine-specific absolute path:
+
+```bash
+uv tool install --editable ./markdownMerge
+mdmerge --help
+mdmerge ./docs --output ./chatgpt-upload
+```
+
+Run the installation command from the repository root. For `uv run`, run inside `markdownMerge/`.
+
+### CLI argument reference
+
+| Argument | Required? | Default | Meaning |
+| --- | --- | --- | --- |
+| `INPUT_DIRECTORY` | Yes | — | Recursively scan Markdown files in this folder. |
+| `--output PATH` | No | `./<input-directory-name>` | Write output parts and reports to this directory. |
+| `--name NAME` | No | Input folder name | Filename prefix for numbered Markdown parts; do not include `.md` or path separators. |
+| `--token-limit N` | No | `1800000` | Maximum final tokens per output file. Must be positive. |
+| `--reserve-tokens N` | No | `50000` | Unused planning headroom; must be nonnegative and smaller than the token limit. |
+| `--model MODEL` | No | — | Select a tokenizer using `tiktoken.encoding_for_model`. |
+| `--encoding NAME` | No | `o200k_base` | Select an explicit tiktoken encoding. Cannot be combined with `--model`. |
+| `--help` / `-h` | No | — | Print CLI usage and available options. |
+
+The effective packing budget is `--token-limit - --reserve-tokens`. The final written parts are re-tokenized and checked against the final token ceiling and byte limit. Model names only select a tokenizer: they do **not** change ChatGPT's upload limits or guarantee that all uploaded text fits in a model's active context.
+
+### Practical commands
+
+```bash
+# Default: preserve content and pack into as few parts as practical
+mdmerge ./docs
+
+# Choose an output location and readable part names
+mdmerge ./docs --output ./chatgpt-upload --name project-docs
+
+# Smaller files for easier per-part review or retrieval
+mdmerge ./docs --output ./chatgpt-small --token-limit 100000 --reserve-tokens 5000
+
+# Explicitly use the default tokenizer
+mdmerge ./docs --encoding o200k_base
+
+# Select a known tiktoken model mapping instead (not together with --encoding)
+mdmerge ./docs --model gpt-4o
+```
+
+The 100,000-token example is an **optional workflow choice**, not an official ChatGPT file cap. For large corpora, smaller parts can be easier to navigate, but they produce more uploads.
+
+### Verify before uploading to ChatGPT
+
+Check `validation.txt` for a passing result and `manifest.json` for `"upload_ready": true`. Upload the generated `<name>-1.md`, `<name>-2.md`, etc. to your ChatGPT conversation, Project, or custom GPT knowledge as appropriate. The reports are local metadata, not required uploads.
+
+ChatGPT's documented per-file maximum for text/document uploads is **2 million tokens and 512 MB**. These are upload ceilings, **not** a promise that a model can read every token at once. The default 1.8-million-token target leaves headroom beneath the per-file ceiling; for focused question answering, consider smaller chunks. ChatGPT Projects, GPT knowledge, and upload-rate quotas have separate file-count limits that depend on product and plan. Check the [official file upload documentation](https://help.openai.com/en/articles/8555545-uploading-files-and-audio-to-chatgpt) before preparing a large batch.
+
+Example prompt after upload:
+
+> Use the uploaded Markdown packages as reference material. Cite the `# Source: relative/path.md` markers when answering. If a source is split across packages, check all relevant chunks. Do not assume the entire corpus is in the current model context.
+
+### Common pitfalls
+
+- **Output directory inside input directory:** choose an output path outside the scanned input tree; the CLI rejects overlapping paths.
+- **No Markdown files found:** confirm the input path contains `.md` files.
+- **Invalid reserve:** `--reserve-tokens` must be smaller than `--token-limit`.
+- **Tokenizer options:** choose either `--model` or `--encoding`, not both.
+- **Too many upload parts:** increase the token budget (within the documented upload ceiling) or upload relevant subsets; do not assume ChatGPT can process an arbitrarily large corpus in one context.
+- **Validation failed:** inspect `validation.txt` before uploading. Do not treat the output as upload-ready.
+
 ## Packing behavior
 
 1. Recursively discover all `.md` sources.
