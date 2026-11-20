@@ -222,3 +222,18 @@ def test_sitemap_and_browser_freshness_are_connected() -> None:
     assert "class DocsSyncFreshnessChecker(HttpFreshnessChecker)" in source
     assert "should_enqueue_url" in signature(SitemapRequestLoader).parameters
     assert "http_freshness_checker" in signature(PlaywrightCrawler).parameters
+
+
+
+def test_manifest_seeds_known_deep_documents_before_sitemap_discovery() -> None:
+    source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
+    assert "for previous_url in sorted(content_state):" in source
+    assert "await active_request_manager.add_request(request)" in source
+    assert "not url_is_within_start_scope(start_url, canonical_url)" in source
+    assert "not url_matches_language(canonical_url, language)" in source
+    assert source.index("for previous_url in sorted(content_state):") < source.index(
+        "if discover_sitemap:"
+    )
+    assert "Request.from_url(\n                canonicalize_url(start_url)" in source
+
+
