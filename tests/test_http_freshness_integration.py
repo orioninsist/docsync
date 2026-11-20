@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from crawlee._utils.http_freshness import HttpFreshnessChecker
+from crawlee.crawlers import PlaywrightCrawler
+from crawlee.request_loaders import SitemapRequestLoader
 from docsync.crawler import DocsSyncFreshnessChecker
 from docsync.policy import output_path
 
@@ -175,12 +176,10 @@ def test_last_modified_used_when_etag_absent(tmp_path: Path) -> None:
 
 def test_sitemap_and_browser_freshness_are_connected() -> None:
     from inspect import signature
-    from crawlee.request_loaders import SitemapRequestLoader
+
     source = Path("src/docsync/crawler.py").read_text(encoding="utf-8")
     assert "sitemap_urls=sorted(sitemap_sources)" in source
     assert "http_freshness_checker=freshness_checker" in source
     assert "class DocsSyncFreshnessChecker(HttpFreshnessChecker)" in source
     assert "should_enqueue_url" in signature(SitemapRequestLoader).parameters
-    assert "http_freshness_checker" in signature(
-        __import__("crawlee.crawlers", fromlist=["PlaywrightCrawler"]).PlaywrightCrawler
-    ).parameters
+    assert "http_freshness_checker" in signature(PlaywrightCrawler).parameters
