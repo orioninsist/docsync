@@ -677,18 +677,17 @@ async def _run_crawler_native(
                     }
                     _save_state(state_file, content_state)
 
-            # A check is committed only if useful Markdown was indexed.
-            if not markdown or not should_process:
-                raise RuntimeError(
-                    f"Document was not successfully indexed: {context.request.url}"
-                )
-
-            # Link discovery must still run when a document has no usable
-            # Markdown or has a different declared language.
+            # Link discovery must run even if the document has another language.
             await context.enqueue_links(
                 strategy=crawl_strategy,
                 transform_request_function=transform_request,
             )
+
+            # Only successfully indexed pages may advance HTTP validators.
+            if not markdown or not should_process:
+                raise RuntimeError(
+                    f"Document was not successfully indexed: {context.request.url}"
+                )
 
             if context.request.unique_key in failed_keys:
                 async with state_lock:
