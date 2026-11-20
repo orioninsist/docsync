@@ -488,6 +488,22 @@ async def _run_crawler_native(
         )
         active_request_manager: RequestManager = request_manager
 
+        # Recheck previously indexed URLs independently of their parent pages.
+        # A 304 on an intermediate page otherwise hides deeper known documents
+        # when a site publishes no sitemap.
+        for previous_url in sorted(content_state):
+            canonical_url = canonicalize_url(previous_url)
+            if (
+                canonical_url == canonicalize_url(start_url)
+                or not url_is_within_start_scope(start_url, canonical_url)
+                or not url_matches_language(canonical_url, language)
+            ):
+                continue
+            request = Request.from_url(
+                canonical_url, enqueue_strategy=crawl_strategy
+            )
+            await active_request_manager.add_request(request)
+
         if discover_sitemap:
             parsed_start = urlsplit(start_url)
             origin = f"{parsed_start.scheme}://{parsed_start.netloc}"
